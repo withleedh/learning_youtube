@@ -29,6 +29,7 @@ Options:
   --topic <topic>    Specify a topic for script generation
   --mock-tts         Use mock TTS (no API calls)
   --sample-script    Use sample script (no Gemini API call)
+  --skip-intro       Skip intro asset generation
   --output <dir>     Custom output directory
   --help             Show this help message
 
@@ -55,6 +56,7 @@ async function main() {
   let topic: string | undefined;
   let useMockTTS = false;
   let useSampleScript = false;
+  let skipIntro = false;
   let outputDir: string | undefined;
 
   for (let i = 0; i < args.length; i++) {
@@ -86,6 +88,9 @@ async function main() {
       case '--sample-script':
         useSampleScript = true;
         break;
+      case '--skip-intro':
+        skipIntro = true;
+        break;
       case '--output':
         outputDir = args[++i];
         break;
@@ -112,6 +117,7 @@ async function main() {
         topic,
         useMockTTS,
         useSampleScript,
+        skipIntro,
         outputDir,
       });
 
@@ -126,6 +132,7 @@ async function main() {
         topic,
         useMockTTS,
         useSampleScript,
+        skipIntro,
         outputDir,
       });
 

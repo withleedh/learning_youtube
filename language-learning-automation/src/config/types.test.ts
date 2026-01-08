@@ -40,6 +40,13 @@ describe('ChannelConfig Schema', () => {
       repeatCount: 10,
       difficulty: 'intermediate',
     },
+    uiLabels: {
+      step3Title: 'STEP 3 · 반복 훈련',
+      phaseIntro: '🎧 천천히 듣기',
+      phaseTraining: '🧩 빈칸 퀴즈',
+      phaseChallenge: '⚡ 빠르게 듣기',
+      phaseReview: '✨ 마무리',
+    },
   };
 
   it('should validate a valid config', () => {
@@ -126,6 +133,9 @@ describe('ChannelConfig Schema', () => {
       expect(result.data.layout.step3ImageRatio).toBe(0.4);
       expect(result.data.tts.speed).toBe(1.0);
       expect(result.data.content.difficulty).toBe('intermediate');
+      // uiLabels should have defaults
+      expect(result.data.uiLabels.step3Title).toBe('STEP 3 · 반복 훈련');
+      expect(result.data.uiLabels.phaseIntro).toBe('🎧 천천히 듣기');
     }
   });
 });

@@ -15,9 +15,12 @@
     "pipeline:all": "tsx src/pipeline/cli.ts --all"
   },
   "dependencies": {
+    "@andresaya/edge-tts": "^1.8.0",
     "@google/generative-ai": "^0.21.0",
     "@remotion/cli": "^4.0.0",
     "@remotion/player": "^4.0.0",
+    "edge-tts": "^1.0.1",
+    "edge-tts-node": "^1.5.7",
     "openai": "^4.0.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

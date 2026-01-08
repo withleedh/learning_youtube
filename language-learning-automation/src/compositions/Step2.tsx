@@ -1,16 +1,7 @@
 import React from 'react';
-import {
-  AbsoluteFill,
-  Audio,
-  Sequence,
-  Img,
-  staticFile,
-  useCurrentFrame,
-  interpolate,
-} from 'remotion';
+import { AbsoluteFill, Audio, Sequence, Img, staticFile } from 'remotion';
 import type { Sentence } from '../script/types';
 import type { AudioFile } from '../tts/types';
-import { Subtitle } from '../components/Subtitle';
 
 export interface Step2Props {
   backgroundImage?: string;
@@ -22,6 +13,8 @@ export interface Step2Props {
     nativeText: string;
   };
   dimOpacity?: number;
+  /** Step indicator label */
+  stepLabel?: string;
 }
 
 export const Step2: React.FC<Step2Props> = ({
@@ -30,6 +23,7 @@ export const Step2: React.FC<Step2Props> = ({
   audioFiles,
   colors,
   dimOpacity = 0.6,
+  stepLabel = '자막으로 내용 이해 하기',
 }) => {
   // Filter to only 1.0x speed audio files
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
@@ -87,7 +81,7 @@ export const Step2: React.FC<Step2Props> = ({
           zIndex: 10,
         }}
       >
-        Step 2: 문장별 듣기
+        Step 2: {stepLabel}
       </div>
 
       {/* Sentence Sequences */}
@@ -110,12 +104,6 @@ const SentenceDisplay: React.FC<{
     nativeText: string;
   };
 }> = ({ sentence, audio, colors }) => {
-  const frame = useCurrentFrame();
-  const opacity = interpolate(frame, [0, 15, -30, -15], [0, 1, 1, 0], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  });
-
   const textColor = sentence.speaker === 'M' ? colors.maleText : colors.femaleText;
 
   return (
@@ -125,24 +113,31 @@ const SentenceDisplay: React.FC<{
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: 60,
-        opacity,
+        padding: '60px 60px 180px 60px', // Step3와 동일한 패딩
       }}
     >
       {/* Audio */}
-      {audio && <Audio src={audio.path} volume={1} />}
+      {audio && audio.path && <Audio src={staticFile(audio.path)} volume={1} />}
 
-      {/* Target Language Sentence */}
-      <Subtitle
-        text={sentence.target}
-        color={textColor}
-        fontSize={48}
-        fontWeight={600}
-        marginBottom={30}
-      />
+      {/* Target Language Sentence - Step3와 동일한 크기 (80px) */}
+      <div
+        style={{
+          fontSize: 80,
+          fontWeight: 700,
+          color: textColor,
+          textAlign: 'center',
+          lineHeight: 1.25,
+          fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+          textShadow: '0 4px 20px rgba(0,0,0,0.6)',
+          maxWidth: '92%',
+          wordBreak: 'keep-all',
+          overflowWrap: 'break-word',
+        }}
+      >
+        {sentence.target}
+      </div>
 
-      {/* Native Translation */}
-      <Subtitle text={sentence.native} color={colors.nativeText} fontSize={36} fontWeight={400} />
+      {/* 한글 해석 제거됨 */}
     </AbsoluteFill>
   );
 };

@@ -1,17 +1,7 @@
 import React from 'react';
-import {
-  AbsoluteFill,
-  Audio,
-  Sequence,
-  Img,
-  staticFile,
-  useCurrentFrame,
-  interpolate,
-} from 'remotion';
+import { AbsoluteFill, Audio, Sequence, Img, staticFile } from 'remotion';
 import type { Sentence } from '../script/types';
 import type { AudioFile, SpeedVariant } from '../tts/types';
-import { Subtitle, BlankSubtitle } from '../components/Subtitle';
-import { WordMeaning } from '../components/WordMeaning';
 
 export interface Step3Props {
   backgroundImage?: string;
@@ -26,24 +16,67 @@ export interface Step3Props {
   };
   repeatCount: number;
   imageRatio?: number;
+  uiLabels?: {
+    step3PhaseTitle?: string;
+    phaseIntro?: string;
+    phaseTraining?: string;
+    phaseChallenge?: string;
+    phaseReview?: string;
+  };
 }
 
-// Speed sequence for interval training: slow -> normal (blank) -> fast
-const SPEED_SEQUENCE: SpeedVariant[] = ['0.8x', '1.0x', '1.2x'];
+// Phase configuration for 10 repetitions
+// ① 도입: 0.8x × 2회 (워밍업 & 발음 분석) - 전체 자막 + 해석
+// ② 훈련: 1.0x × 4회 (퀴즈 & 리듬 체화) - 빈칸 자막
+// ③ 챌린지: 1.2x × 2회 (청각 근육 단련) - 정답 강조 자막
+// ④ 정리: 1.0x × 2회 (성취감 & 복습) - 전체 자막
+type Phase = 'intro' | 'training' | 'challenge' | 'review';
+
+interface RepetitionConfig {
+  speed: SpeedVariant;
+  phase: Phase;
+  showBlank: boolean;
+  showAnswer: boolean;
+}
+
+const REPETITION_SEQUENCE: RepetitionConfig[] = [
+  // ① 도입 (0.8x × 2)
+  { speed: '0.8x', phase: 'intro', showBlank: false, showAnswer: false },
+  { speed: '0.8x', phase: 'intro', showBlank: false, showAnswer: false },
+  // ② 훈련 (1.0x × 4)
+  { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
+  { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
+  { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
+  { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
+  // ③ 챌린지 (1.2x × 2)
+  { speed: '1.2x', phase: 'challenge', showBlank: false, showAnswer: true },
+  { speed: '1.2x', phase: 'challenge', showBlank: false, showAnswer: true },
+  // ④ 정리 (1.0x × 2)
+  { speed: '1.0x', phase: 'review', showBlank: false, showAnswer: false },
+  { speed: '1.0x', phase: 'review', showBlank: false, showAnswer: false },
+];
 
 export const Step3: React.FC<Step3Props> = ({
   backgroundImage,
   sentences,
   audioFiles,
   colors,
-  repeatCount,
-  imageRatio = 0.4,
+  uiLabels,
 }) => {
+  // Default UI labels
+  const labels = {
+    step3Title: uiLabels?.step3PhaseTitle ?? 'STEP 3 · 반복 훈련',
+    phaseIntro: uiLabels?.phaseIntro ?? '🎧 천천히 듣기',
+    phaseTraining: uiLabels?.phaseTraining ?? '🧩 빈칸 퀴즈',
+    phaseChallenge: uiLabels?.phaseChallenge ?? '⚡ 빠르게 듣기',
+    phaseReview: uiLabels?.phaseReview ?? '✨ 마무리',
+  };
+
   // Build sequences for all sentences with all repetitions
   let cumulativeFrame = 0;
   const allSequences: Array<{
     sentence: Sentence;
-    speed: SpeedVariant;
+    config: RepetitionConfig;
     audio?: AudioFile;
     startFrame: number;
     durationFrames: number;
@@ -51,83 +84,82 @@ export const Step3: React.FC<Step3Props> = ({
   }> = [];
 
   sentences.forEach((sentence) => {
-    // Repeat the 3-speed cycle repeatCount times
-    for (let rep = 0; rep < repeatCount; rep++) {
-      SPEED_SEQUENCE.forEach((speed) => {
-        const audio = audioFiles.find((af) => af.sentenceId === sentence.id && af.speed === speed);
-        const startFrame = cumulativeFrame;
-        const baseDuration = audio ? audio.duration : 3;
-        // Add pause after each audio
-        const durationFrames = Math.ceil(baseDuration * 30) + 15;
-        cumulativeFrame += durationFrames;
+    REPETITION_SEQUENCE.forEach((config, repIndex) => {
+      const audio = audioFiles.find(
+        (af) => af.sentenceId === sentence.id && af.speed === config.speed
+      );
+      const startFrame = cumulativeFrame;
+      const baseDuration = audio ? audio.duration : 3;
+      const durationFrames = Math.ceil(baseDuration * 30) + 20;
+      cumulativeFrame += durationFrames;
 
-        allSequences.push({
-          sentence,
-          speed,
-          audio,
-          startFrame,
-          durationFrames,
-          repetition: rep + 1,
-        });
+      allSequences.push({
+        sentence,
+        config,
+        audio,
+        startFrame,
+        durationFrames,
+        repetition: repIndex + 1,
       });
-    }
+    });
   });
 
   return (
     <AbsoluteFill style={{ backgroundColor: colors.background }}>
-      {/* Step Indicator */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 20,
-          left: 20,
-          backgroundColor: 'rgba(255,255,255,0.1)',
-          padding: '8px 16px',
-          borderRadius: 8,
-          fontSize: 20,
-          color: '#FFFFFF',
-          fontWeight: 600,
-          fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-          zIndex: 10,
-        }}
-      >
-        Step 3: 10번씩 반복 듣기
-      </div>
-
-      {/* Background Image (top portion) */}
+      {/* Background Image - Full screen with dim overlay */}
       {backgroundImage && (
-        <div
-          style={{
-            position: 'absolute',
-            top: 0,
-            left: 0,
-            right: 0,
-            height: `${imageRatio * 100}%`,
-            overflow: 'hidden',
-          }}
-        >
+        <AbsoluteFill>
           <Img
             src={staticFile(backgroundImage)}
             style={{
               width: '100%',
               height: '100%',
               objectFit: 'cover',
+              objectPosition: 'top', // 상단부터 보여주기
             }}
           />
-        </div>
+          {/* Dark overlay for text readability */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            }}
+          />
+        </AbsoluteFill>
       )}
+
+      {/* Step Title Badge - 깔끔한 텍스트 배지 */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 30,
+          left: 40,
+          fontSize: 24,
+          color: 'rgba(255,255,255,0.8)',
+          fontWeight: 600,
+          fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+          letterSpacing: '1px',
+          zIndex: 10,
+        }}
+      >
+        {labels.step3Title}
+      </div>
 
       {/* Sentence Display Sequences */}
       {allSequences.map((seq, index) => (
         <Sequence key={index} from={seq.startFrame} durationInFrames={seq.durationFrames}>
-          <SentenceRepeatDisplay
+          <SentenceDisplay
             sentence={seq.sentence}
-            speed={seq.speed}
+            config={seq.config}
             audio={seq.audio}
             colors={colors}
-            imageRatio={imageRatio}
             repetition={seq.repetition}
-            totalRepetitions={repeatCount}
+            totalRepetitions={REPETITION_SEQUENCE.length}
+            labels={labels}
           />
         </Sequence>
       ))}
@@ -135,10 +167,10 @@ export const Step3: React.FC<Step3Props> = ({
   );
 };
 
-// Individual sentence repeat display
-const SentenceRepeatDisplay: React.FC<{
+// Individual sentence display
+const SentenceDisplay: React.FC<{
   sentence: Sentence;
-  speed: SpeedVariant;
+  config: RepetitionConfig;
   audio?: AudioFile;
   colors: {
     maleText: string;
@@ -146,28 +178,50 @@ const SentenceRepeatDisplay: React.FC<{
     nativeText: string;
     wordMeaning: string;
   };
-  imageRatio: number;
   repetition: number;
   totalRepetitions: number;
-}> = ({ sentence, speed, audio, colors, imageRatio, repetition, totalRepetitions }) => {
-  const frame = useCurrentFrame();
-  const opacity = interpolate(frame, [0, 10], [0, 1], {
-    extrapolateRight: 'clamp',
-  });
-
+  labels: {
+    phaseIntro: string;
+    phaseTraining: string;
+    phaseChallenge: string;
+    phaseReview: string;
+  };
+}> = ({ sentence, config, audio, colors, repetition, totalRepetitions, labels }) => {
   const textColor = sentence.speaker === 'M' ? colors.maleText : colors.femaleText;
-  const isBlankMode = speed === '1.0x'; // Show blank during normal speed
+  const { phase, showBlank, showAnswer } = config;
+
+  // Highlight the answer word in challenge phase
+  const renderTargetText = () => {
+    if (showBlank) {
+      // 빈칸 모드: _______ 표시
+      return sentence.targetBlank;
+    }
+    if (showAnswer) {
+      // 정답 강조 모드: 정답 단어를 노란색으로 강조
+      const parts = sentence.target.split(new RegExp(`(${sentence.blankAnswer})`, 'i'));
+      return parts.map((part, i) =>
+        part.toLowerCase() === sentence.blankAnswer.toLowerCase() ? (
+          <span key={i} style={{ color: '#FFD700', fontWeight: 800 }}>
+            {part}
+          </span>
+        ) : (
+          <span key={i}>{part}</span>
+        )
+      );
+    }
+    return sentence.target;
+  };
 
   return (
-    <AbsoluteFill style={{ opacity }}>
+    <AbsoluteFill>
       {/* Audio */}
-      {audio && <Audio src={audio.path} volume={1} />}
+      {audio && audio.path && <Audio src={staticFile(audio.path)} volume={1} />}
 
-      {/* Text Content Area (below image) */}
+      {/* Main Content - 모바일 가독성 최적화 */}
       <div
         style={{
           position: 'absolute',
-          top: `${imageRatio * 100}%`,
+          top: 0,
           left: 0,
           right: 0,
           bottom: 0,
@@ -175,109 +229,163 @@ const SentenceRepeatDisplay: React.FC<{
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          padding: 40,
+          padding: '60px 60px 180px 60px', // 하단 여백 180px (유튜브 세이프존)
         }}
       >
-        {/* Repetition Counter */}
+        {/* 영어 문장 - 모바일에서 시원하게 */}
         <div
           style={{
-            position: 'absolute',
-            top: 20,
-            right: 40,
-            fontSize: 24,
-            color: 'rgba(255,255,255,0.5)',
+            fontSize: 80, // 72 → 80px (화면 높이 ~12%)
+            fontWeight: 700,
+            color: textColor,
+            textAlign: 'center',
+            lineHeight: 1.25,
+            marginBottom: 24, // 간격 줄임
+            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+            textShadow: '0 4px 20px rgba(0,0,0,0.6)',
+            maxWidth: '92%',
+            wordBreak: 'keep-all', // 단어 중간 잘림 방지
+            overflowWrap: 'break-word',
+          }}
+        >
+          {renderTargetText()}
+        </div>
+
+        {/* 한글 해석 - 영어 바로 밑에 */}
+        <div
+          style={{
+            fontSize: 50, // 44 → 50px
+            fontWeight: 500,
+            color: colors.nativeText,
+            textAlign: 'center',
+            marginBottom: 48,
+            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+            textShadow: '0 2px 12px rgba(0,0,0,0.5)',
+            opacity: 0.95,
+            wordBreak: 'keep-all',
+          }}
+        >
+          {sentence.native}
+        </div>
+
+        {/* 단어 풀이 - 2단 그리드, 큰 글씨, 진한 배경 */}
+        <div
+          style={{
+            backgroundColor: 'rgba(0, 0, 0, 0.85)', // 더 진한 배경
+            borderRadius: 20,
+            padding: '24px 48px',
+            maxWidth: '90%',
+          }}
+        >
+          <div
+            style={{
+              display: 'flex',
+              flexWrap: 'wrap', // 자동 줄바꿈 허용
+              justifyContent: 'center',
+              gap: '16px 40px', // 세로 16px, 가로 40px 간격
+              fontSize: 35, // 26 → 35px (대폭 확대)
+              fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+              lineHeight: 1.6,
+            }}
+          >
+            {sentence.words.map((w, i) => (
+              <span key={i} style={{ whiteSpace: 'nowrap' }}>
+                <span style={{ color: '#FFFFFF', fontWeight: 600 }}>{w.word}</span>
+                <span style={{ color: 'rgba(255,255,255,0.7)' }}> ({w.meaning})</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      {/* 하단 컨트롤 바 - 유튜브 세이프존 위 (bottom 50px) */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 50, // 30 → 50px (유튜브 재생바 위)
+          left: 0,
+          right: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          gap: 32, // 40 → 32px
+        }}
+      >
+        {/* Phase Badge */}
+        <div
+          style={{
+            backgroundColor: getPhaseColor(phase),
+            padding: '10px 24px',
+            borderRadius: 30,
+            fontSize: 22,
+            fontWeight: 700,
+            color: '#FFFFFF',
             fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
           }}
         >
-          {repetition}/{totalRepetitions}
+          {getPhaseLabel(phase, labels)}
         </div>
 
         {/* Speed Indicator */}
         <div
           style={{
-            position: 'absolute',
-            top: 20,
-            left: 40,
-            fontSize: 20,
-            color: getSpeedColor(speed),
+            fontSize: 24,
             fontWeight: 600,
+            color: 'rgba(255,255,255,0.8)',
             fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
           }}
         >
-          {getSpeedLabel(speed)}
+          {config.speed}
         </div>
 
-        {/* Target Language Sentence */}
-        {isBlankMode ? (
-          <BlankSubtitle
-            text={sentence.targetBlank}
-            color={textColor}
-            blankColor="#FFD700"
-            fontSize={44}
-            fontWeight={600}
-            marginBottom={24}
-          />
-        ) : (
-          <Subtitle
-            text={sentence.target}
-            color={textColor}
-            fontSize={44}
-            fontWeight={600}
-            marginBottom={24}
-          />
-        )}
-
-        {/* Highlight answer on fast speed */}
-        {speed === '1.2x' && (
-          <div
-            style={{
-              fontSize: 28,
-              color: '#FFD700',
-              fontWeight: 700,
-              marginBottom: 16,
-              fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-            }}
-          >
-            정답: {sentence.blankAnswer}
-          </div>
-        )}
-
-        {/* Native Translation */}
-        <Subtitle
-          text={sentence.native}
-          color={colors.nativeText}
-          fontSize={32}
-          fontWeight={400}
-          marginBottom={24}
-        />
-
-        {/* Word Meanings */}
-        <WordMeaning words={sentence.words} color={colors.wordMeaning} fontSize={24} />
+        {/* Repetition Counter */}
+        <div
+          style={{
+            fontSize: 24,
+            fontWeight: 600,
+            color: 'rgba(255,255,255,0.6)',
+            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+          }}
+        >
+          {repetition} / {totalRepetitions}
+        </div>
       </div>
     </AbsoluteFill>
   );
 };
 
 // Helper functions
-function getSpeedLabel(speed: SpeedVariant): string {
-  switch (speed) {
-    case '0.8x':
-      return '🐢 느리게';
-    case '1.0x':
-      return '▶️ 정상 (빈칸)';
-    case '1.2x':
-      return '🐇 빠르게';
+function getPhaseLabel(
+  phase: Phase,
+  labels: {
+    phaseIntro: string;
+    phaseTraining: string;
+    phaseChallenge: string;
+    phaseReview: string;
+  }
+): string {
+  switch (phase) {
+    case 'intro':
+      return labels.phaseIntro;
+    case 'training':
+      return labels.phaseTraining;
+    case 'challenge':
+      return labels.phaseChallenge;
+    case 'review':
+      return labels.phaseReview;
   }
 }
 
-function getSpeedColor(speed: SpeedVariant): string {
-  switch (speed) {
-    case '0.8x':
+function getPhaseColor(phase: Phase): string {
+  switch (phase) {
+    case 'intro':
       return '#4CAF50'; // Green
-    case '1.0x':
-      return '#FFD700'; // Gold
-    case '1.2x':
+    case 'training':
+      return '#2196F3'; // Blue
+    case 'challenge':
       return '#FF5722'; // Orange
+    case 'review':
+      return '#9C27B0'; // Purple
   }
 }
 
@@ -285,18 +393,18 @@ function getSpeedColor(speed: SpeedVariant): string {
 export function calculateStep3Duration(
   sentences: Sentence[],
   audioFiles: AudioFile[],
-  repeatCount: number
+  _repeatCount: number // ignored, using fixed 10 repetitions
 ): number {
   let totalFrames = 0;
 
   sentences.forEach((sentence) => {
-    for (let rep = 0; rep < repeatCount; rep++) {
-      SPEED_SEQUENCE.forEach((speed) => {
-        const audio = audioFiles.find((af) => af.sentenceId === sentence.id && af.speed === speed);
-        const baseDuration = audio ? audio.duration : 3;
-        totalFrames += Math.ceil(baseDuration * 30) + 15;
-      });
-    }
+    REPETITION_SEQUENCE.forEach((config) => {
+      const audio = audioFiles.find(
+        (af) => af.sentenceId === sentence.id && af.speed === config.speed
+      );
+      const baseDuration = audio ? audio.duration : 3;
+      totalFrames += Math.ceil(baseDuration * 30) + 20;
+    });
   });
 
   return totalFrames;

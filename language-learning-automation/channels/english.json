@@ -1,5 +1,5 @@
 {
-  "channelId": "english_for_korean",
+  "channelId": "english",
 
   "meta": {
     "name": "귀가 뚫리는 영어",
@@ -11,6 +11,7 @@
   "theme": {
     "logo": "assets/english/logo.png",
     "introSound": "assets/english/intro.mp3",
+    "introBackground": "assets/english/intro/background.png",
     "backgroundStyle": "illustration",
     "primaryColor": "#87CEEB",
     "secondaryColor": "#FF69B4"
@@ -25,15 +26,15 @@
   },
 
   "layout": {
-    "step3ImageRatio": 0.4,
+    "step3ImageRatio": 0.35,
     "subtitlePosition": "center",
     "speakerIndicator": "left"
   },
 
   "tts": {
-    "provider": "openai",
-    "maleVoice": "onyx",
-    "femaleVoice": "nova",
+    "provider": "edge",
+    "maleVoice": "en-US-GuyNeural",
+    "femaleVoice": "en-US-JennyNeural",
     "targetLanguageCode": "en-US",
     "speed": 1.0
   },
@@ -42,5 +43,29 @@
     "sentenceCount": 12,
     "repeatCount": 10,
     "difficulty": "intermediate"
+  },
+
+  "uiLabels": {
+    "introTitle": "오늘의 학습",
+    "step1Title": "전체 흐름 파악 (자막 없이 듣기)",
+    "step2Title": "자막으로 내용 이해 하기",
+    "step3Title": "3단계 반복 듣기",
+    "step4Title": "기적의 순간 (다시 자막 없이 듣기)",
+    "step1Desc": "자막 없이 소리에만 집중하며, 상황을 상상해보세요.",
+    "step2Desc": "자막과 함께 들으며, 안 들렸던 부분을 확인하세요.",
+    "step3Desc": "[느리게-빈칸-빠르게] 반복으로 영어가 들리기 시작해요.",
+    "step4Desc": "놀랍게 선명해진 영어를 직접 확인해보세요!",
+    "step3PhaseTitle": "STEP 3 · 반복 훈련",
+    "phaseIntro": "🎧 천천히 듣기",
+    "phaseTraining": "🧩 빈칸 퀴즈",
+    "phaseChallenge": "⚡ 빠르게 듣기",
+    "phaseReview": "✨ 마무리"
+  },
+
+  "thumbnail": {
+    "channelName": "들려요! English!",
+    "characterStyle": "custom",
+    "customCharacters": "a friendly Caucasian man and a cheerful Korean woman happily conversing and learning languages together",
+    "backgroundColor": "dark blue"
   }
 }

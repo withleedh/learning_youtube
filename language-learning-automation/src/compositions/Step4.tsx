@@ -6,9 +6,16 @@ export interface Step4Props {
   backgroundImage?: string;
   audioFiles: AudioFile[];
   title?: string;
+  /** Step indicator label */
+  stepLabel?: string;
 }
 
-export const Step4: React.FC<Step4Props> = ({ backgroundImage, audioFiles, title }) => {
+export const Step4: React.FC<Step4Props> = ({
+  backgroundImage,
+  audioFiles,
+  title,
+  stepLabel = '기적의 순간 (다시 자막 없이 듣기)',
+}) => {
   // Filter to only 1.0x speed audio files for Step 4
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
 
@@ -72,13 +79,13 @@ export const Step4: React.FC<Step4Props> = ({ backgroundImage, audioFiles, title
           fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
         }}
       >
-        Step 4: 다시 자막 없이 듣기
+        Step 4: {stepLabel}
       </div>
 
       {/* Audio Sequences */}
       {audioSequences.map(({ audio, startFrame, durationFrames }, idx) => (
         <Sequence key={idx} from={startFrame} durationInFrames={durationFrames}>
-          <Audio src={audio.path} volume={1} />
+          {audio.path && <Audio src={staticFile(audio.path)} volume={1} />}
         </Sequence>
       ))}
     </AbsoluteFill>

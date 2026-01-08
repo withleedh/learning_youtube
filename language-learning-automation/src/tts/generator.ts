@@ -10,7 +10,7 @@ import {
   generateAudioFilename,
   speedVariants,
 } from './types';
-import { generateAllSpeedsWithOpenAI, type OpenAIVoice } from './openai';
+import { generateAllSpeedsWithEdge, type EdgeVoice } from './edge';
 
 // Maximum retry attempts for TTS generation
 const MAX_RETRIES = 3;
@@ -26,18 +26,14 @@ export async function generateSentenceAudio(
 ): Promise<AudioGenerationResult[]> {
   const voice = selectVoice(sentence.speaker, config.tts.maleVoice, config.tts.femaleVoice);
 
-  if (config.tts.provider === 'openai') {
-    return generateAllSpeedsWithOpenAI(
-      sentence.target,
-      voice as OpenAIVoice,
-      outputDir,
-      sentence.id,
-      sentence.speaker
-    );
-  }
-
-  // Google TTS would be implemented here
-  throw new Error(`TTS provider ${config.tts.provider} not implemented`);
+  // Use Edge TTS (free, high quality)
+  return generateAllSpeedsWithEdge(
+    sentence.target,
+    voice as EdgeVoice,
+    outputDir,
+    sentence.id,
+    sentence.speaker
+  );
 }
 
 /**

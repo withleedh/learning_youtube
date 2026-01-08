@@ -23,7 +23,7 @@ export async function generateScript(
   topic?: string
 ): Promise<Script> {
   const genAI = getGeminiClient();
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
 
   // Use provided category or get from current day
   const scriptCategory = category || getCategoryForDay(new Date());

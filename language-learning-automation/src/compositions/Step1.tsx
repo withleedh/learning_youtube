@@ -6,15 +6,22 @@ export interface Step1Props {
   backgroundImage?: string;
   audioFiles: AudioFile[];
   title?: string;
+  /** Step indicator label */
+  stepLabel?: string;
 }
 
-export const Step1: React.FC<Step1Props> = ({ backgroundImage, audioFiles, title }) => {
+export const Step1: React.FC<Step1Props> = ({
+  backgroundImage,
+  audioFiles,
+  title,
+  stepLabel = '전체 흐름 파악 (자막 없이 듣기)',
+}) => {
   // Filter to only 1.0x speed audio files for Step 1
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
 
   // Calculate cumulative start times for each audio
   let cumulativeFrame = 0;
-  const audioSequences = normalSpeedAudios.map((audio, index) => {
+  const audioSequences = normalSpeedAudios.map((audio, _index) => {
     const startFrame = cumulativeFrame;
     const durationFrames = Math.ceil(audio.duration * 30); // 30fps
     cumulativeFrame += durationFrames + 15; // Add small gap between sentences
@@ -72,13 +79,13 @@ export const Step1: React.FC<Step1Props> = ({ backgroundImage, audioFiles, title
           fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
         }}
       >
-        Step 1: 자막 없이 듣기
+        Step 1: {stepLabel}
       </div>
 
       {/* Audio Sequences */}
       {audioSequences.map(({ audio, startFrame, durationFrames }, idx) => (
         <Sequence key={idx} from={startFrame} durationInFrames={durationFrames}>
-          <Audio src={audio.path} volume={1} />
+          {audio.path && <Audio src={staticFile(audio.path)} volume={1} />}
         </Sequence>
       ))}
     </AbsoluteFill>

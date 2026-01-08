@@ -41,6 +41,13 @@ describe('Script Prompts', () => {
       repeatCount: 10,
       difficulty: 'intermediate',
     },
+    uiLabels: {
+      step3Title: 'STEP 3 · 반복 훈련',
+      phaseIntro: '🎧 천천히 듣기',
+      phaseTraining: '🧩 빈칸 퀴즈',
+      phaseChallenge: '⚡ 빠르게 듣기',
+      phaseReview: '✨ 마무리',
+    },
   };
 
   describe('generateScriptPrompt', () => {

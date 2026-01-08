@@ -1,17 +1,414 @@
 import { Composition } from 'remotion';
-import { Main } from './compositions/Main';
+import { Intro, calculateIntroDuration } from './compositions/Intro';
+import { Main, calculateTotalDuration } from './compositions/Main';
+import { Step1, calculateStep1Duration } from './compositions/Step1';
+import { Step2, calculateStep2Duration } from './compositions/Step2';
+import { Step3, calculateStep3Duration } from './compositions/Step3';
+import { Step4, calculateStep4Duration } from './compositions/Step4';
+import { StepTransition, STEP_TRANSITION_DURATION } from './compositions/StepTransition';
+import { Ending, ENDING_DURATION } from './compositions/Ending';
+import type { ChannelConfig } from './config/types';
+import type { Script } from './script/types';
+import type { AudioFile } from './tts/types';
+
+// TTS duration (실제 파일에서 측정된 값)
+// intro-viral.mp3: 5.256초
+// intro-narration.mp3: 3.936초
+// intro-step1~4.mp3: 각각 약 7-9초
+// intro-closing.mp3: 2.952초
+const VIRAL_TTS_DURATION = 5.256;
+const GUIDE_TTS_DURATION = 3.936;
+
+// Step TTS durations (측정된 실제 값)
+const STEP_TTS_DURATIONS = [8.52, 8.904, 9.72, 7.464]; // step1~4
+const CLOSING_TTS_DURATION = 2.952;
+
+// Sample config for preview
+const sampleConfig: ChannelConfig = {
+  channelId: 'english',
+  meta: {
+    name: '귀가 뚫리는 영어',
+    targetLanguage: 'English',
+    nativeLanguage: 'Korean',
+  },
+  theme: {
+    logo: 'english/logo.png',
+    introSound: 'english/intro.mp3',
+    backgroundStyle: 'gradient',
+    primaryColor: '#FFD700',
+    secondaryColor: '#1E90FF',
+  },
+  colors: {
+    maleText: '#4A90D9',
+    femaleText: '#E91E8C',
+    nativeText: '#FFFFFF',
+    wordMeaning: '#AAAAAA',
+    background: '#000000',
+  },
+  layout: {
+    step3ImageRatio: 0.4,
+    subtitlePosition: 'center',
+    speakerIndicator: 'left',
+  },
+  tts: {
+    provider: 'openai',
+    maleVoice: 'onyx',
+    femaleVoice: 'nova',
+    targetLanguageCode: 'en-US',
+    speed: 1.0,
+  },
+  content: {
+    sentenceCount: 6,
+    repeatCount: 3,
+    difficulty: 'beginner',
+  },
+  uiLabels: {
+    introTitle: '오늘의 학습',
+    // Step titles (for intro and step indicators)
+    step1Title: '전체 흐름 파악 (자막 없이 듣기)',
+    step2Title: '자막으로 내용 이해 하기',
+    step3Title: '3단계 반복 듣기',
+    step4Title: '기적의 순간 (다시 자막 없이 듣기)',
+    // Step descriptions (for intro)
+    step1Desc: '자막 없이 소리에만 집중하며, 상황을 상상해보세요.',
+    step2Desc: '자막과 함께 들으며, 안 들렸던 부분을 확인하세요.',
+    step3Desc: '[느리게-빈칸-빠르게] 반복으로 영어가 들리기 시작해요.',
+    step4Desc: '놀랍게 선명해진 영어를 직접 확인해보세요!',
+    // Step3 phase labels
+    step3PhaseTitle: 'STEP 3 · 반복 훈련',
+    phaseIntro: '🎧 천천히 듣기',
+    phaseTraining: '🧩 빈칸 퀴즈',
+    phaseChallenge: '⚡ 빠르게 듣기',
+    phaseReview: '✨ 마무리',
+  },
+  thumbnail: {
+    channelName: '들려요! English!',
+    characterStyle: 'custom',
+    customCharacters: 'a friendly Caucasian man and a cheerful Korean woman',
+    backgroundColor: 'dark blue',
+  },
+};
+
+// Sample script for preview
+const sampleScript: Script = {
+  channelId: 'english',
+  date: '2026-01-08',
+  category: 'conversation',
+  metadata: {
+    topic: 'Morning Coffee',
+    style: 'casual',
+    title: {
+      target: 'Morning Coffee Chat',
+      native: '아침 커피 대화',
+    },
+  },
+  sentences: [
+    {
+      id: 1,
+      speaker: 'M',
+      target: 'Good morning! Would you like some coffee?',
+      targetBlank: 'Good morning! Would you like some _______?',
+      blankAnswer: 'coffee',
+      native: '좋은 아침이에요! 커피 드실래요?',
+      words: [
+        { word: 'morning', meaning: '아침' },
+        { word: 'coffee', meaning: '커피' },
+      ],
+    },
+    {
+      id: 2,
+      speaker: 'F',
+      target: 'Yes, please. I need my morning caffeine.',
+      targetBlank: 'Yes, please. I need my morning _______.',
+      blankAnswer: 'caffeine',
+      native: '네, 주세요. 아침 카페인이 필요해요.',
+      words: [
+        { word: 'please', meaning: '제발, 부탁해요' },
+        { word: 'caffeine', meaning: '카페인' },
+      ],
+    },
+    {
+      id: 3,
+      speaker: 'M',
+      target: 'How do you take your coffee?',
+      targetBlank: 'How do you _______ your coffee?',
+      blankAnswer: 'take',
+      native: '커피 어떻게 드세요?',
+      words: [
+        { word: 'take', meaning: '(음료를) 마시다' },
+        { word: 'coffee', meaning: '커피' },
+      ],
+    },
+    {
+      id: 4,
+      speaker: 'F',
+      target: 'Just black, no sugar.',
+      targetBlank: 'Just black, no _______.',
+      blankAnswer: 'sugar',
+      native: '그냥 블랙으로요, 설탕 없이요.',
+      words: [
+        { word: 'black', meaning: '블랙 (커피)' },
+        { word: 'sugar', meaning: '설탕' },
+      ],
+    },
+    {
+      id: 5,
+      speaker: 'M',
+      target: "That's the best way to enjoy it.",
+      targetBlank: "That's the best way to _______ it.",
+      blankAnswer: 'enjoy',
+      native: '그게 가장 좋은 방법이죠.',
+      words: [
+        { word: 'best', meaning: '최고의' },
+        { word: 'enjoy', meaning: '즐기다' },
+      ],
+    },
+    {
+      id: 6,
+      speaker: 'F',
+      target: 'I agree. It tastes so much better.',
+      targetBlank: 'I agree. It _______ so much better.',
+      blankAnswer: 'tastes',
+      native: '동의해요. 훨씬 맛있어요.',
+      words: [
+        { word: 'agree', meaning: '동의하다' },
+        { word: 'tastes', meaning: '맛이 나다' },
+      ],
+    },
+  ],
+};
+
+// Sample audio files (mock data for preview - no actual audio)
+const sampleAudioFiles: AudioFile[] = sampleScript.sentences.flatMap((sentence) => [
+  {
+    sentenceId: sentence.id,
+    speaker: sentence.speaker,
+    speed: '0.8x' as const,
+    path: '',
+    duration: 3.5,
+  },
+  {
+    sentenceId: sentence.id,
+    speaker: sentence.speaker,
+    speed: '1.0x' as const,
+    path: '',
+    duration: 3.0,
+  },
+  {
+    sentenceId: sentence.id,
+    speaker: sentence.speaker,
+    speed: '1.2x' as const,
+    path: '',
+    duration: 2.5,
+  },
+]);
+
+// Calculate durations
+const step1Duration = calculateStep1Duration(sampleAudioFiles);
+const step2Duration = calculateStep2Duration(sampleScript.sentences, sampleAudioFiles);
+const step3Duration = calculateStep3Duration(
+  sampleScript.sentences,
+  sampleAudioFiles,
+  sampleConfig.content.repeatCount
+);
+const step4Duration = calculateStep4Duration(sampleAudioFiles);
+
+// 동적 인트로 길이 계산
+const introDuration = calculateIntroDuration(
+  VIRAL_TTS_DURATION,
+  GUIDE_TTS_DURATION,
+  STEP_TTS_DURATIONS,
+  CLOSING_TTS_DURATION
+);
+const totalDuration = calculateTotalDuration(
+  sampleScript.sentences,
+  sampleAudioFiles,
+  sampleConfig.content.repeatCount,
+  VIRAL_TTS_DURATION,
+  GUIDE_TTS_DURATION,
+  STEP_TTS_DURATIONS,
+  CLOSING_TTS_DURATION
+);
 
 export const RemotionRoot: React.FC = () => {
   return (
     <>
+      {/* Full Video - All Steps */}
       <Composition
         id="Main"
-        component={Main}
-        durationInFrames={30 * 60 * 30} // 30분 @ 30fps
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Main as any}
+        durationInFrames={totalDuration}
         fps={30}
         width={1920}
         height={1080}
-        defaultProps={{}}
+        defaultProps={{
+          config: sampleConfig,
+          script: sampleScript,
+          audioFiles: sampleAudioFiles,
+          backgroundImage: 'background.png',
+          thumbnailPath: 'assets/english/thumbnail.png',
+          viralNarrationPath: 'assets/english/intro-viral.mp3',
+          viralNarrationDuration: VIRAL_TTS_DURATION,
+          guideNarrationPath: 'assets/english/intro-narration.mp3',
+          guideNarrationDuration: GUIDE_TTS_DURATION,
+          stepNarrationPaths: [
+            'assets/english/intro-step1.mp3',
+            'assets/english/intro-step2.mp3',
+            'assets/english/intro-step3.mp3',
+            'assets/english/intro-step4.mp3',
+          ],
+          stepNarrationDurations: STEP_TTS_DURATIONS,
+          closingNarrationPath: 'assets/english/intro-closing.mp3',
+          closingNarrationDuration: CLOSING_TTS_DURATION,
+          stepTransitionTtsPaths: [
+            'assets/english/step-transition-1.mp3',
+            'assets/english/step-transition-2.mp3',
+            'assets/english/step-transition-3.mp3',
+            'assets/english/step-transition-4.mp3',
+          ],
+          stepTransitionBellPath: 'assets/english/bell.wav',
+        }}
+      />
+
+      {/* Intro Only - 동적 길이 */}
+      <Composition
+        id="Intro"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Intro as any}
+        durationInFrames={introDuration}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          channelName: sampleConfig.meta.name,
+          primaryColor: sampleConfig.theme.primaryColor,
+          secondaryColor: sampleConfig.theme.secondaryColor,
+          introSoundPath: 'assets/english/intro.mp3',
+          introBackgroundPath: 'assets/english/intro/background.png',
+          thumbnailPath: 'assets/english/thumbnail.png',
+          targetLanguage: sampleConfig.meta.targetLanguage,
+          viralNarrationPath: 'assets/english/intro-viral.mp3',
+          viralNarrationDuration: VIRAL_TTS_DURATION,
+          guideNarrationPath: 'assets/english/intro-narration.mp3',
+          guideNarrationDuration: GUIDE_TTS_DURATION,
+          stepNarrationPaths: [
+            'assets/english/intro-step1.mp3',
+            'assets/english/intro-step2.mp3',
+            'assets/english/intro-step3.mp3',
+            'assets/english/intro-step4.mp3',
+          ],
+          stepNarrationDurations: STEP_TTS_DURATIONS,
+          closingNarrationPath: 'assets/english/intro-closing.mp3',
+          closingNarrationDuration: CLOSING_TTS_DURATION,
+        }}
+      />
+
+      {/* Step 1: 자막 없이 듣기 */}
+      <Composition
+        id="Step1"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Step1 as any}
+        durationInFrames={step1Duration}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          backgroundImage: 'background.png',
+          audioFiles: sampleAudioFiles,
+          title: sampleScript.metadata.title.target,
+        }}
+      />
+
+      {/* Step 2: 문장별 듣기 */}
+      <Composition
+        id="Step2"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Step2 as any}
+        durationInFrames={step2Duration}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          backgroundImage: 'background.png',
+          sentences: sampleScript.sentences,
+          audioFiles: sampleAudioFiles,
+          colors: {
+            maleText: sampleConfig.colors.maleText,
+            femaleText: sampleConfig.colors.femaleText,
+            nativeText: sampleConfig.colors.nativeText,
+          },
+        }}
+      />
+
+      {/* Step 3: 10번씩 반복 듣기 (Interval Training) */}
+      <Composition
+        id="Step3"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Step3 as any}
+        durationInFrames={step3Duration}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          backgroundImage: 'background.png',
+          sentences: sampleScript.sentences,
+          audioFiles: sampleAudioFiles,
+          colors: sampleConfig.colors,
+          repeatCount: sampleConfig.content.repeatCount,
+          imageRatio: sampleConfig.layout.step3ImageRatio,
+          uiLabels: sampleConfig.uiLabels,
+        }}
+      />
+
+      {/* Step 4: 다시 자막 없이 듣기 */}
+      <Composition
+        id="Step4"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Step4 as any}
+        durationInFrames={step4Duration}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          backgroundImage: 'background.png',
+          audioFiles: sampleAudioFiles,
+          title: sampleScript.metadata.title.target,
+        }}
+      />
+
+      {/* Step Transitions (스텝 전환 화면) */}
+      {[1, 2, 3, 4].map((stepNum) => (
+        <Composition
+          key={`StepTransition${stepNum}`}
+          id={`StepTransition${stepNum}`}
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          component={StepTransition as any}
+          durationInFrames={STEP_TRANSITION_DURATION}
+          fps={30}
+          width={1920}
+          height={1080}
+          defaultProps={{
+            stepNumber: stepNum,
+            ttsPath: `assets/english/step-transition-${stepNum}.mp3`,
+            bellSoundPath: 'assets/english/bell.wav',
+          }}
+        />
+      ))}
+
+      {/* Ending (엔딩 화면) */}
+      <Composition
+        id="Ending"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={Ending as any}
+        durationInFrames={ENDING_DURATION}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          backgroundPath: 'assets/english/intro/background.png',
+          targetLanguage: sampleConfig.meta.targetLanguage,
+        }}
       />
     </>
   );

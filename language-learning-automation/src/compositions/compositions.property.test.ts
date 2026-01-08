@@ -5,8 +5,8 @@ import type { AudioFile, SpeedVariant } from '../tts/types';
 import { calculateStep3Duration } from './Step3';
 
 // Arbitrary for generating valid sentences
-const sentenceArbitrary = fc.record({
-  id: fc.uuid(),
+const sentenceArbitrary: fc.Arbitrary<Sentence> = fc.record({
+  id: fc.integer({ min: 1, max: 100 }),
   target: fc.string({ minLength: 1, maxLength: 100 }),
   native: fc.string({ minLength: 1, maxLength: 100 }),
   targetBlank: fc.string({ minLength: 1, maxLength: 100 }),
@@ -21,116 +21,103 @@ const sentenceArbitrary = fc.record({
   ),
 });
 
-// Arbitrary for generating audio files for a sentence
-const audioFilesForSentenceArbitrary = (sentenceId: string): fc.Arbitrary<AudioFile[]> =>
-  fc
-    .tuple(
-      fc.record({
-        sentenceId: fc.constant(sentenceId),
-        speed: fc.constant('0.8x' as SpeedVariant),
-        path: fc.string({ minLength: 1 }),
-        duration: fc.float({ min: 1, max: 10, noNaN: true }),
-      }),
-      fc.record({
-        sentenceId: fc.constant(sentenceId),
-        speed: fc.constant('1.0x' as SpeedVariant),
-        path: fc.string({ minLength: 1 }),
-        duration: fc.float({ min: 1, max: 10, noNaN: true }),
-      }),
-      fc.record({
-        sentenceId: fc.constant(sentenceId),
-        speed: fc.constant('1.2x' as SpeedVariant),
-        path: fc.string({ minLength: 1 }),
-        duration: fc.float({ min: 1, max: 10, noNaN: true }),
-      })
-    )
-    .map(([slow, normal, fast]) => [slow, normal, fast]);
+// Fixed 10-repetition sequence as defined in Step3
+const REPETITION_SEQUENCE: Array<{ speed: SpeedVariant; phase: string; showBlank: boolean }> = [
+  // ① 도입 (0.8x × 2)
+  { speed: '0.8x', phase: 'intro', showBlank: false },
+  { speed: '0.8x', phase: 'intro', showBlank: false },
+  // ② 훈련 (1.0x × 4)
+  { speed: '1.0x', phase: 'training', showBlank: true },
+  { speed: '1.0x', phase: 'training', showBlank: true },
+  { speed: '1.0x', phase: 'training', showBlank: true },
+  { speed: '1.0x', phase: 'training', showBlank: true },
+  // ③ 챌린지 (1.2x × 2)
+  { speed: '1.2x', phase: 'challenge', showBlank: false },
+  { speed: '1.2x', phase: 'challenge', showBlank: false },
+  // ④ 정리 (1.0x × 2)
+  { speed: '1.0x', phase: 'review', showBlank: false },
+  { speed: '1.0x', phase: 'review', showBlank: false },
+];
 
 describe('Property Tests: Interval Training Sequence', () => {
   /**
    * Property 6: Interval Training Sequence
    * Validates: Requirements 5.1, 5.5
    *
-   * For any set of sentences and repeat count:
-   * - Each sentence should be played in the sequence: 0.8x → 1.0x → 1.2x
-   * - This sequence should repeat `repeatCount` times per sentence
-   * - Total plays per sentence = 3 speeds × repeatCount
+   * For any set of sentences:
+   * - Each sentence should be played 10 times following the fixed sequence
+   * - Sequence: 0.8x×2 → 1.0x×4 (blank) → 1.2x×2 → 1.0x×2
    */
-  it('should follow slow → normal → fast sequence for each repetition', () => {
+  it('should follow the fixed 10-repetition sequence for each sentence', () => {
     fc.assert(
-      fc.property(
-        fc.array(sentenceArbitrary, { minLength: 1, maxLength: 5 }),
-        fc.integer({ min: 1, max: 10 }),
-        (sentences, repeatCount) => {
-          // Generate audio files for all sentences
-          const audioFiles: AudioFile[] = [];
-          sentences.forEach((sentence) => {
-            const speeds: SpeedVariant[] = ['0.8x', '1.0x', '1.2x'];
-            speeds.forEach((speed) => {
-              audioFiles.push({
-                sentenceId: sentence.id,
-                speed,
-                path: `/audio/${sentence.id}_${speed}.mp3`,
-                duration: 3,
-              });
+      fc.property(fc.integer({ min: 1, max: 5 }), (numSentences) => {
+        // Create sentences with unique IDs
+        const sentences: Sentence[] = Array.from({ length: numSentences }, (_, i) => ({
+          id: i + 1,
+          target: `Target ${i}`,
+          native: `Native ${i}`,
+          targetBlank: `Target ___ ${i}`,
+          blankAnswer: 'answer',
+          speaker: (i % 2 === 0 ? 'M' : 'F') as 'M' | 'F',
+          words: [{ word: 'word', meaning: 'meaning' }],
+        }));
+
+        // Build sequences for all sentences
+        const allSequences: Array<{
+          sentenceId: number;
+          speed: SpeedVariant;
+          phase: string;
+          showBlank: boolean;
+        }> = [];
+
+        sentences.forEach((sentence) => {
+          REPETITION_SEQUENCE.forEach((config) => {
+            allSequences.push({
+              sentenceId: sentence.id,
+              speed: config.speed,
+              phase: config.phase,
+              showBlank: config.showBlank,
             });
           });
+        });
 
-          // Simulate the sequence building logic from Step3
-          const SPEED_SEQUENCE: SpeedVariant[] = ['0.8x', '1.0x', '1.2x'];
-          const allSequences: Array<{
-            sentenceId: string;
-            speed: SpeedVariant;
-            repetition: number;
-          }> = [];
+        // Property 1: Total sequences = sentences × 10 repetitions
+        expect(allSequences.length).toBe(sentences.length * 10);
 
-          sentences.forEach((sentence) => {
-            for (let rep = 0; rep < repeatCount; rep++) {
-              SPEED_SEQUENCE.forEach((speed) => {
-                allSequences.push({
-                  sentenceId: sentence.id,
-                  speed,
-                  repetition: rep + 1,
-                });
-              });
-            }
-          });
+        // Property 2: Each sentence appears exactly 10 times
+        sentences.forEach((sentence) => {
+          const sentenceSequences = allSequences.filter((s) => s.sentenceId === sentence.id);
+          expect(sentenceSequences.length).toBe(10);
+        });
 
-          // Property 1: Total sequences = sentences × 3 speeds × repeatCount
-          expect(allSequences.length).toBe(sentences.length * 3 * repeatCount);
+        // Property 3: Speed distribution per sentence
+        sentences.forEach((sentence) => {
+          const sentenceSequences = allSequences.filter((s) => s.sentenceId === sentence.id);
+          const speedCounts = {
+            '0.8x': sentenceSequences.filter((s) => s.speed === '0.8x').length,
+            '1.0x': sentenceSequences.filter((s) => s.speed === '1.0x').length,
+            '1.2x': sentenceSequences.filter((s) => s.speed === '1.2x').length,
+          };
+          expect(speedCounts['0.8x']).toBe(2); // intro
+          expect(speedCounts['1.0x']).toBe(6); // training (4) + review (2)
+          expect(speedCounts['1.2x']).toBe(2); // challenge
+        });
 
-          // Property 2: Each sentence appears exactly 3 × repeatCount times
-          sentences.forEach((sentence) => {
-            const sentenceSequences = allSequences.filter((s) => s.sentenceId === sentence.id);
-            expect(sentenceSequences.length).toBe(3 * repeatCount);
-          });
-
-          // Property 3: Speed sequence is always 0.8x → 1.0x → 1.2x within each repetition
-          sentences.forEach((sentence) => {
-            const sentenceSequences = allSequences.filter((s) => s.sentenceId === sentence.id);
-            for (let rep = 1; rep <= repeatCount; rep++) {
-              const repSequences = sentenceSequences.filter((s) => s.repetition === rep);
-              expect(repSequences.map((s) => s.speed)).toEqual(['0.8x', '1.0x', '1.2x']);
-            }
-          });
-
-          return true;
-        }
-      ),
+        return true;
+      }),
       { numRuns: 50 }
     );
   });
 
-  it('should calculate correct total duration based on audio files and repeat count', () => {
+  it('should calculate correct total duration based on audio files', () => {
     fc.assert(
       fc.property(
         fc.integer({ min: 1, max: 3 }),
-        fc.integer({ min: 1, max: 5 }),
         fc.float({ min: 1, max: 5, noNaN: true }),
-        (numSentences, repeatCount, baseDuration) => {
+        (numSentences, baseDuration) => {
           // Create sentences
           const sentences: Sentence[] = Array.from({ length: numSentences }, (_, i) => ({
-            id: `sentence-${i}`,
+            id: i + 1,
             target: `Target ${i}`,
             native: `Native ${i}`,
             targetBlank: `Target ___ ${i}`,
@@ -139,13 +126,14 @@ describe('Property Tests: Interval Training Sequence', () => {
             words: [{ word: 'word', meaning: 'meaning' }],
           }));
 
-          // Create audio files with consistent duration
+          // Create audio files with consistent duration for all speeds
           const audioFiles: AudioFile[] = [];
           sentences.forEach((sentence) => {
             const speeds: SpeedVariant[] = ['0.8x', '1.0x', '1.2x'];
             speeds.forEach((speed) => {
               audioFiles.push({
                 sentenceId: sentence.id,
+                speaker: sentence.speaker,
                 speed,
                 path: `/audio/${sentence.id}_${speed}.mp3`,
                 duration: baseDuration,
@@ -153,12 +141,12 @@ describe('Property Tests: Interval Training Sequence', () => {
             });
           });
 
-          const totalDuration = calculateStep3Duration(sentences, audioFiles, repeatCount);
+          const totalDuration = calculateStep3Duration(sentences, audioFiles, 10);
 
-          // Each audio plays for baseDuration seconds + 0.5s pause (15 frames at 30fps)
-          // Total plays = numSentences × 3 speeds × repeatCount
-          const totalPlays = numSentences * 3 * repeatCount;
-          const expectedFrames = totalPlays * (Math.ceil(baseDuration * 30) + 15);
+          // Each repetition: Math.ceil(baseDuration * 30) + 20 frames
+          // Total plays = numSentences × 10 repetitions
+          const totalPlays = numSentences * 10;
+          const expectedFrames = totalPlays * (Math.ceil(baseDuration * 30) + 20);
 
           expect(totalDuration).toBe(expectedFrames);
 
@@ -169,41 +157,34 @@ describe('Property Tests: Interval Training Sequence', () => {
     );
   });
 
-  it('should show blank during 1.0x speed (normal) only', () => {
+  it('should show blank only during training phase (1.0x × 4)', () => {
     fc.assert(
-      fc.property(
-        fc.array(sentenceArbitrary, { minLength: 1, maxLength: 3 }),
-        fc.integer({ min: 1, max: 3 }),
-        (sentences, repeatCount) => {
-          const SPEED_SEQUENCE: SpeedVariant[] = ['0.8x', '1.0x', '1.2x'];
-          const allSequences: Array<{
-            speed: SpeedVariant;
-            isBlankMode: boolean;
-          }> = [];
+      fc.property(fc.array(sentenceArbitrary, { minLength: 1, maxLength: 3 }), (sentences) => {
+        const allSequences: Array<{
+          phase: string;
+          showBlank: boolean;
+        }> = [];
 
-          sentences.forEach(() => {
-            for (let rep = 0; rep < repeatCount; rep++) {
-              SPEED_SEQUENCE.forEach((speed) => {
-                allSequences.push({
-                  speed,
-                  isBlankMode: speed === '1.0x',
-                });
-              });
-            }
+        sentences.forEach(() => {
+          REPETITION_SEQUENCE.forEach((config) => {
+            allSequences.push({
+              phase: config.phase,
+              showBlank: config.showBlank,
+            });
           });
+        });
 
-          // Property: Blank mode is true only when speed is 1.0x
-          allSequences.forEach((seq) => {
-            if (seq.speed === '1.0x') {
-              expect(seq.isBlankMode).toBe(true);
-            } else {
-              expect(seq.isBlankMode).toBe(false);
-            }
-          });
+        // Property: Blank mode is true only during training phase
+        allSequences.forEach((seq) => {
+          if (seq.phase === 'training') {
+            expect(seq.showBlank).toBe(true);
+          } else {
+            expect(seq.showBlank).toBe(false);
+          }
+        });
 
-          return true;
-        }
-      ),
+        return true;
+      }),
       { numRuns: 30 }
     );
   });

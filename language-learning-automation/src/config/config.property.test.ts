@@ -34,8 +34,9 @@ const channelConfigArb: fc.Arbitrary<ChannelConfig> = fc.record({
     youtubeChannelId: fc.option(fc.string({ minLength: 1, maxLength: 30 }), { nil: undefined }),
   }),
   theme: fc.record({
-    logo: fc.string({ minLength: 1, maxLength: 100 }),
-    introSound: fc.string({ minLength: 1, maxLength: 100 }),
+    logo: fc.option(fc.string({ minLength: 1, maxLength: 100 }), { nil: '' }),
+    introSound: fc.option(fc.string({ minLength: 1, maxLength: 100 }), { nil: '' }),
+    introBackground: fc.option(fc.string({ minLength: 1, maxLength: 100 }), { nil: undefined }),
     backgroundStyle: fc.string({ minLength: 1, maxLength: 30 }),
     primaryColor: hexColorArb,
     secondaryColor: hexColorArb,
@@ -53,7 +54,9 @@ const channelConfigArb: fc.Arbitrary<ChannelConfig> = fc.record({
     speakerIndicator: fc.constantFrom('left', 'none') as fc.Arbitrary<'left' | 'none'>,
   }),
   tts: fc.record({
-    provider: fc.constantFrom('openai', 'google') as fc.Arbitrary<'openai' | 'google'>,
+    provider: fc.constantFrom('openai', 'google', 'edge') as fc.Arbitrary<
+      'openai' | 'google' | 'edge'
+    >,
     maleVoice: fc.string({ minLength: 1, maxLength: 30 }),
     femaleVoice: fc.string({ minLength: 1, maxLength: 30 }),
     targetLanguageCode: fc.string({ minLength: 1, maxLength: 10 }),
@@ -65,6 +68,18 @@ const channelConfigArb: fc.Arbitrary<ChannelConfig> = fc.record({
     difficulty: fc.constantFrom('beginner', 'intermediate', 'advanced') as fc.Arbitrary<
       'beginner' | 'intermediate' | 'advanced'
     >,
+  }),
+  uiLabels: fc.record({
+    introTitle: fc.string({ minLength: 1, maxLength: 50 }),
+    step1: fc.string({ minLength: 1, maxLength: 30 }),
+    step2: fc.string({ minLength: 1, maxLength: 30 }),
+    step3: fc.string({ minLength: 1, maxLength: 30 }),
+    step4: fc.string({ minLength: 1, maxLength: 30 }),
+    step3Title: fc.string({ minLength: 1, maxLength: 50 }),
+    phaseIntro: fc.string({ minLength: 1, maxLength: 30 }),
+    phaseTraining: fc.string({ minLength: 1, maxLength: 30 }),
+    phaseChallenge: fc.string({ minLength: 1, maxLength: 30 }),
+    phaseReview: fc.string({ minLength: 1, maxLength: 30 }),
   }),
 });
 
@@ -115,7 +130,7 @@ describe('Property Tests: Config Validation', () => {
 
   // Required nested fields
   const requiredMetaFields = ['name', 'targetLanguage', 'nativeLanguage'] as const;
-  const requiredThemeFields = ['logo', 'introSound'] as const;
+  // logo and introSound are now optional
   const requiredColorsFields = ['maleText', 'femaleText', 'nativeText'] as const;
   const requiredTtsFields = ['provider', 'maleVoice', 'femaleVoice', 'targetLanguageCode'] as const;
   const requiredContentFields = ['sentenceCount', 'repeatCount'] as const;
@@ -129,8 +144,7 @@ describe('Property Tests: Config Validation', () => {
       nativeLanguage: 'Korean',
     },
     theme: {
-      logo: 'logo.png',
-      introSound: 'intro.mp3',
+      // logo and introSound are optional now
     },
     colors: {
       maleText: '#0000FF',
@@ -187,21 +201,7 @@ describe('Property Tests: Config Validation', () => {
     );
   });
 
-  it('Property 2: removing any required theme field should fail validation', () => {
-    fc.assert(
-      fc.property(fc.constantFrom(...requiredThemeFields), (fieldToRemove) => {
-        const invalidConfig = {
-          ...baseValidConfig,
-          theme: { ...baseValidConfig.theme },
-        };
-        delete (invalidConfig.theme as Record<string, unknown>)[fieldToRemove];
-
-        const result = channelConfigSchema.safeParse(invalidConfig);
-        expect(result.success).toBe(false);
-      }),
-      { numRuns: 100 }
-    );
-  });
+  // theme fields are now all optional, so no test needed
 
   it('Property 2: removing any required colors field should fail validation', () => {
     fc.assert(

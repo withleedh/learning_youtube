@@ -13,8 +13,9 @@ export const metaSchema = z.object({
 
 // Theme section schema
 export const themeSchema = z.object({
-  logo: z.string().min(1, 'Logo path is required'),
-  introSound: z.string().min(1, 'Intro sound path is required'),
+  logo: z.string().optional().default(''), // 로고 이미지 경로 (없으면 텍스트 폴백)
+  introSound: z.string().optional().default(''), // 인트로 사운드 경로 (없으면 무음)
+  introBackground: z.string().optional(), // 인트로 배경 이미지 경로
   backgroundStyle: z.string().optional().default('illustration'),
   primaryColor: hexColorSchema.optional().default('#87CEEB'),
   secondaryColor: hexColorSchema.optional().default('#FF69B4'),
@@ -38,7 +39,7 @@ export const layoutSchema = z.object({
 
 // TTS section schema
 export const ttsSchema = z.object({
-  provider: z.enum(['openai', 'google']),
+  provider: z.enum(['openai', 'google', 'edge']),
   maleVoice: z.string().min(1, 'Male voice is required'),
   femaleVoice: z.string().min(1, 'Female voice is required'),
   targetLanguageCode: z.string().min(1, 'Target language code is required'),
@@ -52,6 +53,40 @@ export const contentSchema = z.object({
   difficulty: z.enum(['beginner', 'intermediate', 'advanced']).optional().default('intermediate'),
 });
 
+// UI Labels section schema (for multi-language support)
+export const uiLabelsSchema = z.object({
+  // Intro labels
+  introTitle: z.string().optional().default('오늘의 학습'),
+  // Step titles (used in intro and step indicators)
+  step1Title: z.string().optional().default('전체 흐름 파악 (자막 없이 듣기)'),
+  step2Title: z.string().optional().default('자막으로 내용 이해 하기'),
+  step3Title: z.string().optional().default('3단계 반복 듣기'),
+  step4Title: z.string().optional().default('기적의 순간 (다시 자막 없이 듣기)'),
+  // Step descriptions (for intro)
+  step1Desc: z.string().optional().default('자막 없이 소리에만 집중하며, 상황을 상상해보세요.'),
+  step2Desc: z.string().optional().default('자막과 함께 들으며, 안 들렸던 부분을 확인하세요.'),
+  step3Desc: z.string().optional().default('[느리게-빈칸-빠르게] 반복으로 영어가 들리기 시작해요.'),
+  step4Desc: z.string().optional().default('놀랍게 선명해진 영어를 직접 확인해보세요!'),
+  // Step3 phase labels
+  step3PhaseTitle: z.string().optional().default('STEP 3 · 반복 훈련'),
+  phaseIntro: z.string().optional().default('🎧 천천히 듣기'),
+  phaseTraining: z.string().optional().default('🧩 빈칸 퀴즈'),
+  phaseChallenge: z.string().optional().default('⚡ 빠르게 듣기'),
+  phaseReview: z.string().optional().default('✨ 마무리'),
+});
+
+// Thumbnail section schema
+export const thumbnailSchema = z.object({
+  /** 썸네일에 표시할 채널명 (meta.name과 다를 수 있음) */
+  channelName: z.string().optional(),
+  /** 캐릭터 스타일: animals, humans, custom */
+  characterStyle: z.enum(['animals', 'humans', 'custom']).optional().default('animals'),
+  /** 커스텀 캐릭터 설명 */
+  customCharacters: z.string().optional(),
+  /** 배경색 */
+  backgroundColor: z.string().optional().default('dark blue'),
+});
+
 // Full ChannelConfig schema
 export const channelConfigSchema = z.object({
   channelId: z.string().regex(/^[a-z_]+$/, 'Channel ID must be lowercase with underscores only'),
@@ -61,6 +96,8 @@ export const channelConfigSchema = z.object({
   layout: layoutSchema.optional().default({}),
   tts: ttsSchema,
   content: contentSchema,
+  uiLabels: uiLabelsSchema.optional().default({}),
+  thumbnail: thumbnailSchema.optional().default({}),
 });
 
 // TypeScript types inferred from Zod schemas
@@ -70,4 +107,6 @@ export type Colors = z.infer<typeof colorsSchema>;
 export type Layout = z.infer<typeof layoutSchema>;
 export type TTS = z.infer<typeof ttsSchema>;
 export type Content = z.infer<typeof contentSchema>;
+export type UILabels = z.infer<typeof uiLabelsSchema>;
+export type Thumbnail = z.infer<typeof thumbnailSchema>;
 export type ChannelConfig = z.infer<typeof channelConfigSchema>;
