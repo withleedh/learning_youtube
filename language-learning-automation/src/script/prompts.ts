@@ -1,0 +1,146 @@
+import type { Category } from './types';
+import type { ChannelConfig } from '../config/types';
+
+// Category descriptions for prompt context
+const categoryDescriptions: Record<Category, string> = {
+  story: `일상 속 에피소드를 담은 짧은 이야기. 자연스러운 문장 흐름과 감정 표현에 초점.
+예시 주제: 첫 출근 날, 친구와의 재회, 우연한 만남, 감동적인 순간`,
+
+  conversation: `남녀가 주고받는 실전 대화. 질문과 응답 구조, 회화 패턴에 초점.
+예시 주제: 카페에서 주문, 길 묻기, 쇼핑, 약속 잡기`,
+
+  news: `간결하고 정보 중심의 뉴스 문장. 정확한 듣기와 어휘 확장에 초점.
+예시 주제: 날씨 예보, 교통 정보, 지역 소식, 간단한 사건 보도`,
+
+  announcement: `광고, 공공 방송, 안내문. 영어로 된 정보 캐치 능력에 초점.
+예시 주제: 백화점 세일 안내, 공항 안내 방송, 엘리베이터 안내, 매장 안내`,
+
+  travel_business: `여행과 업무 상황에서 자주 쓰이는 실용 영어.
+예시 주제: 호텔 체크인, 비행기 탑승, 회의 일정, 이메일 작성`,
+
+  lesson: `다양한 상식을 설명하는 영어 문장. 지식 기반의 설명형 영어에 초점.
+예시 주제: 과학 상식, 역사 이야기, 문화 설명, 생활 팁`,
+
+  fairytale: `명작 동화를 들으며 교훈과 함께 영어 표현을 익히는 편안한 청취.
+예시 주제: 이솝 우화, 전래 동화, 교훈적인 이야기`,
+};
+
+/**
+ * Generate the main prompt for script generation
+ */
+export function generateScriptPrompt(
+  config: ChannelConfig,
+  category: Category,
+  topic?: string
+): string {
+  const { meta, content } = config;
+  const categoryDesc = categoryDescriptions[category];
+
+  return `You are an expert language learning content creator. Generate a script for a ${meta.targetLanguage} learning video targeting ${meta.nativeLanguage} speakers.
+
+## Category: ${category}
+${categoryDesc}
+
+## Requirements:
+1. Generate exactly ${content.sentenceCount} sentences
+2. Alternate speakers between M (male) and F (female), starting with M
+3. Difficulty level: ${content.difficulty}
+4. Each sentence should be 10-20 words in ${meta.targetLanguage}
+5. Provide natural ${meta.nativeLanguage} translations (not word-for-word)
+6. For each sentence, identify ONE key vocabulary word as the "blank word"
+7. Create a version of the sentence with that word replaced by "_______"
+8. Provide word-by-word meanings for important vocabulary (3-5 words per sentence)
+
+${topic ? `## Specific Topic: ${topic}` : '## Topic: Choose an engaging topic that fits the category'}
+
+## Output Format (JSON):
+{
+  "metadata": {
+    "topic": "specific topic description",
+    "style": "casual/formal/narrative",
+    "title": {
+      "target": "Title in ${meta.targetLanguage}",
+      "native": "Title in ${meta.nativeLanguage}"
+    }
+  },
+  "sentences": [
+    {
+      "id": 1,
+      "speaker": "M",
+      "target": "Full sentence in ${meta.targetLanguage}",
+      "targetBlank": "Sentence with _______ replacing the key word",
+      "blankAnswer": "the key word that was replaced",
+      "native": "Natural translation in ${meta.nativeLanguage}",
+      "words": [
+        { "word": "vocabulary", "meaning": "뜻" },
+        { "word": "word2", "meaning": "뜻2" }
+      ]
+    }
+  ]
+}
+
+## Important:
+- The blankAnswer MUST appear in the target sentence
+- The targetBlank MUST contain exactly "_______" (7 underscores) where blankAnswer was
+- Words array should include the blankAnswer and other important vocabulary
+- Make the conversation natural and engaging
+- Ensure proper grammar and natural expressions
+
+Generate the JSON output only, no additional text.`;
+}
+
+/**
+ * Generate a prompt for regenerating a specific sentence
+ */
+export function generateSentencePrompt(
+  config: ChannelConfig,
+  sentenceId: number,
+  speaker: 'M' | 'F',
+  context: string
+): string {
+  const { meta, content } = config;
+
+  return `Generate a single ${meta.targetLanguage} sentence for a language learning video.
+
+## Context:
+${context}
+
+## Requirements:
+- Sentence ID: ${sentenceId}
+- Speaker: ${speaker === 'M' ? 'Male' : 'Female'}
+- Difficulty: ${content.difficulty}
+- Length: 10-20 words
+- Include natural ${meta.nativeLanguage} translation
+- Identify one key vocabulary word as blank word
+- Provide 3-5 word meanings
+
+## Output Format (JSON):
+{
+  "id": ${sentenceId},
+  "speaker": "${speaker}",
+  "target": "Full sentence",
+  "targetBlank": "Sentence with _______",
+  "blankAnswer": "key word",
+  "native": "Translation",
+  "words": [{ "word": "vocab", "meaning": "뜻" }]
+}
+
+Generate JSON only.`;
+}
+
+/**
+ * Get category for a given day of week
+ */
+export function getCategoryForDay(date: Date): Category {
+  const dayOfWeek = date.getDay();
+  const categoryMap: Record<number, Category> = {
+    0: 'fairytale', // Sunday
+    1: 'story', // Monday
+    2: 'conversation', // Tuesday
+    3: 'news', // Wednesday
+    4: 'announcement', // Thursday
+    5: 'travel_business', // Friday
+    6: 'lesson', // Saturday
+  };
+  return categoryMap[dayOfWeek];
+}

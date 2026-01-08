@@ -1,0 +1,87 @@
+{
+  "channelId": "english",
+  "date": "2026-01-08",
+  "category": "conversation",
+  "metadata": {
+    "topic": "Morning Coffee",
+    "style": "casual",
+    "title": {
+      "target": "Morning Coffee Chat",
+      "native": "아침 커피 대화"
+    }
+  },
+  "sentences": [
+    {
+      "id": 1,
+      "speaker": "M",
+      "target": "Good morning! Would you like some coffee?",
+      "targetBlank": "Good morning! Would you like some _______?",
+      "blankAnswer": "coffee",
+      "native": "좋은 아침이에요! 커피 드실래요?",
+      "words": [
+        { "word": "morning", "meaning": "아침" },
+        { "word": "coffee", "meaning": "커피" }
+      ]
+    },
+    {
+      "id": 2,
+      "speaker": "F",
+      "target": "Yes, please. I need my morning caffeine.",
+      "targetBlank": "Yes, please. I need my morning _______.",
+      "blankAnswer": "caffeine",
+      "native": "네, 주세요. 아침 카페인이 필요해요.",
+      "words": [
+        { "word": "please", "meaning": "제발, 부탁해요" },
+        { "word": "caffeine", "meaning": "카페인" }
+      ]
+    },
+    {
+      "id": 3,
+      "speaker": "M",
+      "target": "How do you take your coffee?",
+      "targetBlank": "How do you _______ your coffee?",
+      "blankAnswer": "take",
+      "native": "커피 어떻게 드세요?",
+      "words": [
+        { "word": "take", "meaning": "(음료를) 마시다" },
+        { "word": "coffee", "meaning": "커피" }
+      ]
+    },
+    {
+      "id": 4,
+      "speaker": "F",
+      "target": "Just black, no sugar.",
+      "targetBlank": "Just black, no _______.",
+      "blankAnswer": "sugar",
+      "native": "그냥 블랙으로요, 설탕 없이요.",
+      "words": [
+        { "word": "black", "meaning": "블랙 (커피)" },
+        { "word": "sugar", "meaning": "설탕" }
+      ]
+    },
+    {
+      "id": 5,
+      "speaker": "M",
+      "target": "That's the best way to enjoy it.",
+      "targetBlank": "That's the best way to _______ it.",
+      "blankAnswer": "enjoy",
+      "native": "그게 가장 좋은 방법이죠.",
+      "words": [
+        { "word": "best", "meaning": "최고의" },
+        { "word": "enjoy", "meaning": "즐기다" }
+      ]
+    },
+    {
+      "id": 6,
+      "speaker": "F",
+      "target": "I agree. It tastes so much better.",
+      "targetBlank": "I agree. It _______ so much better.",
+      "blankAnswer": "tastes",
+      "native": "동의해요. 훨씬 맛있어요.",
+      "words": [
+        { "word": "agree", "meaning": "동의하다" },
+        { "word": "tastes", "meaning": "맛이 나다" }
+      ]
+    }
+  ]
+}
