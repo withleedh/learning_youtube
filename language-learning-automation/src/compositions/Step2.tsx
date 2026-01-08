@@ -33,7 +33,7 @@ export const Step2: React.FC<Step2Props> = ({
   const sentenceSequences = sentences.map((sentence) => {
     const audio = normalSpeedAudios.find((af) => af.sentenceId === sentence.id);
     const startFrame = cumulativeFrame;
-    const durationFrames = audio ? Math.ceil(audio.duration * 30) + 30 : 90; // Add buffer
+    const durationFrames = audio ? Math.ceil(audio.duration * 30) + 90 : 150; // Add 3 second buffer
     cumulativeFrame += durationFrames;
     return { sentence, audio, startFrame, durationFrames };
   });
@@ -149,7 +149,7 @@ export function calculateStep2Duration(sentences: Sentence[], audioFiles: AudioF
 
   sentences.forEach((sentence) => {
     const audio = normalSpeedAudios.find((af) => af.sentenceId === sentence.id);
-    const durationFrames = audio ? Math.ceil(audio.duration * 30) + 30 : 90;
+    const durationFrames = audio ? Math.ceil(audio.duration * 30) + 90 : 150; // Add 3 second buffer
     totalFrames += durationFrames;
   });
 

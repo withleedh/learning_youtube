@@ -1,38 +1,51 @@
 import 'dotenv/config';
-import { synthesizeWithGoogle, GOOGLE_VOICES } from '../src/tts/google';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { generateAllSpeedsWithGoogle } from '../src/tts/google';
 
 async function testGoogleTTS() {
-  console.log('🔊 Testing Google Cloud TTS API...\n');
+  console.log('🎙️ Testing Google Cloud TTS with Studio voices...\n');
 
-  const testText = 'Good morning! Would you like some coffee?';
-  const outputDir = path.join(process.cwd(), 'output', 'test-tts');
+  const outputDir = path.join(process.cwd(), 'output', 'tts-test');
+  await fs.mkdir(outputDir, { recursive: true });
 
-  try {
-    // Ensure output directory exists
-    await fs.mkdir(outputDir, { recursive: true });
+  const testSentences = [
+    { id: 1, speaker: 'M' as const, text: 'Good morning! Would you like some coffee?' },
+    { id: 2, speaker: 'F' as const, text: 'Yes, please. I need my morning caffeine.' },
+  ];
 
-    console.log(`Text: "${testText}"`);
-    console.log(`Voice: ${GOOGLE_VOICES.male}`);
-    console.log('Calling Google TTS API...\n');
+  const voices = {
+    M: { name: 'en-US-Studio-M', gender: 'MALE' as const },
+    F: { name: 'en-US-Studio-O', gender: 'FEMALE' as const },
+  };
 
-    const audioBuffer = await synthesizeWithGoogle(
-      testText,
+  for (const sentence of testSentences) {
+    const voice = voices[sentence.speaker];
+    console.log(`📝 Generating: "${sentence.text}"`);
+    console.log(`   Voice: ${voice.name} (${voice.gender})`);
+
+    const results = await generateAllSpeedsWithGoogle(
+      sentence.text,
       'en-US',
-      GOOGLE_VOICES.male,
-      'MALE',
-      1.0
+      voice.name,
+      voice.gender,
+      outputDir,
+      sentence.id,
+      sentence.speaker
     );
 
-    const outputPath = path.join(outputDir, 'test-google-tts.mp3');
-    await fs.writeFile(outputPath, audioBuffer);
-
-    console.log(`✅ Success! Audio saved to: ${outputPath}`);
-    console.log(`   File size: ${audioBuffer.length} bytes`);
-  } catch (error) {
-    console.error('❌ Error:', error);
+    for (const result of results) {
+      if (result.success && result.audioFile) {
+        console.log(`   ✅ ${result.audioFile.speed}: ${path.basename(result.audioFile.path)}`);
+      } else {
+        console.log(`   ❌ Failed: ${result.error}`);
+      }
+    }
+    console.log();
   }
+
+  console.log(`\n📁 Output directory: ${outputDir}`);
+  console.log('🎧 Listen to the generated files to compare quality!');
 }
 
-testGoogleTTS();
+testGoogleTTS().catch(console.error);

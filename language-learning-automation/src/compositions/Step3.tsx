@@ -90,7 +90,8 @@ export const Step3: React.FC<Step3Props> = ({
       );
       const startFrame = cumulativeFrame;
       const baseDuration = audio ? audio.duration : 3;
-      const durationFrames = Math.ceil(baseDuration * 30) + 20;
+      // 오디오 길이 + 3초 여유 (읽고 생각할 시간)
+      const durationFrames = Math.ceil((baseDuration + 3) * 30);
       cumulativeFrame += durationFrames;
 
       allSequences.push({
@@ -215,7 +216,13 @@ const SentenceDisplay: React.FC<{
   return (
     <AbsoluteFill>
       {/* Audio */}
-      {audio && audio.path && <Audio src={staticFile(audio.path)} volume={1} />}
+      {audio && audio.path ? (
+        <Audio src={staticFile(audio.path)} volume={1} />
+      ) : (
+        <div style={{ position: 'absolute', top: 10, left: 10, color: 'red', fontSize: 12 }}>
+          Missing audio: sentence {sentence.id}, speed {config.speed}
+        </div>
+      )}
 
       {/* Main Content - 모바일 가독성 최적화 */}
       <div
@@ -403,7 +410,8 @@ export function calculateStep3Duration(
         (af) => af.sentenceId === sentence.id && af.speed === config.speed
       );
       const baseDuration = audio ? audio.duration : 3;
-      totalFrames += Math.ceil(baseDuration * 30) + 20;
+      // 오디오 길이 + 3초 여유 (읽고 생각할 시간)
+      totalFrames += Math.ceil((baseDuration + 3) * 30);
     });
   });
 

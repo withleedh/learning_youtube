@@ -1,6 +1,6 @@
 import { Composition } from 'remotion';
 import { Intro, calculateIntroDuration } from './compositions/Intro';
-import { Main, calculateTotalDuration } from './compositions/Main';
+import { Main, calculateTotalDuration, type MainProps } from './compositions/Main';
 import { Step1, calculateStep1Duration } from './compositions/Step1';
 import { Step2, calculateStep2Duration } from './compositions/Step2';
 import { Step3, calculateStep3Duration } from './compositions/Step3';
@@ -230,6 +230,22 @@ const totalDuration = calculateTotalDuration(
   CLOSING_TTS_DURATION
 );
 
+// calculateMetadata function for Main composition (외부로 추출하여 ESLint prop-types 우회)
+const calculateMainMetadata = ({ props }: { props: MainProps }) => {
+  const actualDuration = calculateTotalDuration(
+    props.script.sentences,
+    props.audioFiles,
+    props.config.content.repeatCount,
+    props.viralNarrationDuration,
+    props.guideNarrationDuration,
+    props.stepNarrationDurations,
+    props.closingNarrationDuration
+  );
+  return {
+    durationInFrames: actualDuration,
+  };
+};
+
 export const RemotionRoot: React.FC = () => {
   return (
     <>
@@ -269,6 +285,7 @@ export const RemotionRoot: React.FC = () => {
           ],
           stepTransitionBellPath: 'assets/english/bell.wav',
         }}
+        calculateMetadata={calculateMainMetadata}
       />
 
       {/* Intro Only - 동적 길이 */}

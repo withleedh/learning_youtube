@@ -4,6 +4,7 @@ import path from 'path';
 import { scriptSchema, type Script, type Category } from './types';
 import type { ChannelConfig } from '../config/types';
 import { generateScriptPrompt, getCategoryForDay } from './prompts';
+import { selectTimlyTopic } from './topic-selector';
 
 // Initialize Gemini client
 function getGeminiClient() {
@@ -23,13 +24,21 @@ export async function generateScript(
   topic?: string
 ): Promise<Script> {
   const genAI = getGeminiClient();
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' });
 
   // Use provided category or get from current day
   const scriptCategory = category || getCategoryForDay(new Date());
 
+  // If no topic provided, let AI select a timely topic
+  let selectedTopic = topic;
+  if (!selectedTopic) {
+    console.log('🤖 AI가 시의성 있는 주제를 선정 중...');
+    selectedTopic = await selectTimlyTopic(scriptCategory);
+    console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
+  }
+
   // Generate prompt
-  const prompt = generateScriptPrompt(config, scriptCategory, topic);
+  const prompt = generateScriptPrompt(config, scriptCategory, selectedTopic);
 
   // Call Gemini API
   const result = await model.generateContent(prompt);

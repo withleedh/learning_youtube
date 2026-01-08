@@ -24,7 +24,7 @@ export const Step1: React.FC<Step1Props> = ({
   const audioSequences = normalSpeedAudios.map((audio, _index) => {
     const startFrame = cumulativeFrame;
     const durationFrames = Math.ceil(audio.duration * 30); // 30fps
-    cumulativeFrame += durationFrames + 15; // Add small gap between sentences
+    cumulativeFrame += durationFrames + 60; // Add 2 second gap between sentences
     return { audio, startFrame, durationFrames };
   });
 
@@ -96,6 +96,6 @@ export const Step1: React.FC<Step1Props> = ({
 export function calculateStep1Duration(audioFiles: AudioFile[]): number {
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
   const totalDuration = normalSpeedAudios.reduce((sum, af) => sum + af.duration, 0);
-  const gaps = (normalSpeedAudios.length - 1) * 0.5; // 0.5 second gaps
+  const gaps = (normalSpeedAudios.length - 1) * 2; // 2 second gaps
   return Math.ceil((totalDuration + gaps) * 30); // Convert to frames at 30fps
 }

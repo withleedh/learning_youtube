@@ -1,0 +1,71 @@
+{
+  "channelId": "english_korean",
+
+  "meta": {
+    "name": "Listen Up! Korean!",
+    "targetLanguage": "Korean",
+    "nativeLanguage": "English",
+    "youtubeChannelId": "UC_XXXXX"
+  },
+
+  "theme": {
+    "logo": "assets/logo.png",
+    "introSound": "assets/intro.mp3",
+    "introBackground": "assets/intro/background.png",
+    "backgroundStyle": "illustration",
+    "primaryColor": "#87CEEB",
+    "secondaryColor": "#FF69B4"
+  },
+
+  "colors": {
+    "maleText": "#87CEEB",
+    "femaleText": "#FF69B4",
+    "nativeText": "#FFFFFF",
+    "wordMeaning": "#888888",
+    "background": "#000000"
+  },
+
+  "layout": {
+    "step3ImageRatio": 0.35,
+    "subtitlePosition": "center",
+    "speakerIndicator": "left"
+  },
+
+  "tts": {
+    "provider": "edge",
+    "maleVoice": "ko-KR-InJoonNeural",
+    "femaleVoice": "ko-KR-SunHiNeural",
+    "targetLanguageCode": "ko-KR",
+    "speed": 1.0
+  },
+
+  "content": {
+    "sentenceCount": 20,
+    "repeatCount": 10,
+    "difficulty": "intermediate"
+  },
+
+  "uiLabels": {
+    "introTitle": "Today's Lesson",
+    "step1Title": "Get the Big Picture (Listen Without Subtitles)",
+    "step2Title": "Understand with Subtitles",
+    "step3Title": "3-Phase Repetition Training",
+    "step4Title": "The Magic Moment (Listen Again Without Subtitles)",
+    "step1Desc": "Focus only on the sounds without subtitles. Imagine the situation.",
+    "step2Desc": "Listen with subtitles and check the parts you missed.",
+    "step3Desc": "[Slow-Fill in the Blank-Fast] repetition helps Korean start to click.",
+    "step4Desc": "Experience how much clearer Korean sounds now!",
+    "step3PhaseTitle": "STEP 3 · Repetition Training",
+    "phaseIntro": "🎧 Listen Slowly",
+    "phaseTraining": "🧩 Fill in the Blank",
+    "phaseChallenge": "⚡ Listen Fast",
+    "phaseReview": "✨ Review"
+  },
+
+  "thumbnail": {
+    "channelName": "Listen Up! Korean!",
+    "characterStyle": "custom",
+    "customCharacters": "a friendly American man and a cheerful Korean woman happily conversing and learning Korean together",
+    "backgroundColor": "dark blue"
+  }
+}

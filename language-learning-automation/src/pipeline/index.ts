@@ -22,6 +22,8 @@ export interface PipelineOptions {
   skipIntro?: boolean;
   /** Skip background image generation */
   skipImage?: boolean;
+  /** Auto-render video after pipeline completes */
+  autoRender?: boolean;
 }
 
 export interface PipelineResult {
@@ -50,6 +52,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     useSampleScript = false,
     skipIntro = false,
     skipImage = false,
+    autoRender = false,
   } = options;
 
   console.log(`\n🚀 Starting pipeline for channel: ${channelId}`);
@@ -60,9 +63,9 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     const config = await loadConfig(channelId);
     console.log(`   ✓ Loaded config for "${config.meta.name}"`);
 
-    // Step 1.5: Check and generate intro assets if needed
+    // Step 1.5: Check and generate all required assets if needed
     if (!skipIntro) {
-      await ensureIntroAssets(config);
+      await ensureChannelAssets(config);
     }
 
     // Step 2: Generate or load script
@@ -76,9 +79,12 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       console.log(`   ✓ Generated script: "${script.metadata.title.target}"`);
     }
 
-    // Step 3: Setup output directory
-    const dateStr = new Date().toISOString().split('T')[0];
-    const outputDir = options.outputDir || path.join(DEFAULT_OUTPUT_DIR, channelId, dateStr);
+    // Step 3: Setup output directory (날짜 + 타임스탬프로 고유 폴더 생성)
+    const now = new Date();
+    const dateStr = now.toISOString().split('T')[0]; // 2026-01-08
+    const timeStr = now.toTimeString().split(' ')[0].replace(/:/g, ''); // 153045
+    const folderName = `${dateStr}_${timeStr}`; // 2026-01-08_153045
+    const outputDir = options.outputDir || path.join(DEFAULT_OUTPUT_DIR, channelId, folderName);
     await fs.mkdir(outputDir, { recursive: true });
     const audioDir = path.join(outputDir, 'audio');
     await fs.mkdir(audioDir, { recursive: true });
@@ -117,8 +123,23 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       console.log(`   ✓ Generated ${audioFiles.length} audio files`);
     }
 
+    // Save audio manifest
+    const manifestPath = path.join(audioDir, 'manifest.json');
+    await fs.writeFile(manifestPath, JSON.stringify(audioFiles, null, 2));
+    console.log(`   ✓ Saved audio manifest: ${manifestPath}`);
+
+    // Shared assets are already set up by ensureChannelAssets
+    console.log('📦 Shared assets ready');
+
     console.log(`\n✅ Pipeline completed for ${channelId}`);
     console.log(`   Output directory: ${outputDir}`);
+
+    // Auto-render video if requested
+    if (autoRender) {
+      console.log(`\n🎬 Auto-rendering video...`);
+      const folderName = path.basename(outputDir);
+      await renderVideo(channelId, folderName, outputDir);
+    }
 
     return {
       success: true,
@@ -146,121 +167,286 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
 }
 
 /**
- * Ensure intro assets exist for a channel, generate if missing
+ * Ensure all required assets exist for a channel in output/{channelId}/assets/
+ * Generate missing assets automatically
  */
-async function ensureIntroAssets(config: ChannelConfig): Promise<void> {
-  const assetsDir = path.join(process.cwd(), 'public', 'assets', config.channelId);
+async function ensureChannelAssets(config: ChannelConfig): Promise<void> {
+  const channelOutputDir = path.join(DEFAULT_OUTPUT_DIR, config.channelId);
+  const assetsDir = path.join(channelOutputDir, 'assets');
   const introDir = path.join(assetsDir, 'intro');
-  const manifestPath = path.join(introDir, 'manifest.json');
 
-  // Check if intro assets already exist
-  try {
-    await fs.access(manifestPath);
-    console.log('🎨 Intro assets already exist, skipping generation');
+  await fs.mkdir(assetsDir, { recursive: true });
+  await fs.mkdir(introDir, { recursive: true });
+
+  console.log('📦 Checking required assets...');
+
+  // Required assets list
+  const requiredAssets = [
+    'intro.mp3', // background music (shared across channels)
+    'intro-viral.mp3',
+    'intro-narration.mp3',
+    'intro-step1.mp3',
+    'intro-step2.mp3',
+    'intro-step3.mp3',
+    'intro-step4.mp3',
+    'intro-closing.mp3',
+    'step-transition-1.mp3',
+    'step-transition-2.mp3',
+    'step-transition-3.mp3',
+    'step-transition-4.mp3',
+    'bell.wav',
+    'intro/background.png',
+    'thumbnail.png',
+  ];
+
+  // Check which assets are missing
+  const missingAssets: string[] = [];
+  for (const asset of requiredAssets) {
+    const assetPath = path.join(assetsDir, asset);
+    try {
+      await fs.access(assetPath);
+    } catch {
+      missingAssets.push(asset);
+    }
+  }
+
+  if (missingAssets.length === 0) {
+    console.log('   ✓ All required assets exist');
     return;
-  } catch {
-    // Assets don't exist, need to generate
   }
 
-  // Check for required TTS files
-  const viralTtsPath = path.join(assetsDir, 'intro-viral.mp3');
-  const guideTtsPath = path.join(assetsDir, 'intro-narration.mp3');
+  console.log(`   ⚠️ Missing ${missingAssets.length} assets, generating...`);
 
-  let needViralTts = false;
-  let needGuideTts = false;
-
-  try {
-    await fs.access(viralTtsPath);
-  } catch {
-    needViralTts = true;
+  // Generate missing TTS assets (exclude intro.mp3 which is music, not TTS)
+  const ttsAssets = missingAssets.filter((a) => a.endsWith('.mp3') && a !== 'intro.mp3');
+  if (ttsAssets.length > 0) {
+    await generateAllTTSAssets(config, assetsDir, ttsAssets);
   }
 
-  try {
-    await fs.access(guideTtsPath);
-  } catch {
-    needGuideTts = true;
+  // Copy intro.mp3 (background music) from english channel if missing
+  if (missingAssets.includes('intro.mp3')) {
+    const englishIntroPath = path.join(DEFAULT_OUTPUT_DIR, 'english', 'assets', 'intro.mp3');
+    const publicIntroPath = path.join(process.cwd(), 'public', 'assets', 'english', 'intro.mp3');
+    const destIntroPath = path.join(assetsDir, 'intro.mp3');
+
+    try {
+      await fs.access(englishIntroPath);
+      await fs.copyFile(englishIntroPath, destIntroPath);
+      console.log('   ✓ Copied intro.mp3 from english channel');
+    } catch {
+      try {
+        await fs.access(publicIntroPath);
+        await fs.copyFile(publicIntroPath, destIntroPath);
+        console.log('   ✓ Copied intro.mp3 from public assets');
+      } catch {
+        console.log('   ⚠️ intro.mp3 not found, skipping');
+      }
+    }
   }
 
-  // Generate TTS if needed
-  if (needViralTts || needGuideTts) {
-    console.log('🎙️ Generating intro TTS narrations...');
-    await generateIntroTTS(config, assetsDir, needViralTts, needGuideTts);
+  // Generate bell.wav if missing (copy from english channel or create silence)
+  if (missingAssets.includes('bell.wav')) {
+    const englishBellPath = path.join(DEFAULT_OUTPUT_DIR, 'english', 'assets', 'bell.wav');
+    const publicBellPath = path.join(process.cwd(), 'public', 'assets', 'english', 'bell.wav');
+    const destBellPath = path.join(assetsDir, 'bell.wav');
+
+    try {
+      // Try to copy from english output first
+      await fs.access(englishBellPath);
+      await fs.copyFile(englishBellPath, destBellPath);
+      console.log('   ✓ Copied bell.wav from english channel');
+    } catch {
+      try {
+        // Try public folder
+        await fs.access(publicBellPath);
+        await fs.copyFile(publicBellPath, destBellPath);
+        console.log('   ✓ Copied bell.wav from public assets');
+      } catch {
+        console.log('   ⚠️ bell.wav not found, skipping');
+      }
+    }
   }
 
-  // Generate intro background image if GEMINI_API_KEY is available
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (apiKey) {
-    console.log('🎨 Generating intro background image...');
-    const introConfig: IntroAssetConfig = {
-      channelId: config.channelId,
-      channelName: config.meta.name,
-      targetLanguage: config.meta.targetLanguage,
-      nativeLanguage: config.meta.nativeLanguage,
-      primaryColor: config.theme.primaryColor,
-      secondaryColor: config.theme.secondaryColor || '#FF69B4',
-      style: 'modern',
-    };
+  // Generate intro background image if missing
+  if (missingAssets.includes('intro/background.png')) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      console.log('   🎨 Generating intro background image...');
+      const introConfig: IntroAssetConfig = {
+        channelId: config.channelId,
+        channelName: config.meta.name,
+        targetLanguage: config.meta.targetLanguage,
+        nativeLanguage: config.meta.nativeLanguage,
+        primaryColor: config.theme.primaryColor,
+        secondaryColor: config.theme.secondaryColor || '#FF69B4',
+        style: 'modern',
+      };
 
-    const generator = new IntroGenerator(apiKey);
-    await generator.generateIntroAssets(introConfig, { outputDir: assetsDir });
-  } else {
-    console.log('⚠️ GEMINI_API_KEY not set, skipping intro background generation');
+      const generator = new IntroGenerator(apiKey);
+      await generator.generateIntroAssets(introConfig, { outputDir: assetsDir });
+    } else {
+      console.log('   ⚠️ GEMINI_API_KEY not set, skipping intro background');
+    }
+  }
+
+  // Generate thumbnail if missing
+  if (missingAssets.includes('thumbnail.png')) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (apiKey) {
+      console.log('   🎨 Generating thumbnail...');
+      await generateThumbnail(config, assetsDir);
+    } else {
+      console.log('   ⚠️ GEMINI_API_KEY not set, skipping thumbnail');
+    }
   }
 }
 
 /**
- * Generate intro TTS files
+ * Generate all required TTS assets for a channel
  */
-async function generateIntroTTS(
+async function generateAllTTSAssets(
   config: ChannelConfig,
   outputDir: string,
-  needViral: boolean,
-  needGuide: boolean
+  missingAssets: string[]
 ): Promise<void> {
   const { EdgeTTS } = await import('@andresaya/edge-tts');
 
-  // Voice mapping based on native language
+  // Voice mapping based on native language (viewer's language)
   const voiceMap: Record<string, string> = {
     Korean: 'ko-KR-SunHiNeural',
     Japanese: 'ja-JP-NanamiNeural',
     Chinese: 'zh-CN-XiaoxiaoNeural',
     English: 'en-US-JennyNeural',
+    Spanish: 'es-ES-ElviraNeural',
+    French: 'fr-FR-DeniseNeural',
+    German: 'de-DE-KatjaNeural',
   };
 
-  const voice = voiceMap[config.meta.nativeLanguage] || voiceMap['Korean'];
+  const voice = voiceMap[config.meta.nativeLanguage] || voiceMap['English'];
 
   // Language name in native language
-  const languageMap: Record<string, string> = {
-    English: '영어',
-    Japanese: '일본어',
-    Chinese: '중국어',
-    Spanish: '스페인어',
-    French: '프랑스어',
-    German: '독일어',
+  const languageNames: Record<string, Record<string, string>> = {
+    Korean: {
+      English: '영어',
+      Japanese: '일본어',
+      Chinese: '중국어',
+      Spanish: '스페인어',
+      French: '프랑스어',
+      German: '독일어',
+      Korean: '한국어',
+    },
+    English: {
+      English: 'English',
+      Japanese: 'Japanese',
+      Chinese: 'Chinese',
+      Spanish: 'Spanish',
+      French: 'French',
+      German: 'German',
+      Korean: 'Korean',
+    },
   };
 
-  const languageName = languageMap[config.meta.targetLanguage] || config.meta.targetLanguage;
+  const langNames = languageNames[config.meta.nativeLanguage] || languageNames['English'];
+  const targetLangName = langNames[config.meta.targetLanguage] || config.meta.targetLanguage;
 
-  await fs.mkdir(outputDir, { recursive: true });
+  // TTS content based on native language
+  const isKorean = config.meta.nativeLanguage === 'Korean';
 
-  if (needViral) {
-    const viralText = `${languageName} 문장을 반복해서 듣고, ${languageName}가 들리는 순간을 느껴보세요.`;
-    const viralPath = path.join(outputDir, 'intro-viral.mp3');
+  const ttsContent: Record<string, string> = {
+    'intro-viral.mp3': isKorean
+      ? `${targetLangName} 문장을 반복해서 듣고, ${targetLangName}가 들리는 순간을 느껴보세요.`
+      : `Listen to ${targetLangName} sentences repeatedly and feel the moment when ${targetLangName} starts to click.`,
+    'intro-narration.mp3': isKorean
+      ? '이 영상은 다음 네 단계로 진행됩니다.'
+      : 'This video consists of four steps.',
+    'intro-step1.mp3': isKorean
+      ? '첫 번째 단계. 자막 없이 전체 흐름을 파악합니다. 소리에만 집중하며 상황을 상상해보세요.'
+      : 'Step one. Get the big picture without subtitles. Focus on the sounds and imagine the situation.',
+    'intro-step2.mp3': isKorean
+      ? '두 번째 단계. 자막과 함께 들으며 내용을 이해합니다. 안 들렸던 부분을 확인하세요.'
+      : 'Step two. Listen with subtitles to understand the content. Check the parts you missed.',
+    'intro-step3.mp3': isKorean
+      ? '세 번째 단계. 느리게, 빈칸, 빠르게 반복 훈련을 합니다. 이 단계에서 귀가 열리기 시작합니다.'
+      : 'Step three. Practice with slow, fill-in-the-blank, and fast repetition. This is where your ears start to open.',
+    'intro-step4.mp3': isKorean
+      ? '네 번째 단계. 다시 자막 없이 들어봅니다. 놀랍게 선명해진 소리를 직접 확인하세요.'
+      : 'Step four. Listen again without subtitles. Experience how much clearer it sounds now.',
+    'intro-closing.mp3': isKorean ? '자, 그럼 시작해볼까요?' : "Alright, let's get started!",
+    'step-transition-1.mp3': isKorean
+      ? '스텝 원. 자막 없이 듣기'
+      : 'Step one. Listen without subtitles.',
+    'step-transition-2.mp3': isKorean
+      ? '스텝 투. 자막 보며 듣기'
+      : 'Step two. Listen with subtitles.',
+    'step-transition-3.mp3': isKorean ? '스텝 쓰리. 반복 훈련' : 'Step three. Repetition training.',
+    'step-transition-4.mp3': isKorean ? '스텝 포. 최종 확인' : 'Step four. Final check.',
+  };
 
-    const tts = new EdgeTTS();
-    await tts.synthesize(viralText, voice, { rate: '+0%' });
-    await fs.writeFile(viralPath, tts.toBuffer());
-    console.log(`   ✓ Generated viral TTS: ${viralPath}`);
+  for (const asset of missingAssets) {
+    const text = ttsContent[asset];
+    if (!text) continue;
+
+    const assetPath = path.join(outputDir, asset);
+
+    try {
+      const tts = new EdgeTTS();
+      await tts.synthesize(text, voice, { rate: '+0%' });
+      await fs.writeFile(assetPath, await tts.toBuffer());
+      console.log(`   ✓ Generated ${asset}`);
+    } catch (error) {
+      console.error(`   ❌ Failed to generate ${asset}: ${error}`);
+    }
   }
+}
 
-  if (needGuide) {
-    const guideText = '이 영상은 다음 네 단계로 진행됩니다.';
-    const guidePath = path.join(outputDir, 'intro-narration.mp3');
+/**
+ * Generate thumbnail image for a channel
+ */
+async function generateThumbnail(config: ChannelConfig, outputDir: string): Promise<void> {
+  const GEMINI_API_URL =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
+  const apiKey = process.env.GEMINI_API_KEY;
 
-    const tts = new EdgeTTS();
-    await tts.synthesize(guideText, voice, { rate: '+0%' });
-    await fs.writeFile(guidePath, tts.toBuffer());
-    console.log(`   ✓ Generated guide TTS: ${guidePath}`);
+  if (!apiKey) return;
+
+  const prompt = `Create a YouTube thumbnail placeholder image for a language learning channel.
+Channel: ${config.meta.name}
+Teaching: ${config.meta.targetLanguage} to ${config.meta.nativeLanguage} speakers
+Style: Clean, professional, educational
+Colors: Use ${config.theme.primaryColor} and ${config.theme.secondaryColor || '#FF69B4'}
+Size: 1280x720 (16:9 aspect ratio)
+No text needed - just a visually appealing background that works as a thumbnail base.`;
+
+  try {
+    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          responseModalities: ['image', 'text'],
+          responseMimeType: 'text/plain',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(`API error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    for (const candidate of data.candidates || []) {
+      for (const part of candidate.content?.parts || []) {
+        if (part.inlineData?.data) {
+          const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
+          await fs.writeFile(path.join(outputDir, 'thumbnail.png'), imageBuffer);
+          console.log('   ✓ Generated thumbnail.png');
+          return;
+        }
+      }
+    }
+  } catch (error) {
+    console.error(`   ❌ Failed to generate thumbnail: ${error}`);
   }
 }
 
@@ -295,4 +481,335 @@ export async function runAllPipelines(
   console.log(`   ❌ Failed: ${failed}`);
 
   return results;
+}
+
+/**
+ * Render video from pipeline output
+ */
+async function renderVideo(
+  channelId: string,
+  folderName: string,
+  outputDir: string
+): Promise<void> {
+  const { bundle } = await import('@remotion/bundler');
+  const { renderMedia, selectComposition } = await import('@remotion/renderer');
+
+  // Find script file
+  const files = await fs.readdir(outputDir);
+  const scriptFile = files.find((f) => f.endsWith('.json') && f !== 'manifest.json');
+
+  if (!scriptFile) {
+    throw new Error(`No script file found in ${outputDir}`);
+  }
+
+  // Load script
+  const scriptPath = path.join(outputDir, scriptFile);
+  const scriptContent = await fs.readFile(scriptPath, 'utf-8');
+  const script: Script = JSON.parse(scriptContent);
+
+  // Load channel config
+  const configPath = path.join(process.cwd(), 'channels', `${channelId}.json`);
+  const configContent = await fs.readFile(configPath, 'utf-8');
+  const config: ChannelConfig = JSON.parse(configContent);
+
+  // Load audio manifest
+  const manifestPath = path.join(outputDir, 'audio/manifest.json');
+  const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+  const rawAudioFiles: AudioFile[] = JSON.parse(manifestContent);
+
+  // Convert to staticFile paths (with folderName prefix for dynamic files)
+  const audioFiles: AudioFile[] = rawAudioFiles.map((af) => ({
+    ...af,
+    path: `${folderName}/audio/${path.basename(af.path)}`,
+  }));
+
+  // Dynamic files use folderName prefix, shared assets use assets/ prefix
+  const backgroundImage = `${folderName}/background.png`;
+
+  // Bundle - use channel output folder as publicDir (contains both shared assets and run folders)
+  console.log('📦 Bundling Remotion project...');
+  const channelOutputDir = path.join(DEFAULT_OUTPUT_DIR, channelId);
+  const bundleLocation = await bundle({
+    entryPoint: path.join(process.cwd(), 'src/index.ts'),
+    webpackOverride: (config) => config,
+    publicDir: channelOutputDir,
+  });
+
+  // Select composition with all required inputProps
+  // Asset paths use assets/ prefix (shared assets in output/{channelId}/assets/)
+  console.log('🎯 Selecting composition...');
+  const inputProps = {
+    config,
+    script,
+    audioFiles,
+    backgroundImage,
+    // Shared asset paths
+    thumbnailPath: 'assets/thumbnail.png',
+    viralNarrationPath: 'assets/intro-viral.mp3',
+    viralNarrationDuration: 5.256,
+    guideNarrationPath: 'assets/intro-narration.mp3',
+    guideNarrationDuration: 3.936,
+    stepNarrationPaths: [
+      'assets/intro-step1.mp3',
+      'assets/intro-step2.mp3',
+      'assets/intro-step3.mp3',
+      'assets/intro-step4.mp3',
+    ],
+    stepNarrationDurations: [8.52, 8.904, 9.72, 7.464],
+    closingNarrationPath: 'assets/intro-closing.mp3',
+    closingNarrationDuration: 2.952,
+    stepTransitionTtsPaths: [
+      'assets/step-transition-1.mp3',
+      'assets/step-transition-2.mp3',
+      'assets/step-transition-3.mp3',
+      'assets/step-transition-4.mp3',
+    ],
+    stepTransitionBellPath: 'assets/bell.wav',
+    endingBackgroundPath: 'assets/intro/background.png',
+  };
+
+  const composition = await selectComposition({
+    serveUrl: bundleLocation,
+    id: 'Main',
+    inputProps,
+  });
+
+  // Render
+  const videoPath = path.join(outputDir, 'video.mp4');
+  console.log(`🎬 Rendering video to: ${videoPath}`);
+  console.log(
+    `   Duration: ${composition.durationInFrames} frames (${(composition.durationInFrames / 30).toFixed(1)}s)`
+  );
+
+  await renderMedia({
+    composition,
+    serveUrl: bundleLocation,
+    codec: 'h264',
+    outputLocation: videoPath,
+    inputProps,
+    onProgress: ({ progress }) => {
+      process.stdout.write(`\r   Progress: ${(progress * 100).toFixed(1)}%`);
+    },
+  });
+
+  const stats = await fs.stat(videoPath);
+  console.log(`\n\n✅ Video rendered successfully!`);
+  console.log(`📁 Output: ${videoPath}`);
+  console.log(`📊 Size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`);
+
+  // Generate YouTube timestamp file
+  console.log('\n📝 Generating upload_info.txt with timeline...');
+  const { calculateIntroDuration } = await import('../compositions/Intro');
+  const { calculateStep1Duration } = await import('../compositions/Step1');
+  const { calculateStep2Duration } = await import('../compositions/Step2');
+  const { calculateStep3Duration } = await import('../compositions/Step3');
+  const { calculateStep4Duration } = await import('../compositions/Step4');
+  const { STEP_TRANSITION_DURATION } = await import('../compositions/StepTransition');
+
+  const FPS = 30;
+  const framesToSeconds = (frames: number) => frames / FPS;
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  };
+
+  // Use actual TTS durations from inputProps
+  const introDuration = calculateIntroDuration(
+    inputProps.viralNarrationDuration,
+    inputProps.guideNarrationDuration,
+    inputProps.stepNarrationDurations,
+    inputProps.closingNarrationDuration
+  );
+  const step1Duration = calculateStep1Duration(audioFiles);
+  const step2Duration = calculateStep2Duration(script.sentences, audioFiles);
+  const step3Duration = calculateStep3Duration(
+    script.sentences,
+    audioFiles,
+    config.content.repeatCount
+  );
+  const step4Duration = calculateStep4Duration(audioFiles);
+
+  let currentFrame = 0;
+  const timeline: Array<{ time: string; label: string }> = [];
+
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '인트로 (필수!)' });
+  currentFrame += introDuration;
+
+  currentFrame += STEP_TRANSITION_DURATION;
+  timeline.push({
+    time: formatTime(framesToSeconds(currentFrame)),
+    label: 'Step 1. 자막 없이 듣기',
+  });
+  currentFrame += step1Duration;
+
+  currentFrame += STEP_TRANSITION_DURATION;
+  timeline.push({
+    time: formatTime(framesToSeconds(currentFrame)),
+    label: 'Step 2. 자막 보며 듣기',
+  });
+  currentFrame += step2Duration;
+
+  currentFrame += STEP_TRANSITION_DURATION;
+  timeline.push({
+    time: formatTime(framesToSeconds(currentFrame)),
+    label: 'Step 3. 문장별 3단계 훈련',
+  });
+  currentFrame += step3Duration;
+
+  currentFrame += STEP_TRANSITION_DURATION;
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: 'Step 4. 최종 확인' });
+  currentFrame += step4Duration;
+
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '마무리' });
+
+  const uploadInfoPath = path.join(outputDir, 'upload_info.txt');
+  const timelineText = timeline.map((t) => `${t.time} ${t.label}`).join('\n');
+  const uploadInfo = `타임라인:
+${timelineText}
+
+제목: ${script.metadata.title.target}
+토픽: ${script.metadata.topic}
+카테고리: ${script.category}
+`;
+
+  await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');
+  console.log(`✅ Upload info created: ${uploadInfoPath}`);
+  console.log('\n타임라인:');
+  timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
+
+  // Generate thumbnail with title text
+  console.log('\n🖼️ Generating thumbnail...');
+  const thumbnailPath = path.join(outputDir, 'thumbnail.png');
+  const backgroundPath = path.join(outputDir, 'background.png');
+
+  // Generate subtitle based on target language and native language
+  const subtitleText = generateThumbnailSubtitle(
+    config.meta.targetLanguage,
+    config.meta.nativeLanguage
+  );
+  await generateVideoThumbnail(
+    backgroundPath,
+    script.metadata.title.target,
+    subtitleText,
+    thumbnailPath
+  );
+  console.log(`✅ Thumbnail created: ${thumbnailPath}`);
+}
+
+/**
+ * Generate thumbnail subtitle text based on languages
+ */
+function generateThumbnailSubtitle(targetLanguage: string, nativeLanguage: string): string {
+  // Language names in different languages
+  const langNames: Record<string, Record<string, string>> = {
+    Korean: {
+      English: '영어',
+      Japanese: '일본어',
+      Chinese: '중국어',
+      Spanish: '스페인어',
+      French: '프랑스어',
+      German: '독일어',
+      Korean: '한국어',
+    },
+    English: {
+      English: 'English',
+      Japanese: 'Japanese',
+      Chinese: 'Chinese',
+      Spanish: 'Spanish',
+      French: 'French',
+      German: 'German',
+      Korean: 'Korean',
+    },
+  };
+
+  const names = langNames[nativeLanguage] || langNames['English'];
+  const targetName = names[targetLanguage] || targetLanguage;
+
+  if (nativeLanguage === 'Korean') {
+    return `${targetName} 듣기 연습`;
+  } else {
+    return `${targetName} Listening Practice`;
+  }
+}
+
+/**
+ * Generate video thumbnail with title text overlay
+ */
+async function generateVideoThumbnail(
+  backgroundPath: string,
+  titleText: string,
+  subtitleText: string,
+  outputPath: string
+): Promise<void> {
+  const { createCanvas, loadImage } = await import('canvas');
+
+  // YouTube thumbnail size: 1280x720
+  const WIDTH = 1280;
+  const HEIGHT = 720;
+
+  const canvas = createCanvas(WIDTH, HEIGHT);
+  const ctx = canvas.getContext('2d');
+
+  // Load and draw background image
+  try {
+    const bgImage = await loadImage(backgroundPath);
+    const scale = Math.max(WIDTH / bgImage.width, HEIGHT / bgImage.height);
+    const scaledWidth = bgImage.width * scale;
+    const scaledHeight = bgImage.height * scale;
+    const x = (WIDTH - scaledWidth) / 2;
+    const y = (HEIGHT - scaledHeight) / 2;
+    ctx.drawImage(bgImage, x, y, scaledWidth, scaledHeight);
+  } catch {
+    // If background fails, use dark gradient
+    const gradient = ctx.createLinearGradient(0, 0, WIDTH, HEIGHT);
+    gradient.addColorStop(0, '#1a1a2e');
+    gradient.addColorStop(1, '#16213e');
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, WIDTH, HEIGHT);
+  }
+
+  // Add bottom gradient overlay (transparent to dark)
+  const gradient = ctx.createLinearGradient(0, HEIGHT * 0.5, 0, HEIGHT);
+  gradient.addColorStop(0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(0.5, 'rgba(0, 0, 0, 0.5)');
+  gradient.addColorStop(1, 'rgba(0, 0, 0, 0.8)');
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, WIDTH, HEIGHT);
+
+  // Draw title text (white, smaller, above subtitle)
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'bottom';
+
+  // Title - white text with shadow
+  let titleFontSize = 72;
+  if (titleText.length > 20) titleFontSize = 63;
+  if (titleText.length > 30) titleFontSize = 54;
+
+  ctx.font = `bold ${titleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+  ctx.shadowBlur = 8;
+  ctx.shadowOffsetX = 2;
+  ctx.shadowOffsetY = 2;
+
+  // Subtitle - pink/magenta
+  const subtitleFontSize = 108;
+  const subtitleY = HEIGHT - 30;
+  const titleY = subtitleY - subtitleFontSize - 24; // 24px gap
+
+  ctx.fillText(titleText, WIDTH / 2, titleY);
+
+  ctx.font = `bold ${subtitleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
+  ctx.fillStyle = '#FF1493'; // Deep pink / magenta
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+  ctx.shadowBlur = 10;
+  ctx.shadowOffsetX = 3;
+  ctx.shadowOffsetY = 3;
+
+  ctx.fillText(subtitleText, WIDTH / 2, subtitleY);
+
+  // Save to file
+  const buffer = canvas.toBuffer('image/png');
+  await fs.writeFile(outputPath, buffer);
 }

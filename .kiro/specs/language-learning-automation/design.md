@@ -296,15 +296,7 @@ interface Step4Props extends Step1Props {}
     "channelId": { "type": "string" },
     "date": { "type": "string", "format": "date" },
     "category": {
-      "enum": [
-        "story",
-        "conversation",
-        "news",
-        "announcement",
-        "travel_business",
-        "lesson",
-        "fairytale"
-      ]
+      "enum": ["conversation", "travel_business"]
     },
     "metadata": {
       "type": "object",

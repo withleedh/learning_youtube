@@ -2,16 +2,16 @@
   "channelId": "english",
 
   "meta": {
-    "name": "귀가 뚫리는 영어",
+    "name": "들려요! English!",
     "targetLanguage": "English",
     "nativeLanguage": "Korean",
     "youtubeChannelId": "UC_XXXXX"
   },
 
   "theme": {
-    "logo": "assets/english/logo.png",
-    "introSound": "assets/english/intro.mp3",
-    "introBackground": "assets/english/intro/background.png",
+    "logo": "assets/logo.png",
+    "introSound": "assets/intro.mp3",
+    "introBackground": "assets/intro/background.png",
     "backgroundStyle": "illustration",
     "primaryColor": "#87CEEB",
     "secondaryColor": "#FF69B4"
@@ -32,15 +32,15 @@
   },
 
   "tts": {
-    "provider": "edge",
-    "maleVoice": "en-US-GuyNeural",
-    "femaleVoice": "en-US-JennyNeural",
+    "provider": "google",
+    "maleVoice": "en-US-Studio-M",
+    "femaleVoice": "en-US-Studio-O",
     "targetLanguageCode": "en-US",
     "speed": 1.0
   },
 
   "content": {
-    "sentenceCount": 12,
+    "sentenceCount": 20,
     "repeatCount": 10,
     "difficulty": "intermediate"
   },

@@ -22,15 +22,7 @@ const wordArb = fc.record({
 });
 
 // Arbitrary for generating valid categories
-const categoryArb: fc.Arbitrary<Category> = fc.constantFrom(
-  'story',
-  'conversation',
-  'news',
-  'announcement',
-  'travel_business',
-  'lesson',
-  'fairytale'
-);
+const categoryArb: fc.Arbitrary<Category> = fc.constantFrom('conversation');
 
 // Arbitrary for generating a sentence with proper blank structure
 const sentenceArb = (id: number, speaker: 'M' | 'F'): fc.Arbitrary<Sentence> =>

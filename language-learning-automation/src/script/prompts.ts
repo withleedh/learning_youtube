@@ -12,8 +12,9 @@ const categoryDescriptions: Record<Category, string> = {
   news: `간결하고 정보 중심의 뉴스 문장. 정확한 듣기와 어휘 확장에 초점.
 예시 주제: 날씨 예보, 교통 정보, 지역 소식, 간단한 사건 보도`,
 
-  announcement: `광고, 공공 방송, 안내문. 영어로 된 정보 캐치 능력에 초점.
-예시 주제: 백화점 세일 안내, 공항 안내 방송, 엘리베이터 안내, 매장 안내`,
+  announcement: `남녀가 광고, 안내문, 공지사항에 대해 대화하는 형식. 실생활에서 접하는 안내 정보를 대화로 주고받음.
+예시: "백화점 세일 한대요" "언제까지예요?", "공항 게이트 바뀌었대" "어디로요?", "엘리베이터 점검 중이래" "계단 써야겠네"
+⚠️ CRITICAL: Must be a natural CONVERSATION between M and F discussing announcements, NOT a broadcast announcement itself!`,
 
   travel_business: `여행과 업무 상황에서 자주 쓰이는 실용 영어.
 예시 주제: 호텔 체크인, 비행기 탑승, 회의 일정, 이메일 작성`,
@@ -36,24 +37,31 @@ export function generateScriptPrompt(
   const { meta, content } = config;
   const categoryDesc = categoryDescriptions[category];
 
-  return `You are an expert language learning content creator. Generate a script for a ${meta.targetLanguage} learning video targeting ${meta.nativeLanguage} speakers.
+  return `# Role
+Act as a world-class ESL instructor and a native ${meta.targetLanguage} screenwriter.
+
+# Task
+Create a realistic ${meta.targetLanguage} conversation script for a language learning video.
 
 ## Category: ${category}
 ${categoryDesc}
 
-## Requirements:
-1. Generate exactly ${content.sentenceCount} sentences
-2. Alternate speakers between M (male) and F (female), starting with M
-3. Difficulty level: ${content.difficulty}
-4. Each sentence should be 10-20 words in ${meta.targetLanguage}
-5. Provide natural ${meta.nativeLanguage} translations (not word-for-word)
-6. For each sentence, identify ONE key vocabulary word as the "blank word"
-7. Create a version of the sentence with that word replaced by "_______"
-8. Provide word-by-word meanings for important vocabulary (3-5 words per sentence)
+## Topic: ${topic || 'Choose an engaging topic that fits the category'}
 
-${topic ? `## Specific Topic: ${topic}` : '## Topic: Choose an engaging topic that fits the category'}
+# Constraints (Content)
+1. **Level:** CEFR B1~B2 (Intermediate). Natural, idiomatic, but clear enough for learners.
+2. **Characters:** Two characters (M = Male, F = Female). Alternate speakers starting with M.
+3. **Length:** Exactly ${content.sentenceCount} sentences total.
+4. **Difficulty:** ${content.difficulty}
+5. **Sentence Length:** 10-20 words in ${meta.targetLanguage}
+6. **Key Expressions:** Use phrasal verbs and collocations native speakers actually use
+   - Instead of "wait" → use "hang on", "hold on"
+   - Instead of "understand" → use "get it", "catch on"
+   - Instead of "leave" → use "head out", "take off"
+7. **Dialogue Flow:** Make it natural with questions, answers, reactions, and follow-ups
+8. **Blank Logic:** For each sentence, select ONE key word (verb, noun, adjective) crucial for understanding
 
-## Output Format (JSON):
+# Output Format (JSON)
 {
   "metadata": {
     "topic": "specific topic description",
@@ -79,14 +87,15 @@ ${topic ? `## Specific Topic: ${topic}` : '## Topic: Choose an engaging topic th
   ]
 }
 
-## Important:
+# Critical Rules
 - The blankAnswer MUST appear in the target sentence
 - The targetBlank MUST contain exactly "_______" (7 underscores) where blankAnswer was
-- Words array should include the blankAnswer and other important vocabulary
-- Make the conversation natural and engaging
-- Ensure proper grammar and natural expressions
+- Words array should include the blankAnswer and 2-4 other important vocabulary
+- Make the conversation feel like a real drama scene
+- Use contractions (I'm, don't, can't) for natural speech
+- Include filler words occasionally (well, you know, I mean) for authenticity
 
-Generate the JSON output only, no additional text.`;
+Generate ONLY the JSON output, no additional text.`;
 }
 
 /**

@@ -1,17 +1,11 @@
 #!/usr/bin/env node
 
+import 'dotenv/config';
 import { runPipeline, runAllPipelines } from './index';
+import { showTopicHistory } from '../script/topic-selector';
 import type { Category } from '../script/types';
 
-const VALID_CATEGORIES: Category[] = [
-  'story',
-  'conversation',
-  'news',
-  'announcement',
-  'travel_business',
-  'lesson',
-  'fairytale',
-];
+const VALID_CATEGORIES: Category[] = ['conversation'];
 
 function printUsage() {
   console.log(`
@@ -20,24 +14,30 @@ Language Learning Video Automation Pipeline
 Usage:
   npx ts-node src/pipeline/cli.ts --channel <channelId> [options]
   npx ts-node src/pipeline/cli.ts --all [options]
+  npx ts-node src/pipeline/cli.ts --history
 
 Options:
   --channel <id>     Run pipeline for a specific channel
   --all              Run pipeline for all available channels
+  --history          Show recent topic history
   --category <cat>   Specify content category (default: based on day of week)
                      Valid: ${VALID_CATEGORIES.join(', ')}
   --topic <topic>    Specify a topic for script generation
+                     (If not provided, AI will select a timely topic)
   --mock-tts         Use mock TTS (no API calls)
   --sample-script    Use sample script (no Gemini API call)
   --skip-intro       Skip intro asset generation
   --output <dir>     Custom output directory
+  --render           Auto-render video after pipeline completes
   --help             Show this help message
 
 Examples:
-  npx ts-node src/pipeline/cli.ts --channel english
-  npx ts-node src/pipeline/cli.ts --channel english --category conversation
-  npx ts-node src/pipeline/cli.ts --channel english --mock-tts --sample-script
-  npx ts-node src/pipeline/cli.ts --all --mock-tts
+  npx tsx src/pipeline/cli.ts --channel english
+  npx tsx src/pipeline/cli.ts --channel english --render
+  npx tsx src/pipeline/cli.ts --channel english --category conversation
+  npx tsx src/pipeline/cli.ts --channel english --topic "겨울 코트 쇼핑"
+  npx tsx src/pipeline/cli.ts --all --mock-tts
+  npx tsx src/pipeline/cli.ts --history
 `);
 }
 
@@ -46,6 +46,12 @@ async function main() {
 
   if (args.length === 0 || args.includes('--help')) {
     printUsage();
+    process.exit(0);
+  }
+
+  // Check for history command
+  if (args.includes('--history')) {
+    await showTopicHistory();
     process.exit(0);
   }
 
@@ -58,6 +64,7 @@ async function main() {
   let useSampleScript = false;
   let skipIntro = false;
   let outputDir: string | undefined;
+  let autoRender = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -94,6 +101,9 @@ async function main() {
       case '--output':
         outputDir = args[++i];
         break;
+      case '--render':
+        autoRender = true;
+        break;
       default:
         if (arg.startsWith('--')) {
           console.error(`Unknown option: ${arg}`);
@@ -119,6 +129,7 @@ async function main() {
         useSampleScript,
         skipIntro,
         outputDir,
+        autoRender,
       });
 
       const failed = results.filter((r) => !r.success);
@@ -134,6 +145,7 @@ async function main() {
         useSampleScript,
         skipIntro,
         outputDir,
+        autoRender,
       });
 
       if (!result.success) {

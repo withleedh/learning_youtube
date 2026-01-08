@@ -11,6 +11,7 @@ import {
   speedVariants,
 } from './types';
 import { generateAllSpeedsWithEdge, type EdgeVoice } from './edge';
+import { generateAllSpeedsWithGoogle } from './google';
 
 // Maximum retry attempts for TTS generation
 const MAX_RETRIES = 3;
@@ -25,15 +26,32 @@ export async function generateSentenceAudio(
   outputDir: string
 ): Promise<AudioGenerationResult[]> {
   const voice = selectVoice(sentence.speaker, config.tts.maleVoice, config.tts.femaleVoice);
+  const gender = sentence.speaker === 'M' ? 'MALE' : 'FEMALE';
 
-  // Use Edge TTS (free, high quality)
-  return generateAllSpeedsWithEdge(
-    sentence.target,
-    voice as EdgeVoice,
-    outputDir,
-    sentence.id,
-    sentence.speaker
-  );
+  // Switch based on provider
+  switch (config.tts.provider) {
+    case 'google':
+      return generateAllSpeedsWithGoogle(
+        sentence.target,
+        config.tts.targetLanguageCode,
+        voice,
+        gender as 'MALE' | 'FEMALE',
+        outputDir,
+        sentence.id,
+        sentence.speaker
+      );
+
+    case 'edge':
+    default:
+      // Use Edge TTS (free, high quality)
+      return generateAllSpeedsWithEdge(
+        sentence.target,
+        voice as EdgeVoice,
+        outputDir,
+        sentence.id,
+        sentence.speaker
+      );
+  }
 }
 
 /**
