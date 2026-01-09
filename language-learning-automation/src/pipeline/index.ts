@@ -25,6 +25,8 @@ export interface PipelineOptions {
   skipImage?: boolean;
   /** Auto-render video after pipeline completes */
   autoRender?: boolean;
+  /** Render individual Shorts for each sentence */
+  renderShorts?: boolean;
 }
 
 export interface PipelineResult {
@@ -54,6 +56,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     skipIntro = false,
     skipImage = false,
     autoRender = false,
+    renderShorts = false,
   } = options;
 
   console.log(`\n🚀 Starting pipeline for channel: ${channelId}`);
@@ -141,6 +144,13 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       console.log(`\n🎬 Auto-rendering video...`);
       const folderName = path.basename(outputDir);
       await renderVideo(channelId, folderName, outputDir);
+    }
+
+    // Render Shorts if requested
+    if (renderShorts) {
+      console.log(`\n📱 Rendering Shorts...`);
+      const folderName = path.basename(outputDir);
+      await renderShortsBatch(channelId, folderName, outputDir);
     }
 
     return {
@@ -907,4 +917,125 @@ async function generateVideoThumbnail(
   // Save to file
   const buffer = canvas.toBuffer('image/png');
   await fs.writeFile(outputPath, buffer);
+}
+
+/**
+ * Render individual Shorts for each sentence
+ */
+async function renderShortsBatch(
+  channelId: string,
+  folderName: string,
+  outputDir: string
+): Promise<void> {
+  const { bundle } = await import('@remotion/bundler');
+  const { renderMedia, selectComposition } = await import('@remotion/renderer');
+  const { calculateSingleSentenceShortDuration } = await import(
+    '../compositions/SingleSentenceShort'
+  );
+
+  // Create shorts output directory
+  const shortsDir = path.join(outputDir, 'shorts');
+  await fs.mkdir(shortsDir, { recursive: true });
+
+  // Find script file
+  const files = await fs.readdir(outputDir);
+  const scriptFile = files.find((f) => f.endsWith('.json') && f !== 'manifest.json');
+
+  if (!scriptFile) {
+    throw new Error(`No script file found in ${outputDir}`);
+  }
+
+  // Load script
+  const scriptPath = path.join(outputDir, scriptFile);
+  const scriptContent = await fs.readFile(scriptPath, 'utf-8');
+  const script: Script = JSON.parse(scriptContent);
+
+  // Load channel config
+  const configPath = path.join(process.cwd(), 'channels', `${channelId}.json`);
+  const configContent = await fs.readFile(configPath, 'utf-8');
+  const config: ChannelConfig = JSON.parse(configContent);
+
+  // Load audio manifest
+  const manifestPath = path.join(outputDir, 'audio/manifest.json');
+  const manifestContent = await fs.readFile(manifestPath, 'utf-8');
+  const rawAudioFiles: AudioFile[] = JSON.parse(manifestContent);
+
+  // Convert to staticFile paths
+  const audioFiles: AudioFile[] = rawAudioFiles.map((af) => ({
+    ...af,
+    path: `${folderName}/audio/${path.basename(af.path)}`,
+  }));
+
+  // Background image path
+  const backgroundImage = `${folderName}/background.png`;
+
+  // Bundle Remotion project
+  console.log('📦 Bundling Remotion project for Shorts...');
+  const channelOutputDir = path.join(DEFAULT_OUTPUT_DIR, channelId);
+  const bundleLocation = await bundle({
+    entryPoint: path.join(process.cwd(), 'src/index.ts'),
+    webpackOverride: (cfg) => cfg,
+    publicDir: channelOutputDir,
+  });
+
+  // Render each sentence as a Short
+  const totalSentences = script.sentences.length;
+  console.log(`📱 Rendering ${totalSentences} Shorts...`);
+
+  for (let i = 0; i < script.sentences.length; i++) {
+    const sentence = script.sentences[i];
+    const audioFile = audioFiles.find(
+      (af) => af.sentenceId === sentence.id && af.speed === '1.0x'
+    );
+
+    if (!audioFile) {
+      console.warn(`   ⚠️ No audio for sentence ${sentence.id}, skipping`);
+      continue;
+    }
+
+    const compositionId = `SingleSentenceShort-${sentence.id}`;
+    const shortDuration = calculateSingleSentenceShortDuration(audioFile);
+
+    const inputProps = {
+      sentence,
+      audioFile,
+      config,
+      backgroundImage,
+    };
+
+    console.log(`   [${i + 1}/${totalSentences}] Rendering Short for sentence ${sentence.id}...`);
+
+    try {
+      const composition = await selectComposition({
+        serveUrl: bundleLocation,
+        id: compositionId,
+        inputProps,
+      });
+
+      const outputPath = path.join(shortsDir, `shorts_${String(i + 1).padStart(2, '0')}.mp4`);
+
+      await renderMedia({
+        composition,
+        serveUrl: bundleLocation,
+        codec: 'h264',
+        outputLocation: outputPath,
+        inputProps,
+        onProgress: ({ progress }) => {
+          process.stdout.write(
+            `\r   [${i + 1}/${totalSentences}] Progress: ${(progress * 100).toFixed(1)}%`
+          );
+        },
+      });
+
+      const stats = await fs.stat(outputPath);
+      console.log(
+        `\n   ✅ Created: shorts_${String(i + 1).padStart(2, '0')}.mp4 (${(stats.size / 1024 / 1024).toFixed(2)} MB)`
+      );
+    } catch (error) {
+      console.error(`\n   ❌ Failed to render Short ${i + 1}: ${error}`);
+    }
+  }
+
+  console.log(`\n✅ Shorts batch rendering completed!`);
+  console.log(`📁 Output: ${shortsDir}`);
 }

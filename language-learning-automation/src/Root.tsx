@@ -7,6 +7,14 @@ import { Step3, calculateStep3Duration } from './compositions/Step3';
 import { Step4, calculateStep4Duration } from './compositions/Step4';
 import { StepTransition, STEP_TRANSITION_DURATION } from './compositions/StepTransition';
 import { Ending, ENDING_DURATION } from './compositions/Ending';
+import {
+  FillInBlankShorts,
+  calculateFillInBlankShortsDuration,
+} from './compositions/FillInBlankShorts';
+import {
+  SingleSentenceShort,
+  calculateSingleSentenceShortDuration,
+} from './compositions/SingleSentenceShort';
 import type { ChannelConfig } from './config/types';
 import type { Script } from './script/types';
 import type { AudioFile } from './tts/types';
@@ -469,7 +477,36 @@ export const RemotionRoot: React.FC = () => {
           targetLanguage: activeConfig.meta.targetLanguage,
           nativeLanguage: activeConfig.meta.nativeLanguage,
         }}
-      />
+            />
+
+      {/* Single Sentence Shorts (9:16 Vertical) */}
+      {activeScript.sentences.map((sentence, _index) => {
+        const audioFile = activeAudioFiles.find(
+          (af) => af.sentenceId === sentence.id && af.speed === '1.0x'
+        );
+        if (!audioFile) return null;
+        
+        const shortDuration = calculateSingleSentenceShortDuration(audioFile);
+        
+        return (
+          <Composition
+            key={`SingleSentenceShort-${sentence.id}`}
+            id={`SingleSentenceShort-${sentence.id}`}
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            component={SingleSentenceShort as any}
+            durationInFrames={shortDuration}
+            fps={30}
+            width={1080}
+            height={1920}
+            defaultProps={{
+              sentence,
+              audioFile,
+              config: activeConfig,
+              backgroundImage: 'background.png',
+            }}
+          />
+        );
+      })}
     </>
   );
 };

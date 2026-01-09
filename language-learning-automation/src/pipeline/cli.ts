@@ -29,6 +29,7 @@ Options:
   --skip-intro       Skip intro asset generation
   --output <dir>     Custom output directory
   --render           Auto-render video after pipeline completes
+  --shorts           Render individual Shorts for each sentence
   --help             Show this help message
 
 Examples:
@@ -65,6 +66,7 @@ async function main() {
   let skipIntro = false;
   let outputDir: string | undefined;
   let autoRender = false;
+  let renderShorts = false;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -104,6 +106,9 @@ async function main() {
       case '--render':
         autoRender = true;
         break;
+      case '--shorts':
+        renderShorts = true;
+        break;
       default:
         if (arg.startsWith('--')) {
           console.error(`Unknown option: ${arg}`);
@@ -130,6 +135,7 @@ async function main() {
         skipIntro,
         outputDir,
         autoRender,
+        renderShorts,
       });
 
       const failed = results.filter((r) => !r.success);
@@ -146,6 +152,7 @@ async function main() {
         skipIntro,
         outputDir,
         autoRender,
+        renderShorts,
       });
 
       if (!result.success) {
