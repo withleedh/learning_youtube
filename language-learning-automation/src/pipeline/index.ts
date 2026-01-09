@@ -4,8 +4,8 @@ import { loadConfig, listChannels } from '../config/loader';
 import { generateScript, saveScript, createSampleScript } from '../script/generator';
 import { generateAllAudio, createMockAudioFiles } from '../tts/generator';
 import { IntroGenerator } from '../intro/generator';
-import { generateBackgroundImage } from '../image/generator';
-import { GEMINI_API_URLS, getGeminiApiKey } from '../config/gemini';
+import { generateBackgroundImage, generateThumbnail } from '../image/generator';
+import { getGeminiApiKey } from '../config/gemini';
 import type { IntroAssetConfig } from '../intro/types';
 import type { ChannelConfig } from '../config/types';
 import type { Script } from '../script/types';
@@ -306,7 +306,14 @@ async function ensureChannelAssets(config: ChannelConfig): Promise<void> {
     try {
       getGeminiApiKey(); // Check if API key exists
       console.log('   🎨 Generating thumbnail...');
-      await generateThumbnail(config, assetsDir);
+      const thumbnailConfig = config.thumbnail || {};
+      await generateThumbnail({
+        channelName: thumbnailConfig.channelName || config.meta.name,
+        characterStyle: thumbnailConfig.characterStyle || 'animals',
+        customCharacters: thumbnailConfig.customCharacters,
+        backgroundColor: thumbnailConfig.backgroundColor || 'dark blue',
+        outputPath: path.join(assetsDir, 'thumbnail.png'),
+      });
     } catch {
       console.log('   ⚠️ GEMINI_API_KEY not set, skipping thumbnail');
     }
@@ -408,53 +415,6 @@ async function generateAllTTSAssets(
     } catch (error) {
       console.error(`   ❌ Failed to generate ${asset}: ${error}`);
     }
-  }
-}
-
-/**
- * Generate thumbnail image for a channel
- */
-async function generateThumbnail(config: ChannelConfig, outputDir: string): Promise<void> {
-  const apiKey = getGeminiApiKey();
-
-  const prompt = `Create a YouTube thumbnail placeholder image for a language learning channel.
-Channel: ${config.meta.name}
-Teaching: ${config.meta.targetLanguage} to ${config.meta.nativeLanguage} speakers
-Style: Clean, professional, educational
-Colors: Use ${config.theme.primaryColor} and ${config.theme.secondaryColor || '#FF69B4'}
-Size: 1280x720 (16:9 aspect ratio)
-No text needed - just a visually appealing background that works as a thumbnail base.`;
-
-  try {
-    const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseModalities: ['image', 'text'],
-          responseMimeType: 'text/plain',
-        },
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`API error: ${response.status}`);
-    }
-
-    const data = await response.json();
-    for (const candidate of data.candidates || []) {
-      for (const part of candidate.content?.parts || []) {
-        if (part.inlineData?.data) {
-          const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
-          await fs.writeFile(path.join(outputDir, 'thumbnail.png'), imageBuffer);
-          console.log('   ✓ Generated thumbnail.png');
-          return;
-        }
-      }
-    }
-  } catch (error) {
-    console.error(`   ❌ Failed to generate thumbnail: ${error}`);
   }
 }
 
@@ -929,9 +889,8 @@ async function renderShortsBatch(
 ): Promise<void> {
   const { bundle } = await import('@remotion/bundler');
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
-  const { calculateSingleSentenceShortDuration } = await import(
-    '../compositions/SingleSentenceShort'
-  );
+  const { calculateSingleSentenceShortDuration } =
+    await import('../compositions/SingleSentenceShort');
 
   // Create shorts output directory
   const shortsDir = path.join(outputDir, 'shorts');
@@ -984,9 +943,7 @@ async function renderShortsBatch(
 
   for (let i = 0; i < script.sentences.length; i++) {
     const sentence = script.sentences[i];
-    const audioFile = audioFiles.find(
-      (af) => af.sentenceId === sentence.id && af.speed === '1.0x'
-    );
+    const audioFile = audioFiles.find((af) => af.sentenceId === sentence.id && af.speed === '1.0x');
 
     if (!audioFile) {
       console.warn(`   ⚠️ No audio for sentence ${sentence.id}, skipping`);

@@ -12,9 +12,9 @@ function printUsage() {
 Language Learning Video Automation Pipeline
 
 Usage:
-  npx ts-node src/pipeline/cli.ts --channel <channelId> [options]
-  npx ts-node src/pipeline/cli.ts --all [options]
-  npx ts-node src/pipeline/cli.ts --history
+  npx tsx src/pipeline/cli.ts --channel <channelId> [options]
+  npx tsx src/pipeline/cli.ts --all [options]
+  npx tsx src/pipeline/cli.ts --history
 
 Options:
   --channel <id>     Run pipeline for a specific channel

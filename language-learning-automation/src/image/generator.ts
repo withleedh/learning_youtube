@@ -137,11 +137,11 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
   const {
     channelName,
     episodeTitle,
-    characterStyle = 'animals',
+    characterStyle,
     customCharacters,
-    backgroundColor = 'dark blue',
-    targetLanguage = 'English',
-    nativeLanguage = 'Korean',
+    backgroundColor,
+    targetLanguage,
+    nativeLanguage,
     outputPath,
   } = options;
 
@@ -162,8 +162,11 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
   }
 
   // 학습 언어에 따른 말풍선 내용 생성
-  const foreignSpeechBubble = generateForeignPhrase(targetLanguage);
-  const nativeSpeechBubble = generateUnderstandingPhrase(targetLanguage, nativeLanguage);
+  const foreignSpeechBubble = generateForeignPhrase(targetLanguage || '');
+  const nativeSpeechBubble = generateUnderstandingPhrase(
+    targetLanguage || '',
+    nativeLanguage || ''
+  );
 
   // 에피소드 제목이 있으면 추가 (5도 기울임)
   const titleText = episodeTitle
@@ -183,36 +186,41 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
   Both lines are centered and stacked vertically`
     : `'${channelName}' in a single line, tilted approximately 5 degrees clockwise`;
 
-  const prompt = `A warm, hand-drawn 2D cartoon illustration for a YouTube language learning channel thumbnail.
+  const prompt = `3D clay animation style illustration for a YouTube language learning channel thumbnail.
 
-Style:
-- Hand-drawn, warm and friendly 2D cartoon illustration
-- Clear, bold outlines
-- Soft, rich colors
-- Textured solid color background
+Style (CRITICAL):
+- 3D clay animation style, stop motion aesthetic
+- Plastiline clay texture, handmade feel
+- Soft studio lighting, playful atmosphere
+- Cute and friendly character proportions
+- High quality, 4K render
 
 Composition:
-- At the bottom center, large, bold, three-dimensional channel name text ${channelNameText}
-- The text should be the most prominent element, eye-catching and readable with white outline and colorful shadows
+- At the bottom center, large, bold, 3D blocky channel name text ${channelNameText}
+- The text must look like it is made of clay or plastic blocks
+- Text should be the most prominent element, eye-catching with white outline
+
 ${titleText}
+
 - Above the text, ${characterDescription}
 - Characters have surprised and joyful expressions (happy that they can understand the language)
+- Characters look like handmade clay dolls
 
 Speech Bubbles (IMPORTANT - exactly TWO bubbles only):
 - The left character (male) has ONE speech bubble saying "${foreignSpeechBubble}" in ${targetLanguage}
 - The right character (female) has ONE speech bubble saying "${nativeSpeechBubble}" expressing joy of understanding
-- NO other speech bubbles, musical notes, or decorative elements around the characters
-- Keep it clean and simple with just these two speech bubbles
+- Bubbles should look like cut-out paper or clean plastic shapes
+- NO other speech bubbles, musical notes, or decorative elements
 
 Background:
-- Solid, textured ${backgroundColor} background
-- Clean and uncluttered
+- Clean solid pastel ${backgroundColor} background (e.g., mint, cream, or soft blue)
+- Simple and uncluttered to make characters pop
 
 Technical requirements:
-- 16:9 aspect ratio (1280x720 or similar)
+- 16:9 aspect ratio (1280x720)
 - High contrast for YouTube thumbnail visibility
-- Text must be clearly readable even at small sizes
-- Vibrant colors that stand out in YouTube search results`;
+- Text must be clearly readable
+- Vibrant colors`;
 
   console.log(`🎨 Generating thumbnail for "${channelName}" using Gemini 3 Pro Image...`);
 
@@ -342,7 +350,9 @@ async function generateThumbnailWithGemini(options: ThumbnailOptions): Promise<s
         'two cheerful young adults from different countries standing side by side';
       break;
     case 'custom':
-      characterDescription = customCharacters || 'two friendly characters standing side by side';
+      characterDescription =
+        customCharacters ||
+        'An American man character with blonde hair and a denim jacket, and a Korean woman character with dark hair and a modern pastel hanbok standing side by side';
       break;
   }
 
@@ -367,36 +377,41 @@ async function generateThumbnailWithGemini(options: ThumbnailOptions): Promise<s
   Both lines are centered and stacked vertically`
     : `'${channelName}' in a single line, tilted approximately 5 degrees clockwise`;
 
-  const prompt = `A warm, hand-drawn 2D cartoon illustration for a YouTube language learning channel thumbnail.
+  const prompt = `3D clay animation style illustration for a YouTube language learning channel thumbnail.
 
-Style:
-- Hand-drawn, warm and friendly 2D cartoon illustration
-- Clear, bold outlines
-- Soft, rich colors
-- Textured solid color background
+Style (CRITICAL):
+- 3D clay animation style, stop motion aesthetic
+- Plastiline clay texture, handmade feel
+- Soft studio lighting, playful atmosphere
+- Cute and friendly character proportions
+- High quality, 4K render
 
 Composition:
-- At the bottom center, large, bold, three-dimensional channel name text ${channelNameText}
-- The text should be the most prominent element, eye-catching and readable with white outline and colorful shadows
+- At the bottom center, large, bold, 3D blocky channel name text ${channelNameText}
+- The text must look like it is made of clay or plastic blocks
+- Text should be the most prominent element, eye-catching with white outline
+
 ${titleText}
+
 - Above the text, ${characterDescription}
 - Characters have surprised and joyful expressions (happy that they can understand the language)
+- Characters look like handmade clay dolls
 
 Speech Bubbles (IMPORTANT - exactly TWO bubbles only):
 - The left character (male) has ONE speech bubble saying "${foreignSpeechBubble}" in ${targetLanguage}
 - The right character (female) has ONE speech bubble saying "${nativeSpeechBubble}" expressing joy of understanding
-- NO other speech bubbles, musical notes, or decorative elements around the characters
-- Keep it clean and simple with just these two speech bubbles
+- Bubbles should look like cut-out paper or clean plastic shapes
+- NO other speech bubbles, musical notes, or decorative elements
 
 Background:
-- Solid, textured ${backgroundColor} background
-- Clean and uncluttered
+- Clean solid pastel ${backgroundColor} background (e.g., mint, cream, or soft blue)
+- Simple and uncluttered to make characters pop
 
 Technical requirements:
-- 16:9 aspect ratio (1280x720 or similar)
+- 16:9 aspect ratio (1280x720)
 - High contrast for YouTube thumbnail visibility
-- Text must be clearly readable even at small sizes
-- Vibrant colors that stand out in YouTube search results`;
+- Text must be clearly readable
+- Vibrant colors`;
 
   const requestBody = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -448,11 +463,16 @@ export async function generateChannelThumbnail(
   const outputDir = path.join(process.cwd(), 'output', channelId);
   const outputPath = path.join(outputDir, 'thumbnail.png');
 
+  const thumbnailConfig = config.thumbnail || {};
+
   return generateThumbnail({
-    channelName: config.meta.name,
+    channelName: thumbnailConfig.channelName || config.meta.name,
     episodeTitle,
-    characterStyle: 'animals',
-    backgroundColor: 'dark blue',
+    characterStyle: thumbnailConfig.characterStyle || 'animals',
+    customCharacters: thumbnailConfig.customCharacters,
+    backgroundColor: thumbnailConfig.backgroundColor || 'dark blue',
+    targetLanguage: config.meta.targetLanguage,
+    nativeLanguage: config.meta.nativeLanguage,
     outputPath,
   });
 }

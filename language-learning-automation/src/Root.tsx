@@ -504,6 +504,12 @@ export const RemotionRoot: React.FC = () => {
               config: activeConfig,
               backgroundImage: 'background.png',
             }}
+            calculateMetadata={({ props }) => ({
+              durationInFrames: calculateSingleSentenceShortDuration(
+                props.audioFile,
+                props.introAudioFile
+              ),
+            })}
           />
         );
       })}
