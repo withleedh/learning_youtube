@@ -13,6 +13,59 @@ import { calculateStep3Duration } from '../src/compositions/Step3';
 import { calculateStep4Duration } from '../src/compositions/Step4';
 import { STEP_TRANSITION_DURATION } from '../src/compositions/StepTransition';
 
+/**
+ * Copy directory recursively
+ */
+async function copyDir(src: string, dest: string): Promise<void> {
+  await fs.mkdir(dest, { recursive: true });
+  const entries = await fs.readdir(src, { withFileTypes: true });
+
+  for (const entry of entries) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+
+    if (entry.isDirectory()) {
+      await copyDir(srcPath, destPath);
+    } else {
+      await fs.copyFile(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * Setup public folder by copying output assets
+ */
+async function setupPublicFolder(channelId: string, outputFolder: string): Promise<void> {
+  const sourceDir = path.join(process.cwd(), 'output', channelId, outputFolder);
+  const assetsDir = path.join(process.cwd(), 'output', channelId, 'assets');
+  const publicDir = path.join(process.cwd(), 'public');
+
+  console.log('\n📁 Setting up public folder...');
+
+  // Clear and recreate public folder
+  try {
+    await fs.rm(publicDir, { recursive: true, force: true });
+  } catch {
+    // ignore if doesn't exist
+  }
+  await fs.mkdir(publicDir, { recursive: true });
+
+  // Copy output folder contents to public/
+  console.log(`   Copying ${outputFolder}/ → public/`);
+  await copyDir(sourceDir, publicDir);
+
+  // Copy shared assets if exists
+  try {
+    await fs.access(assetsDir);
+    console.log(`   Copying assets/ → public/assets/`);
+    await copyDir(assetsDir, path.join(publicDir, 'assets'));
+  } catch {
+    console.log(`   ⚠️ No shared assets folder found`);
+  }
+
+  console.log('   ✅ Public folder ready');
+}
+
 async function renderVideo() {
   console.log('🎬 Starting video render...\n');
 
@@ -55,46 +108,48 @@ async function renderVideo() {
   const configContent = await fs.readFile(configPath, 'utf-8');
   const config: ChannelConfig = JSON.parse(configContent);
 
-  // Load audio manifest and convert to staticFile paths
+  // Load audio manifest
   const manifestPath = path.join(baseDir, 'audio/manifest.json');
   const manifestContent = await fs.readFile(manifestPath, 'utf-8');
   const rawAudioFiles: AudioFile[] = JSON.parse(manifestContent);
 
-  // Convert absolute paths to staticFile paths for Remotion (with outputFolder prefix)
+  // Setup public folder (copy assets before bundling)
+  await setupPublicFolder(channelId, outputFolder);
+
+  // Convert paths to simple staticFile paths (now relative to public/)
   const audioFiles: AudioFile[] = rawAudioFiles.map((af) => ({
     ...af,
-    path: `${outputFolder}/audio/${path.basename(af.path)}`,
+    path: `audio/${path.basename(af.path)}`,
   }));
 
-  console.log(`📝 Script: ${script.metadata.title.target}`);
+  console.log(`\n📝 Script: ${script.metadata.title.target}`);
   console.log(`🎤 Audio files: ${audioFiles.length}`);
   console.log(`📊 Sentences: ${script.sentences.length}`);
   console.log(`🔊 Sample audio path: ${audioFiles[0].path}`);
 
-  // Background image path (with outputFolder prefix for dynamic files)
-  const backgroundImage = `${outputFolder}/background.png`;
+  // Background image path (simple path, relative to public/)
+  const backgroundImage = 'background.png';
   console.log(`🖼️ Background image: ${backgroundImage}`);
 
-  // Bundle the Remotion project - use channel output folder as publicDir
+  // Bundle the Remotion project - use public/ as publicDir
   console.log('\n📦 Bundling Remotion project...');
-  const channelOutputDir = path.join(process.cwd(), 'output', channelId);
+  const publicDir = path.join(process.cwd(), 'public');
   const bundleLocation = await bundle({
     entryPoint: path.join(process.cwd(), 'src/index.ts'),
     webpackOverride: (config) => config,
-    publicDir: channelOutputDir,
+    publicDir,
   });
 
-  console.log(`📂 Public dir: ${channelOutputDir}`);
+  console.log(`📂 Public dir: ${publicDir}`);
   console.log(`📦 Bundle location: ${bundleLocation}`);
 
-  // Build inputProps with all asset paths
-  // Asset paths use assets/ prefix (shared assets in output/{channelId}/assets/)
+  // Build inputProps with simplified asset paths
   const inputProps = {
     config,
     script,
     audioFiles,
     backgroundImage,
-    // Shared asset paths
+    // Shared asset paths (in public/assets/)
     thumbnailPath: 'assets/thumbnail.png',
     viralNarrationPath: 'assets/intro-viral.mp3',
     viralNarrationDuration: 5.256,

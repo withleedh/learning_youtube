@@ -11,6 +11,7 @@ export const sentenceSchema = z.object({
   id: z.number().int().positive(),
   speaker: z.enum(['M', 'F']),
   target: z.string().min(1, 'Target sentence is required'),
+  targetPronunciation: z.string().optional(), // 발음 표기 (native 언어 문자로)
   targetBlank: z.string().min(1, 'Target blank sentence is required'),
   blankAnswer: z.string().min(1, 'Blank answer is required'),
   native: z.string().min(1, 'Native translation is required'),
@@ -30,6 +31,7 @@ export const categorySchema = z.enum([
 
 // Script metadata schema
 export const metadataSchema = z.object({
+  imagePrompt: z.string().optional(), // GPT가 생성한 배경 이미지 프롬프트
   topic: z.string().min(1, 'Topic is required'),
   style: z.string().optional().default('casual'),
   title: z.object({

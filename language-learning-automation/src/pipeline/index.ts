@@ -5,6 +5,7 @@ import { generateScript, saveScript, createSampleScript } from '../script/genera
 import { generateAllAudio, createMockAudioFiles } from '../tts/generator';
 import { IntroGenerator } from '../intro/generator';
 import { generateBackgroundImage } from '../image/generator';
+import { GEMINI_API_URLS, getGeminiApiKey } from '../config/gemini';
 import type { IntroAssetConfig } from '../intro/types';
 import type { ChannelConfig } from '../config/types';
 import type { Script } from '../script/types';
@@ -101,7 +102,8 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
         backgroundImagePath = await generateBackgroundImage(
           script.metadata.topic,
           script.metadata.title.target,
-          outputDir
+          outputDir,
+          config.thumbnail?.customCharacters
         );
         console.log(`   ✓ Generated background image: ${backgroundImagePath}`);
       } catch (imageError) {
@@ -269,8 +271,8 @@ async function ensureChannelAssets(config: ChannelConfig): Promise<void> {
 
   // Generate intro background image if missing
   if (missingAssets.includes('intro/background.png')) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
+    try {
+      const apiKey = getGeminiApiKey();
       console.log('   🎨 Generating intro background image...');
       const introConfig: IntroAssetConfig = {
         channelId: config.channelId,
@@ -284,18 +286,18 @@ async function ensureChannelAssets(config: ChannelConfig): Promise<void> {
 
       const generator = new IntroGenerator(apiKey);
       await generator.generateIntroAssets(introConfig, { outputDir: assetsDir });
-    } else {
+    } catch {
       console.log('   ⚠️ GEMINI_API_KEY not set, skipping intro background');
     }
   }
 
   // Generate thumbnail if missing
   if (missingAssets.includes('thumbnail.png')) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (apiKey) {
+    try {
+      getGeminiApiKey(); // Check if API key exists
       console.log('   🎨 Generating thumbnail...');
       await generateThumbnail(config, assetsDir);
-    } else {
+    } catch {
       console.log('   ⚠️ GEMINI_API_KEY not set, skipping thumbnail');
     }
   }
@@ -403,11 +405,7 @@ async function generateAllTTSAssets(
  * Generate thumbnail image for a channel
  */
 async function generateThumbnail(config: ChannelConfig, outputDir: string): Promise<void> {
-  const GEMINI_API_URL =
-    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
-  const apiKey = process.env.GEMINI_API_KEY;
-
-  if (!apiKey) return;
+  const apiKey = getGeminiApiKey();
 
   const prompt = `Create a YouTube thumbnail placeholder image for a language learning channel.
 Channel: ${config.meta.name}
@@ -418,7 +416,7 @@ Size: 1280x720 (16:9 aspect ratio)
 No text needed - just a visually appealing background that works as a thumbnail base.`;
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+    const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -690,7 +688,7 @@ ${timelineText}
   );
   await generateVideoThumbnail(
     backgroundPath,
-    script.metadata.title.target,
+    script.metadata.title.native,
     subtitleText,
     thumbnailPath
   );
@@ -781,32 +779,50 @@ async function generateVideoThumbnail(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
 
-  // Title - white text with shadow
-  let titleFontSize = 72;
-  if (titleText.length > 20) titleFontSize = 63;
-  if (titleText.length > 30) titleFontSize = 54;
+  // Title - white text with black stroke (125% size)
+  let titleFontSize = 90; // 72 * 1.25
+  if (titleText.length > 20) titleFontSize = 79; // 63 * 1.25
+  if (titleText.length > 30) titleFontSize = 68; // 54 * 1.25
 
   ctx.font = `bold ${titleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
-  ctx.fillStyle = '#FFFFFF';
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 2;
 
-  // Subtitle - pink/magenta
-  const subtitleFontSize = 108;
+  // Subtitle - pink/magenta (125% size)
+  const subtitleFontSize = 135; // 108 * 1.25
   const subtitleY = HEIGHT - 30;
   const titleY = subtitleY - subtitleFontSize - 24; // 24px gap
 
+  // Draw title with stroke (outline) first, then fill
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 15;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 4;
+  ctx.strokeText(titleText, WIDTH / 2, titleY);
+
+  // Fill white text on top
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
   ctx.fillText(titleText, WIDTH / 2, titleY);
 
+  // Subtitle with stroke
   ctx.font = `bold ${subtitleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
-  ctx.fillStyle = '#FF1493'; // Deep pink / magenta
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetX = 3;
-  ctx.shadowOffsetY = 3;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 10;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 15;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 4;
+  ctx.strokeText(subtitleText, WIDTH / 2, subtitleY);
 
+  // Fill pink text on top
+  ctx.fillStyle = '#FF1493'; // Deep pink / magenta
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
   ctx.fillText(subtitleText, WIDTH / 2, subtitleY);
 
   // Save to file

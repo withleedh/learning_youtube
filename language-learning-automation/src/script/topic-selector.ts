@@ -2,6 +2,8 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { Category } from './types';
+import { GEMINI_MODELS, getGeminiApiKey } from '../config/gemini';
+import { buildCulturalContextPrompt, getRandomCulturalCategory } from './cultural-interests';
 
 interface TopicHistory {
   date: string;
@@ -42,14 +44,15 @@ async function saveTopicToHistory(topic: string, category: Category): Promise<vo
 /**
  * Generate a timely, relevant topic using AI
  */
-export async function selectTimlyTopic(category: Category): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
+export async function selectTimlyTopic(
+  category: Category,
+  targetLanguage: string = 'English',
+  nativeLanguage: string = 'Korean'
+): Promise<string> {
+  const apiKey = getGeminiApiKey();
 
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
   // Get current date info
   const now = new Date();
@@ -61,53 +64,92 @@ export async function selectTimlyTopic(category: Category): Promise<string> {
   const history = await loadTopicHistory();
   const recentTopics = history.slice(-30).map((h) => h.topic);
 
+  // Language display names
+  const langDisplayNames: Record<string, Record<string, string>> = {
+    Korean: {
+      English: '영어',
+      Korean: '한국어',
+      Japanese: '일본어',
+      Chinese: '중국어',
+      Spanish: '스페인어',
+    },
+    English: {
+      English: 'English',
+      Korean: 'Korean',
+      Japanese: 'Japanese',
+      Chinese: 'Chinese',
+      Spanish: 'Spanish',
+    },
+  };
+
+  const targetLangName = langDisplayNames[nativeLanguage]?.[targetLanguage] || targetLanguage;
+  const nativeLangName = langDisplayNames[nativeLanguage]?.[nativeLanguage] || nativeLanguage;
+
+  // 문화적 관심사 컨텍스트 생성
+  const culturalContext = buildCulturalContextPrompt(targetLanguage, nativeLangName);
+  const culturalCategory = getRandomCulturalCategory(targetLanguage);
+
   const prompt = `# Role
-너는 유튜브 조회수를 폭발시키는 '콘텐츠 기획 전문가'이자 '언어 교육자'야.
+너는 유튜브 ${targetLangName} 학습 채널의 '콘텐츠 기획자'야.
+목표: 시청자가 "이거 나도 필요해!" 하고 클릭하게 만드는 주제 선정
+
+# Target Audience
+- ${targetLangName} 초중급자 (해외여행 준비 중이거나 일상 회화 연습 중)
+- 모국어: ${nativeLangName}
+${culturalContext}
 
 # Task
-오늘 날짜(${today}, ${dayOfWeek})와 계절(${month}월)을 고려해서, 사람들이 썸네일을 보자마자 클릭하고 싶어지는 "구체적이고 리얼한 영어 회화 주제" 1개를 제안해줘.
+#${month}월에 맞는 
+**보편적이고 공감되는** ${targetLangName} 회화 주제 1개를 제안해줘.
+${culturalCategory ? `오늘은 "${culturalCategory.category}" 관련 주제를 우선 고려해줘.` : ''}
 
-# Category Context
-${getCategoryGuidance(category)}
+# Category: ${category}
+${getCategoryGuidance(category, targetLangName)}
 
-# Criteria (선정 기준)
-1. **구체성(Specific)**: 단순한 '식당'이 아니라, "주문한 음식이 잘못 나와서 컴플레인 거는 상황"이어야 함.
+# 🎯 핵심 기준: "넓고 보편적인 상황"
 
-2. **공감대(Empathy)**: 누구나 겪을 법하거나 걱정하는 상황
-   - 여행: "입국 심사에서 질문 공세", "호텔 예약이 안 되어있을 때", "택시 기사가 돌아가는 길로 갈 때"
-   - 일상: "층간 소음 항의", "엘리베이터 고장", "배달 음식이 잘못 왔을 때"
-   - 비즈니스: "화상 회의 중 연결 끊김", "이메일 오타로 곤란한 상황"
-   - 위급: "해외에서 지갑 분실", "약국에서 약 설명 듣기", "병원 응급실"
+## ✅ 좋은 주제 (넓고 보편적)
+- "카페에서 커피 주문하기" (누구나 경험)
+- "공항에서 체크인하기" (여행자 필수)
+- "식당에서 주문하기" (매일 하는 일)
+- "택시 타고 목적지 가기" (여행 필수)
+- "호텔 체크인하기" (여행 필수)
+- "마트에서 장보기" (일상)
+- "친구와 주말 계획 세우기" (일상 대화)
 
-3. **시의성(Timely)**: 현재 시기(${month}월, ${dayOfWeek})에 맞는 상황
-   - 1-2주 내 다가오는 이벤트나 명절 관련
-   - 계절에 맞는 상황 (겨울: 난방, 감기, 눈 / 여름: 에어컨, 휴가 등)
-   - 요일 특성 (월요일: 출근, 금요일: 퇴근 후 약속 등)
+## ❌ 나쁜 주제 (너무 구체적/좁음)
+- "호텔에서 담요 추가 요청하기" ← 너무 구체적
+- "카페에서 우유 변경 요청하기" ← 너무 좁음
+- "택시에서 에어컨 켜달라고 하기" ← 너무 세부적
+- "식당에서 소금 달라고 하기" ← 너무 사소함
 
-4. **다양성**: 여행, 비즈니스, 일상 생활, 위급 상황을 골고루
+## 판단 기준
+1. **10명 중 8명 이상**이 경험할 상황인가?
+2. **유튜브 썸네일**로 만들면 클릭하고 싶은가?
+3. **15문장 대화**로 자연스럽게 확장 가능한가?
 
-5. **중복 회피**: 최근 사용한 주제는 피할 것
-${recentTopics.length > 0 ? recentTopics.map((t) => `   - ${t}`).join('\n') : '   (최근 주제 없음)'}
+# 시의성 (${month}월)
+- 1-2월: 새해, 겨울여행, 스키장
+- 3-4월: 봄, 벚꽃, 졸업/입학
+- 5-6월: 여행 시즌, 휴가 계획
+- 7-8월: 여름휴가, 해변, 더위
+- 9-10월: 가을, 단풍, 추석
+- 11-12월: 연말, 크리스마스, 쇼핑
 
-# Output Format
-한글로 10-20자 이내의 구체적인 상황 설명만 출력.
-설명이나 부가 텍스트 없이 주제만 출력할 것.
+# 중복 회피 (최근 사용 주제)
+${
+  recentTopics.length > 0
+    ? recentTopics
+        .slice(-10)
+        .map((t) => `- ${t}`)
+        .join('\n')
+    : '(없음)'
+}
 
-## Good Examples:
-- 주문한 음식이 잘못 나왔을 때
-- 입국 심사대에서 질문 공세 받기
-- 호텔 체크인 예약이 없다고 할 때
-- 층간 소음으로 윗집에 항의하기
-- 택시 기사가 먼 길로 돌아갈 때
-- 해외 약국에서 감기약 사기
-- 비행기 연착으로 환불 요청하기
-
-## Bad Examples (너무 일반적):
-- 식당에서 주문하기
-- 호텔 체크인
-- 쇼핑하기
-
-지금 주제를 하나만 출력해줘.`;
+# Output
+${nativeLangName === 'Korean' ? '한글' : nativeLangName}로 **8-12자** 이내.
+"~하기" 형태로 끝나는 간결한 상황 설명만 출력.
+부가 설명 없이 주제만 출력.`;
 
   const result = await model.generateContent(prompt);
   const response = await result.response;
@@ -119,28 +161,28 @@ ${recentTopics.length > 0 ? recentTopics.map((t) => `   - ${t}`).join('\n') : ' 
   return topic;
 }
 
-function getCategoryGuidance(category: Category): string {
+function getCategoryGuidance(category: Category, targetLangName: string): string {
   const guidance: Record<Category, string> = {
-    story: `짧은 에피소드 형식. 감정과 경험이 담긴 이야기.
-예: "첫 출근 날 엘리베이터에서 사장님과 마주친 썰", "해외여행 중 지갑을 잃어버렸던 날"`,
+    story: `짧고 쉬운 에피소드. 일상적인 경험담.
+예: "처음 해외여행 갔던 날", "새 친구를 사귄 이야기"`,
 
-    conversation: `두 사람의 실제 대화 상황. 질문-응답 구조. 구체적인 상황일수록 좋음.
-예: "카페에서 주문한 음료가 잘못 나왔을 때", "친구가 약속 시간에 2시간 늦었을 때"`,
+    conversation: `두 사람의 자연스러운 ${targetLangName} 대화.
+예: "카페에서 주문하기", "친구와 주말 계획 세우기", "새 동료와 인사하기"`,
 
-    news: `뉴스 스타일의 정보 전달. 시의성 있는 이슈.
-예: "이번 주 한파 경보 발령", "설 연휴 고속도로 정체 예상"`,
+    news: `쉬운 뉴스 스타일. 간단한 정보 전달.
+예: "이번 주 날씨 예보", "새로 오픈한 맛집 소개"`,
 
-    announcement: `두 사람이 공지/안내에 대해 대화하는 형식.
-예: "백화점 세일 공지 보고 대화하기", "공항 게이트 변경 안내 듣고 당황하기"`,
+    announcement: `안내 상황에 대한 두 사람의 대화.
+예: "공항 안내방송 듣고 대화하기", "가게 세일 안내 보고 대화하기"`,
 
-    travel_business: `여행이나 업무 상황의 실용 영어. 구체적인 문제 상황이 좋음.
-예: "호텔 예약이 안 되어있다고 할 때", "비행기 연착으로 환불 요청하기"`,
+    travel_business: `여행/비즈니스 필수 상황.
+예: "호텔 체크인하기", "공항에서 탑승하기", "회의 일정 잡기"`,
 
-    lesson: `지식이나 상식을 설명하는 교육 콘텐츠.
-예: "겨울철 정전기 방지법", "감기 빨리 낫는 방법"`,
+    lesson: `쉬운 생활 팁이나 상식.
+예: "감기 예방하는 방법", "여행 짐 싸는 팁"`,
 
-    fairytale: `교훈이 있는 동화나 우화.
-예: "개미와 베짱이", "황금알을 낳는 거위"`,
+    fairytale: `짧고 쉬운 동화.
+예: "토끼와 거북이", "해와 바람"`,
   };
 
   return guidance[category];

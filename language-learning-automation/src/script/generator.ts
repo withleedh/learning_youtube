@@ -5,13 +5,11 @@ import { scriptSchema, type Script, type Category } from './types';
 import type { ChannelConfig } from '../config/types';
 import { generateScriptPrompt, getCategoryForDay } from './prompts';
 import { selectTimlyTopic } from './topic-selector';
+import { GEMINI_MODELS, getGeminiApiKey } from '../config/gemini';
 
 // Initialize Gemini client
 function getGeminiClient() {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
+  const apiKey = getGeminiApiKey();
   return new GoogleGenerativeAI(apiKey);
 }
 
@@ -24,7 +22,7 @@ export async function generateScript(
   topic?: string
 ): Promise<Script> {
   const genAI = getGeminiClient();
-  const model = genAI.getGenerativeModel({ model: 'gemini-3-pro-preview' });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
   // Use provided category or get from current day
   const scriptCategory = category || getCategoryForDay(new Date());
@@ -33,7 +31,11 @@ export async function generateScript(
   let selectedTopic = topic;
   if (!selectedTopic) {
     console.log('🤖 AI가 시의성 있는 주제를 선정 중...');
-    selectedTopic = await selectTimlyTopic(scriptCategory);
+    selectedTopic = await selectTimlyTopic(
+      scriptCategory,
+      config.meta.targetLanguage,
+      config.meta.nativeLanguage
+    );
     console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
   }
 

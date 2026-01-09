@@ -7,23 +7,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { IntroAssetConfig, IntroAssets, IntroGeneratorOptions, IntroStyle } from './types';
-
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
-
-interface GeminiImageResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text?: string;
-        inlineData?: {
-          mimeType: string;
-          data: string;
-        };
-      }>;
-    };
-  }>;
-}
+import { GEMINI_API_URLS, type GeminiImageResponse } from '../config/gemini';
 
 // 언어별 바이럴 문구
 const VIRAL_MESSAGES: Record<string, { line1: string; line2: string }> = {
@@ -205,7 +189,7 @@ export class IntroGenerator {
       },
     };
 
-    const response = await fetch(`${GEMINI_API_URL}?key=${this.apiKey}`, {
+    const response = await fetch(`${GEMINI_API_URLS.image}?key=${this.apiKey}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),

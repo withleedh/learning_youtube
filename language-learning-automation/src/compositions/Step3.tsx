@@ -133,23 +133,24 @@ export const Step3: React.FC<Step3Props> = ({
         </AbsoluteFill>
       )}
 
-      {/* Step Title Badge - 깔끔한 텍스트 배지 */}
+      {/* Step Indicator */}
       <div
         style={{
           position: 'absolute',
-          top: 30,
+          top: 40,
           left: 40,
-          fontSize: 24,
-          color: 'rgba(255,255,255,0.8)',
+          backgroundColor: 'rgba(0,0,0,0.6)',
+          padding: '16px 32px',
+          borderRadius: 12,
+          fontSize: 48,
+          color: '#FFFFFF',
           fontWeight: 600,
           fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-          letterSpacing: '1px',
           zIndex: 10,
         }}
       >
-        {labels.step3Title}
+        Step 3: {labels.step3Title}
       </div>
-
       {/* Sentence Display Sequences */}
       {allSequences.map((seq, index) => (
         <Sequence key={index} from={seq.startFrame} durationInFrames={seq.durationFrames}>
@@ -247,11 +248,11 @@ const SentenceDisplay: React.FC<{
             color: textColor,
             textAlign: 'center',
             lineHeight: 1.25,
-            marginBottom: 24, // 간격 줄임
+            marginBottom: 48, // 간격 줄임
             fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
             textShadow: '0 4px 20px rgba(0,0,0,0.6)',
             maxWidth: '92%',
-            wordBreak: 'keep-all', // 단어 중간 잘림 방지
+            wordBreak: 'keep-all',
             overflowWrap: 'break-word',
           }}
         >
@@ -336,7 +337,7 @@ const SentenceDisplay: React.FC<{
         {/* Speed Indicator */}
         <div
           style={{
-            fontSize: 24,
+            fontSize: 48,
             fontWeight: 600,
             color: 'rgba(255,255,255,0.8)',
             fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -348,7 +349,7 @@ const SentenceDisplay: React.FC<{
         {/* Repetition Counter */}
         <div
           style={{
-            fontSize: 24,
+            fontSize: 48,
             fontWeight: 600,
             color: 'rgba(255,255,255,0.6)',
             fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',

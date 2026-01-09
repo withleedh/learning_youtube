@@ -1,26 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-
-const GEMINI_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent';
-
-// Gemini 3 Pro Image Preview for high-quality image generation
-const GEMINI_IMAGE_API_URL =
-  'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-image-preview:generateContent';
-
-interface GeminiImageResponse {
-  candidates: Array<{
-    content: {
-      parts: Array<{
-        text?: string;
-        inlineData?: {
-          mimeType: string;
-          data: string;
-        };
-      }>;
-    };
-  }>;
-}
+import { GEMINI_API_URLS, getGeminiApiKey, type GeminiImageResponse } from '../config/gemini';
 
 /**
  * Generate an illustration image using Gemini API based on the script topic
@@ -31,10 +11,7 @@ export async function generateIllustration(
   style: string = 'warm illustration',
   outputPath: string
 ): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
+  const apiKey = getGeminiApiKey();
 
   // Create a prompt for image generation
   const prompt = `Generate a warm, friendly illustration image for a language learning video.
@@ -69,7 +46,7 @@ The image should visually represent the conversation topic in a way that helps l
     },
   };
 
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -147,10 +124,7 @@ export interface ThumbnailOptions {
  * Gemini 3 Pro Image Preview 사용 (고품질, 4K 지원)
  */
 export async function generateThumbnail(options: ThumbnailOptions): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
+  const apiKey = getGeminiApiKey();
 
   const {
     channelName,
@@ -243,7 +217,7 @@ Technical requirements:
     },
   };
 
-  const response = await fetch(`${GEMINI_IMAGE_API_URL}?key=${apiKey}`, {
+  const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody),
@@ -336,10 +310,7 @@ function generateUnderstandingPhrase(targetLanguage: string, nativeLanguage: str
  * Gemini Flash를 사용한 썸네일 생성 (폴백용)
  */
 async function generateThumbnailWithGemini(options: ThumbnailOptions): Promise<string> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
+  const apiKey = getGeminiApiKey();
 
   const {
     channelName,
@@ -427,7 +398,7 @@ Technical requirements:
     },
   };
 
-  const response = await fetch(`${GEMINI_API_URL}?key=${apiKey}`, {
+  const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(requestBody),

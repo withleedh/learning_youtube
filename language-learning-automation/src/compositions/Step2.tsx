@@ -72,9 +72,9 @@ export const Step2: React.FC<Step2Props> = ({
           top: 40,
           left: 40,
           backgroundColor: 'rgba(0,0,0,0.6)',
-          padding: '12px 24px',
-          borderRadius: 8,
-          fontSize: 24,
+          padding: '16px 32px',
+          borderRadius: 12,
+          fontSize: 48,
           color: '#FFFFFF',
           fontWeight: 600,
           fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -113,13 +113,13 @@ const SentenceDisplay: React.FC<{
         flexDirection: 'column',
         justifyContent: 'center',
         alignItems: 'center',
-        padding: '60px 60px 180px 60px', // Step3와 동일한 패딩
+        padding: '60px 60px 180px 60px',
       }}
     >
       {/* Audio */}
       {audio && audio.path && <Audio src={staticFile(audio.path)} volume={1} />}
 
-      {/* Target Language Sentence - Step3와 동일한 크기 (80px) */}
+      {/* Target Language Sentence */}
       <div
         style={{
           fontSize: 80,
@@ -132,12 +132,30 @@ const SentenceDisplay: React.FC<{
           maxWidth: '92%',
           wordBreak: 'keep-all',
           overflowWrap: 'break-word',
+          marginBottom: 24,
         }}
       >
         {sentence.target}
       </div>
 
-      {/* 한글 해석 제거됨 */}
+      {/* Pronunciation Guide (발음 표기) */}
+      {sentence.targetPronunciation && (
+        <div
+          style={{
+            fontSize: 48,
+            fontWeight: 500,
+            color: 'rgba(255, 255, 255, 0.7)',
+            textAlign: 'center',
+            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+            textShadow: '0 2px 12px rgba(0,0,0,0.5)',
+            maxWidth: '92%',
+            wordBreak: 'keep-all',
+            overflowWrap: 'break-word',
+          }}
+        >
+          {sentence.targetPronunciation}
+        </div>
+      )}
     </AbsoluteFill>
   );
 };

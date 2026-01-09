@@ -40,9 +40,9 @@
   },
 
   "content": {
-    "sentenceCount": 20,
+    "sentenceCount": 15,
     "repeatCount": 10,
-    "difficulty": "intermediate"
+    "difficulty": "beginner"
   },
 
   "uiLabels": {

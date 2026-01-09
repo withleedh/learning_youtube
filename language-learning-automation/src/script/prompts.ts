@@ -1,29 +1,29 @@
 import type { Category } from './types';
 import type { ChannelConfig } from '../config/types';
 
-// Category descriptions for prompt context
+// Category descriptions for prompt context (초중급 레벨)
 const categoryDescriptions: Record<Category, string> = {
-  story: `일상 속 에피소드를 담은 짧은 이야기. 자연스러운 문장 흐름과 감정 표현에 초점.
-예시 주제: 첫 출근 날, 친구와의 재회, 우연한 만남, 감동적인 순간`,
+  story: `짧고 쉬운 일상 에피소드. 간단한 문장으로 자연스러운 흐름.
+예시 주제: 처음 해외여행 갔던 날, 새 친구를 사귄 이야기, 맛있는 음식을 먹은 날`,
 
-  conversation: `남녀가 주고받는 실전 대화. 질문과 응답 구조, 회화 패턴에 초점.
-예시 주제: 카페에서 주문, 길 묻기, 쇼핑, 약속 잡기`,
+  conversation: `두 사람의 간단한 실전 대화. 기본 요청과 응답, 간단한 옵션 선택.
+예시 주제: 카페에서 음료 주문, 식당에서 메뉴 고르기, 가게에서 물건 사기`,
 
-  news: `간결하고 정보 중심의 뉴스 문장. 정확한 듣기와 어휘 확장에 초점.
-예시 주제: 날씨 예보, 교통 정보, 지역 소식, 간단한 사건 보도`,
+  news: `쉽고 간결한 뉴스 문장. 일상적인 정보 전달.
+예시 주제: 오늘 날씨, 주말 행사 안내, 새로 오픈한 가게 소식`,
 
-  announcement: `남녀가 광고, 안내문, 공지사항에 대해 대화하는 형식. 실생활에서 접하는 안내 정보를 대화로 주고받음.
-예시: "백화점 세일 한대요" "언제까지예요?", "공항 게이트 바뀌었대" "어디로요?", "엘리베이터 점검 중이래" "계단 써야겠네"
+  announcement: `간단한 안내에 대해 두 사람이 대화하는 형식. 쉬운 정보 교환.
+예시: "비행기 탑승 시작한대요" "몇 번 게이트예요?", "세일 한대요" "언제까지예요?"
 ⚠️ CRITICAL: Must be a natural CONVERSATION between M and F discussing announcements, NOT a broadcast announcement itself!`,
 
-  travel_business: `여행과 업무 상황에서 자주 쓰이는 실용 영어.
-예시 주제: 호텔 체크인, 비행기 탑승, 회의 일정, 이메일 작성`,
+  travel_business: `여행 기본 상황. 간단한 요청과 응답.
+예시 주제: 호텔 체크인, 택시 타기, 길 물어보기, 식당 예약`,
 
-  lesson: `다양한 상식을 설명하는 영어 문장. 지식 기반의 설명형 영어에 초점.
-예시 주제: 과학 상식, 역사 이야기, 문화 설명, 생활 팁`,
+  lesson: `쉬운 생활 상식이나 팁을 설명하는 문장.
+예시 주제: 감기 예방법, 여행 짐 싸는 팁, 간단한 요리법`,
 
-  fairytale: `명작 동화를 들으며 교훈과 함께 영어 표현을 익히는 편안한 청취.
-예시 주제: 이솝 우화, 전래 동화, 교훈적인 이야기`,
+  fairytale: `짧고 쉬운 동화. 간단한 문장으로 이야기 전달.
+예시 주제: 토끼와 거북이, 해와 바람, 개미와 베짱이`,
 };
 
 /**
@@ -38,10 +38,10 @@ export function generateScriptPrompt(
   const categoryDesc = categoryDescriptions[category];
 
   return `# Role
-Act as a world-class ESL instructor and a native ${meta.targetLanguage} screenwriter.
+Act as a friendly ESL instructor creating content for pre-intermediate learners.
 
 # Task
-Create a realistic ${meta.targetLanguage} conversation script for a language learning video.
+Create a simple, practical ${meta.targetLanguage} conversation script for a language learning video.
 
 ## Category: ${category}
 ${categoryDesc}
@@ -49,21 +49,25 @@ ${categoryDesc}
 ## Topic: ${topic || 'Choose an engaging topic that fits the category'}
 
 # Constraints (Content)
-1. **Level:** CEFR B1~B2 (Intermediate). Natural, idiomatic, but clear enough for learners.
+1. **Level:** CEFR A2~B1 (초중급/Pre-Intermediate). Clear, practical, easy to follow.
 2. **Characters:** Two characters (M = Male, F = Female). Alternate speakers starting with M.
 3. **Length:** Exactly ${content.sentenceCount} sentences total.
 4. **Difficulty:** ${content.difficulty}
-5. **Sentence Length:** 10-20 words in ${meta.targetLanguage}
-6. **Key Expressions:** Use phrasal verbs and collocations native speakers actually use
-   - Instead of "wait" → use "hang on", "hold on"
-   - Instead of "understand" → use "get it", "catch on"
-   - Instead of "leave" → use "head out", "take off"
-7. **Dialogue Flow:** Make it natural with questions, answers, reactions, and follow-ups
+5. **Sentence Length:** 5-11 words in ${meta.targetLanguage} (keep it short and clear)
+6. **Key Expressions:** Use common, practical expressions learners can use right away
+   - Basic requests: "Can I have...", "I'd like...", "Could you..."
+   - Simple questions: "How much is...", "Where is...", "What time..."
+   - Common responses: "Sure", "No problem", "Here you go"
+7. **Dialogue Flow:** 
+   - Basic request + simple options/choices
+   - NO complex problem-solving or conflicts
+   - Natural but simple conversation
 8. **Blank Logic:** For each sentence, select ONE key word (verb, noun, adjective) crucial for understanding
 
 # Output Format (JSON)
 {
   "metadata": {
+    "imagePrompt": "A warm illustration of [describe the scene and characters based on the conversation topic and speakers]. Include character genders matching the dialogue speakers.",
     "topic": "specific topic description",
     "style": "casual/formal/narrative",
     "title": {
@@ -76,6 +80,7 @@ ${categoryDesc}
       "id": 1,
       "speaker": "M",
       "target": "Full sentence in ${meta.targetLanguage}",
+      "targetPronunciation": "Pronunciation written in ${meta.nativeLanguage} script (e.g., if target is English and native is Korean: 'Hello' -> '헬로우', if target is Korean and native is English: '안녕' -> 'annyeong')",
       "targetBlank": "Sentence with _______ replacing the key word",
       "blankAnswer": "the key word that was replaced",
       "native": "Natural translation in ${meta.nativeLanguage}",
@@ -90,10 +95,12 @@ ${categoryDesc}
 # Critical Rules
 - The blankAnswer MUST appear in the target sentence
 - The targetBlank MUST contain exactly "_______" (7 underscores) where blankAnswer was
-- Words array should include the blankAnswer and 2-4 other important vocabulary
-- Make the conversation feel like a real drama scene
+- targetPronunciation: Write how to pronounce the target sentence using ${meta.nativeLanguage} characters
+- Words array should include the blankAnswer and 2-3 other important vocabulary
+- Keep sentences SHORT (5-11 words) - this is crucial for beginners
 - Use contractions (I'm, don't, can't) for natural speech
-- Include filler words occasionally (well, you know, I mean) for authenticity
+- Avoid complex grammar (relative clauses, passive voice, conditionals)
+- imagePrompt: Describe the scene with characters matching the dialogue (e.g., "a man ordering coffee from a female barista at a cozy cafe")
 
 Generate ONLY the JSON output, no additional text.`;
 }
@@ -118,16 +125,18 @@ ${context}
 - Sentence ID: ${sentenceId}
 - Speaker: ${speaker === 'M' ? 'Male' : 'Female'}
 - Difficulty: ${content.difficulty}
-- Length: 10-20 words
+- Length: 5-11 words (keep it short and clear for pre-intermediate learners)
 - Include natural ${meta.nativeLanguage} translation
+- Include targetPronunciation (pronunciation in ${meta.nativeLanguage} script)
 - Identify one key vocabulary word as blank word
-- Provide 3-5 word meanings
+- Provide 2-3 word meanings
 
 ## Output Format (JSON):
 {
   "id": ${sentenceId},
   "speaker": "${speaker}",
   "target": "Full sentence",
+  "targetPronunciation": "Pronunciation in ${meta.nativeLanguage} script",
   "targetBlank": "Sentence with _______",
   "blankAnswer": "key word",
   "native": "Translation",

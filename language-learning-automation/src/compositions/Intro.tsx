@@ -881,7 +881,7 @@ const StepsSection: React.FC<{
           flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          padding: '40px 100px',
+          padding: '40px 80px',
           gap: 24,
         }}
       >
@@ -910,7 +910,7 @@ const StepsSection: React.FC<{
                 display: 'flex',
                 alignItems: 'stretch',
                 width: '100%',
-                maxWidth: 1000,
+                maxWidth: 1200,
                 opacity,
                 transform: `translateY(${translateY}px)`,
                 background: stepBgColor,
@@ -931,7 +931,7 @@ const StepsSection: React.FC<{
               >
                 <span
                   style={{
-                    fontSize: 36,
+                    fontSize: 54,
                     fontWeight: 800,
                     color: '#FFFFFF',
                     fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -955,7 +955,7 @@ const StepsSection: React.FC<{
                 {/* 타이틀 */}
                 <div
                   style={{
-                    fontSize: 42,
+                    fontSize: 64,
                     fontWeight: 700,
                     color: '#FFFFFF',
                     fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
@@ -968,7 +968,7 @@ const StepsSection: React.FC<{
                 {/* 설명 */}
                 <div
                   style={{
-                    fontSize: 28,
+                    fontSize: 42,
                     fontWeight: 400,
                     color: 'rgba(255, 255, 255, 0.6)',
                     fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',

@@ -46,32 +46,50 @@ async function generateVideoThumbnail(
   ctx.textAlign = 'center';
   ctx.textBaseline = 'bottom';
 
-  // Title - white text with shadow (75% of 2x = 1.5x)
-  let titleFontSize = 72;
-  if (titleText.length > 20) titleFontSize = 63;
-  if (titleText.length > 30) titleFontSize = 54;
+  // Title - white text with black stroke
+  let titleFontSize = 90; // 72 * 1.25
+  if (titleText.length > 20) titleFontSize = 79; // 63 * 1.25
+  if (titleText.length > 30) titleFontSize = 68; // 54 * 1.25
 
   ctx.font = `bold ${titleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
-  ctx.fillStyle = '#FFFFFF';
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = 8;
-  ctx.shadowOffsetX = 2;
-  ctx.shadowOffsetY = 2;
 
-  // Subtitle - pink/magenta (75% of 144 = 108)
-  const subtitleFontSize = 108;
+  // Subtitle - pink/magenta (125% of previous: 108 * 1.25 = 135)
+  const subtitleFontSize = 135;
   const subtitleY = HEIGHT - 30;
   const titleY = subtitleY - subtitleFontSize - 24; // 24px gap between title and subtitle
 
+  // Draw title with stroke (outline) first, then fill
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 8;
+  ctx.lineJoin = 'round';
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 15;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 4;
+  ctx.strokeText(titleText, WIDTH / 2, titleY);
+
+  // Fill white text on top
+  ctx.fillStyle = '#FFFFFF';
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
   ctx.fillText(titleText, WIDTH / 2, titleY);
 
+  // Subtitle with stroke
   ctx.font = `bold ${subtitleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
-  ctx.fillStyle = '#FF1493'; // Deep pink / magenta
-  ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
-  ctx.shadowBlur = 10;
-  ctx.shadowOffsetX = 3;
-  ctx.shadowOffsetY = 3;
+  ctx.strokeStyle = '#000000';
+  ctx.lineWidth = 10;
+  ctx.shadowColor = 'rgba(0, 0, 0, 0.9)';
+  ctx.shadowBlur = 15;
+  ctx.shadowOffsetX = 4;
+  ctx.shadowOffsetY = 4;
+  ctx.strokeText(subtitleText, WIDTH / 2, subtitleY);
 
+  // Fill pink text on top
+  ctx.fillStyle = '#FF1493'; // Deep pink / magenta
+  ctx.shadowBlur = 0;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 0;
   ctx.fillText(subtitleText, WIDTH / 2, subtitleY);
 
   const buffer = canvas.toBuffer('image/png');
@@ -97,8 +115,8 @@ async function main() {
   const scriptContent = await fs.readFile(scriptPath, 'utf-8');
   const script = JSON.parse(scriptContent);
 
-  const titleText = script.metadata.title.target;
-  const subtitleText = '영어 듣기 연습';
+  const titleText = script.metadata.title.native;
+  const subtitleText = '여행 영어';
   const backgroundPath = path.join(outputDir, 'background.png');
   const thumbnailPath = path.join(outputDir, 'thumbnail.png');
 

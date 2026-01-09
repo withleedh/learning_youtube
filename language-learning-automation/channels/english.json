@@ -32,17 +32,17 @@
   },
 
   "tts": {
-    "provider": "google",
-    "maleVoice": "en-US-Studio-M",
-    "femaleVoice": "en-US-Studio-O",
+    "provider": "edge",
+    "maleVoice": "en-US-GuyNeural",
+    "femaleVoice": "en-US-JennyNeural",
     "targetLanguageCode": "en-US",
     "speed": 1.0
   },
 
   "content": {
-    "sentenceCount": 20,
+    "sentenceCount": 15,
     "repeatCount": 10,
-    "difficulty": "intermediate"
+    "difficulty": "beginner"
   },
 
   "uiLabels": {
