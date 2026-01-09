@@ -28,6 +28,8 @@ export interface IntroProps {
   thumbnailPath?: string;
   /** 학습 대상 언어 (예: English, Japanese) */
   targetLanguage?: string;
+  /** 시청자 모국어 (예: Korean, English) - UI 언어로 사용 */
+  nativeLanguage?: string;
   /** 바이럴 문구 나레이션 TTS 경로 */
   viralNarrationPath?: string;
   /** 바이럴 TTS 길이 (초) - 동적 타이밍용 */
@@ -212,6 +214,7 @@ export const Intro: React.FC<IntroProps> = ({
   introBackgroundPath,
   thumbnailPath,
   targetLanguage = 'English',
+  nativeLanguage = 'Korean',
   viralNarrationPath,
   viralNarrationDuration,
   guideNarrationPath,
@@ -237,12 +240,16 @@ export const Intro: React.FC<IntroProps> = ({
     fps
   );
 
-  // 바이럴 문구 (언어별 자동 생성)
+  // 바이럴 문구 (시청자 언어에 맞게 자동 생성)
   const viralMessages = getViralMessages(
     targetLanguage,
+    nativeLanguage,
     uiLabels?.viralLine1,
     uiLabels?.viralLine2
   );
+
+  // 가이드 문구 (시청자 언어에 맞게)
+  const guideMessage = getGuideMessage(nativeLanguage);
 
   // 스텝 설명 데이터 (uiLabels에서 생성)
   const steps = stepDescriptions ?? getStepDescriptionsFromLabels(uiLabels);
@@ -287,6 +294,7 @@ export const Intro: React.FC<IntroProps> = ({
           introBackgroundPath={hasIntroBackground ? introBackgroundPath : undefined}
           narrationPath={hasGuideNarration ? guideNarrationPath : undefined}
           durationFrames={guideDurationFrames}
+          guideMessage={guideMessage}
         />
       </Sequence>
 
@@ -309,47 +317,105 @@ export const Intro: React.FC<IntroProps> = ({
 };
 
 /**
- * 학습 언어에 따른 바이럴 문구 생성
+ * 학습 언어에 따른 바이럴 문구 생성 (시청자 언어로 표시)
  */
 function getViralMessages(
   targetLanguage: string,
+  nativeLanguage: string,
   customLine1?: string,
   customLine2?: string
 ): { line1: string; line2: string } {
   // 커스텀 문구가 있으면 사용
   if (customLine1 && customLine2) {
+    const langName = getLanguageName(targetLanguage, nativeLanguage);
     return {
-      line1: customLine1.replace('{language}', getLanguageInKorean(targetLanguage)),
-      line2: customLine2.replace('{language}', getLanguageInKorean(targetLanguage)),
+      line1: customLine1.replace('{language}', langName),
+      line2: customLine2.replace('{language}', langName),
     };
   }
 
-  // 언어별 기본 문구
-  const languageKr = getLanguageInKorean(targetLanguage);
+  // 시청자 언어에 따른 기본 문구
+  const langName = getLanguageName(targetLanguage, nativeLanguage);
 
-  return {
-    line1: `${languageKr} 문장을 반복해서 듣고`,
-    line2: `${languageKr}가 들리는 순간을 느껴보세요.`,
+  const messages: Record<string, { line1: string; line2: string }> = {
+    Korean: {
+      line1: `${langName} 문장을 반복해서 듣고`,
+      line2: `${langName}가 들리는 순간을 느껴보세요.`,
+    },
+    English: {
+      line1: `Listen to ${langName} sentences repeatedly`,
+      line2: `and feel the moment when ${langName} starts to click.`,
+    },
+    Japanese: {
+      line1: `${langName}の文を繰り返し聞いて`,
+      line2: `${langName}が聞こえる瞬間を感じてください。`,
+    },
+    Chinese: {
+      line1: `反复听${langName}句子`,
+      line2: `感受${langName}开始听懂的那一刻。`,
+    },
   };
+
+  return messages[nativeLanguage] || messages['English'];
 }
 
 /**
- * 언어명을 한국어로 변환
+ * 언어명을 시청자 언어로 변환
  */
-function getLanguageInKorean(language: string): string {
-  const languageMap: Record<string, string> = {
-    English: '영어',
-    Japanese: '일본어',
-    Chinese: '중국어',
-    Spanish: '스페인어',
-    French: '프랑스어',
-    German: '독일어',
-    Korean: '한국어',
-    Vietnamese: '베트남어',
-    Thai: '태국어',
-    Indonesian: '인도네시아어',
+function getLanguageName(targetLanguage: string, nativeLanguage: string): string {
+  const languageNames: Record<string, Record<string, string>> = {
+    Korean: {
+      English: '영어',
+      Japanese: '일본어',
+      Chinese: '중국어',
+      Spanish: '스페인어',
+      French: '프랑스어',
+      German: '독일어',
+      Korean: '한국어',
+      Vietnamese: '베트남어',
+    },
+    English: {
+      English: 'English',
+      Japanese: 'Japanese',
+      Chinese: 'Chinese',
+      Spanish: 'Spanish',
+      French: 'French',
+      German: 'German',
+      Korean: 'Korean',
+      Vietnamese: 'Vietnamese',
+    },
+    Japanese: {
+      English: '英語',
+      Korean: '韓国語',
+      Chinese: '中国語',
+    },
+    Chinese: {
+      English: '英语',
+      Korean: '韩语',
+      Japanese: '日语',
+    },
   };
-  return languageMap[language] || language;
+
+  const names = languageNames[nativeLanguage] || languageNames['English'];
+  return names[targetLanguage] || targetLanguage;
+}
+
+/**
+ * 가이드 문구 (시청자 언어로 표시)
+ */
+function getGuideMessage(nativeLanguage: string): {
+  prefix: string;
+  number: string;
+  suffix: string;
+} {
+  const messages: Record<string, { prefix: string; number: string; suffix: string }> = {
+    Korean: { prefix: '이 영상은 다음 ', number: '네', suffix: ' 단계로 진행됩니다.' },
+    English: { prefix: 'This video consists of ', number: 'four', suffix: ' steps.' },
+    Japanese: { prefix: 'この動画は', number: '4', suffix: 'つのステップで進みます。' },
+    Chinese: { prefix: '本视频分为', number: '四', suffix: '个步骤。' },
+  };
+
+  return messages[nativeLanguage] || messages['English'];
 }
 
 // 바이럴 문구 섹션
@@ -477,12 +543,13 @@ const ViralMessageSection: React.FC<{
   );
 };
 
-// 가이드 문구 섹션 ("이 영상은 다음 네 단계로 진행됩니다")
+// 가이드 문구 섹션 (다국어 지원)
 const GuideMessageSection: React.FC<{
   introBackgroundPath?: string;
   narrationPath?: string;
   durationFrames: number;
-}> = ({ introBackgroundPath, narrationPath, durationFrames }) => {
+  guideMessage: { prefix: string; number: string; suffix: string };
+}> = ({ introBackgroundPath, narrationPath, durationFrames, guideMessage }) => {
   const frame = useCurrentFrame();
 
   // 배경 페이드인
@@ -547,7 +614,7 @@ const GuideMessageSection: React.FC<{
           padding: '60px 80px',
         }}
       >
-        {/* "이 영상은 다음 네 단계로 진행됩니다." - 바이럴과 동일한 크기 */}
+        {/* 가이드 문구 - 바이럴과 동일한 크기 */}
         <div
           style={{
             fontSize: 100,
@@ -561,16 +628,16 @@ const GuideMessageSection: React.FC<{
             lineHeight: 1.3,
           }}
         >
-          <span style={{ color: WHITE_COLOR }}>이 영상은 다음 </span>
+          <span style={{ color: WHITE_COLOR }}>{guideMessage.prefix}</span>
           <span
             style={{
               color: GOLD_COLOR,
               textShadow: `0 0 60px ${GOLD_COLOR}66, 0 6px 40px rgba(0,0,0,0.6)`,
             }}
           >
-            네
+            {guideMessage.number}
           </span>
-          <span style={{ color: WHITE_COLOR }}> 단계로 진행됩니다.</span>
+          <span style={{ color: WHITE_COLOR }}>{guideMessage.suffix}</span>
         </div>
       </AbsoluteFill>
     </AbsoluteFill>

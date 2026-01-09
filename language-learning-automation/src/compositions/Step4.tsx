@@ -73,7 +73,7 @@ export const Step4: React.FC<Step4Props> = ({
           backgroundColor: 'rgba(0,0,0,0.6)',
           padding: '16px 32px',
           borderRadius: 12,
-          fontSize: 72,
+          fontSize: 48,
           color: '#FFFFFF',
           fontWeight: 600,
           fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',

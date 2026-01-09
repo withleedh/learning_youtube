@@ -143,6 +143,10 @@ export function createSampleScript(config: ChannelConfig, category: Category): S
         target: 'Sample Script',
         native: '샘플 스크립트',
       },
+      characters: [
+        { id: 'M' as const, name: 'James', gender: 'male' as const, ethnicity: 'American', role: 'customer' },
+        { id: 'F' as const, name: 'Sarah', gender: 'female' as const, ethnicity: 'American', role: 'barista' },
+      ],
     },
     sentences,
   };

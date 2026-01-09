@@ -7,7 +7,8 @@ const GOOGLE_TTS_API_URL = 'https://texttospeech.googleapis.com/v1/text:synthesi
 
 interface GoogleTTSRequest {
   input: {
-    text: string;
+    text?: string;
+    ssml?: string;
   };
   voice: {
     languageCode: string;
@@ -32,7 +33,25 @@ export const GOOGLE_VOICES = {
 } as const;
 
 /**
- * Synthesize speech using Google Cloud TTS API
+ * Get access token from gcloud CLI (Application Default Credentials)
+ */
+async function getAccessToken(): Promise<string> {
+  const { exec } = await import('child_process');
+  const { promisify } = await import('util');
+  const execAsync = promisify(exec);
+
+  try {
+    const { stdout } = await execAsync('gcloud auth print-access-token');
+    return stdout.trim();
+  } catch (error) {
+    throw new Error(
+      'Failed to get gcloud access token. Make sure you are logged in with: gcloud auth login'
+    );
+  }
+}
+
+/**
+ * Synthesize speech using Google Cloud TTS API with ADC
  */
 export async function synthesizeWithGoogle(
   text: string,
@@ -41,13 +60,13 @@ export async function synthesizeWithGoogle(
   gender: 'MALE' | 'FEMALE',
   speakingRate: number = 1.0
 ): Promise<Buffer> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    throw new Error('GEMINI_API_KEY environment variable is not set');
-  }
+  const accessToken = await getAccessToken();
+
+  // SSML로 감싸서 끝에 무음 추가 (Google TTS 끝 잘림 방지)
+  const ssmlText = `<speak>${text}<break time="300ms"/></speak>`;
 
   const request: GoogleTTSRequest = {
-    input: { text },
+    input: { ssml: ssmlText },
     voice: {
       languageCode,
       name: voiceName,
@@ -59,10 +78,12 @@ export async function synthesizeWithGoogle(
     },
   };
 
-  const response = await fetch(`${GOOGLE_TTS_API_URL}?key=${apiKey}`, {
+  const response = await fetch(GOOGLE_TTS_API_URL, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      Authorization: `Bearer ${accessToken}`,
+      'X-Goog-User-Project': process.env.GOOGLE_CLOUD_PROJECT || 'project-7041221e-8ba7-4667-971',
     },
     body: JSON.stringify(request),
   });
@@ -109,17 +130,25 @@ export async function generateWithGoogleAtSpeed(
     const filePath = path.join(outputDir, filename);
     await fs.writeFile(filePath, audioBuffer);
 
-    // Estimate duration (rough estimate: ~150 words per minute at 1.0x)
-    const wordCount = text.split(/\s+/).length;
-    const baseDuration = (wordCount / 150) * 60; // seconds
-    const adjustedDuration = baseDuration / speakingRate;
+    // Get actual audio duration from the file
+    let duration = 3.0; // fallback
+    try {
+      const { parseBuffer } = await import('music-metadata');
+      const metadata = await parseBuffer(audioBuffer, { mimeType: 'audio/mpeg' });
+      duration = metadata.format.duration || 3.0;
+    } catch {
+      // Fallback: estimate based on character count (better for Asian languages)
+      const charCount = text.length;
+      const baseDuration = charCount * 0.12; // ~0.12 seconds per character
+      duration = baseDuration / speakingRate;
+    }
 
     const audioFile: AudioFile = {
       sentenceId: typeof sentenceId === 'string' ? parseInt(sentenceId) || 0 : sentenceId,
       speaker,
       speed,
       path: filePath,
-      duration: adjustedDuration,
+      duration,
     };
 
     return { success: true, audioFile };

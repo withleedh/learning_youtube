@@ -10,13 +10,13 @@ async function testGoogleTTS() {
   await fs.mkdir(outputDir, { recursive: true });
 
   const testSentences = [
-    { id: 1, speaker: 'M' as const, text: 'Good morning! Would you like some coffee?' },
-    { id: 2, speaker: 'F' as const, text: 'Yes, please. I need my morning caffeine.' },
+    { id: 1, speaker: 'M' as const, text: '안녕하세요! 커피 한 잔 주시겠어요?' },
+    { id: 2, speaker: 'F' as const, text: '네, 아메리카노로 주세요.' },
   ];
 
   const voices = {
-    M: { name: 'en-US-Studio-M', gender: 'MALE' as const },
-    F: { name: 'en-US-Studio-O', gender: 'FEMALE' as const },
+    M: { name: 'ko-KR-Neural2-C', gender: 'MALE' as const },
+    F: { name: 'ko-KR-Neural2-A', gender: 'FEMALE' as const },
   };
 
   for (const sentence of testSentences) {
@@ -26,7 +26,7 @@ async function testGoogleTTS() {
 
     const results = await generateAllSpeedsWithGoogle(
       sentence.text,
-      'en-US',
+      'ko-KR',
       voice.name,
       voice.gender,
       outputDir,

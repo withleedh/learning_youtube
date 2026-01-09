@@ -103,7 +103,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
           script.metadata.topic,
           script.metadata.title.target,
           outputDir,
-          config.thumbnail?.customCharacters
+          script.metadata.imagePrompt
         );
         console.log(`   ✓ Generated background image: ${backgroundImagePath}`);
       } catch (imageError) {
@@ -631,54 +631,57 @@ async function renderVideo(
   let currentFrame = 0;
   const timeline: Array<{ time: string; label: string }> = [];
 
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '인트로 (필수!)' });
+  // 언어별 타임라인 라벨
+  const timelineLabels = getTimelineLabels(config.meta.nativeLanguage);
+
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: timelineLabels.intro });
   currentFrame += introDuration;
 
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 1. 자막 없이 듣기',
+    label: timelineLabels.step1,
   });
   currentFrame += step1Duration;
 
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 2. 자막 보며 듣기',
+    label: timelineLabels.step2,
   });
   currentFrame += step2Duration;
 
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 3. 문장별 3단계 훈련',
+    label: timelineLabels.step3,
   });
   currentFrame += step3Duration;
 
   currentFrame += STEP_TRANSITION_DURATION;
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: 'Step 4. 최종 확인' });
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: timelineLabels.step4 });
   currentFrame += step4Duration;
 
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '마무리' });
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: timelineLabels.ending });
 
   const uploadInfoPath = path.join(outputDir, 'upload_info.txt');
   const timelineText = timeline.map((t) => `${t.time} ${t.label}`).join('\n');
-  const uploadInfo = `타임라인:
+  const uploadInfo = `${timelineLabels.timelineHeader}:
 ${timelineText}
 
-제목: ${script.metadata.title.target}
-토픽: ${script.metadata.topic}
-카테고리: ${script.category}
+${timelineLabels.titleLabel}: ${script.metadata.title.target}
+${timelineLabels.topicLabel}: ${script.metadata.topic}
+${timelineLabels.categoryLabel}: ${script.category}
 `;
 
   await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');
   console.log(`✅ Upload info created: ${uploadInfoPath}`);
-  console.log('\n타임라인:');
+  console.log(`\n${timelineLabels.timelineHeader}:`);
   timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
 
   // Generate thumbnail with title text
   console.log('\n🖼️ Generating thumbnail...');
-  const thumbnailPath = path.join(outputDir, 'thumbnail.png');
+  const thumbnailPath = path.join(outputDir, 'episode_thumbnail.png');
   const backgroundPath = path.join(outputDir, 'background.png');
 
   // Generate subtitle based on target language and native language
@@ -693,6 +696,78 @@ ${timelineText}
     thumbnailPath
   );
   console.log(`✅ Thumbnail created: ${thumbnailPath}`);
+}
+
+/**
+ * Get timeline labels based on native language
+ */
+function getTimelineLabels(nativeLanguage: string = 'Korean') {
+  const labels: Record<
+    string,
+    {
+      timelineHeader: string;
+      intro: string;
+      step1: string;
+      step2: string;
+      step3: string;
+      step4: string;
+      ending: string;
+      titleLabel: string;
+      topicLabel: string;
+      categoryLabel: string;
+    }
+  > = {
+    Korean: {
+      timelineHeader: '타임라인',
+      intro: '인트로 (필수!)',
+      step1: 'Step 1. 자막 없이 듣기',
+      step2: 'Step 2. 자막 보며 듣기',
+      step3: 'Step 3. 문장별 3단계 훈련',
+      step4: 'Step 4. 최종 확인',
+      ending: '마무리',
+      titleLabel: '제목',
+      topicLabel: '토픽',
+      categoryLabel: '카테고리',
+    },
+    English: {
+      timelineHeader: 'Timeline',
+      intro: 'Intro (Must Watch!)',
+      step1: 'Step 1. Listen Without Subtitles',
+      step2: 'Step 2. Listen With Subtitles',
+      step3: 'Step 3. Sentence Repetition Training',
+      step4: 'Step 4. Final Review',
+      ending: 'Ending',
+      titleLabel: 'Title',
+      topicLabel: 'Topic',
+      categoryLabel: 'Category',
+    },
+    Japanese: {
+      timelineHeader: 'タイムライン',
+      intro: 'イントロ（必見！）',
+      step1: 'Step 1. 字幕なしで聞く',
+      step2: 'Step 2. 字幕を見ながら聞く',
+      step3: 'Step 3. 文ごとの3段階トレーニング',
+      step4: 'Step 4. 最終確認',
+      ending: 'エンディング',
+      titleLabel: 'タイトル',
+      topicLabel: 'トピック',
+      categoryLabel: 'カテゴリ',
+    },
+    Chinese: {
+      timelineHeader: '时间轴',
+      intro: '开场（必看！）',
+      step1: 'Step 1. 无字幕听力',
+      step2: 'Step 2. 有字幕听力',
+      step3: 'Step 3. 句子重复训练',
+      step4: 'Step 4. 最终复习',
+      ending: '结尾',
+      titleLabel: '标题',
+      topicLabel: '主题',
+      categoryLabel: '类别',
+    },
+  };
+
+  return labels[nativeLanguage] || labels['English'];
 }
 
 /**
@@ -786,8 +861,12 @@ async function generateVideoThumbnail(
 
   ctx.font = `bold ${titleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
 
-  // Subtitle - pink/magenta (125% size)
-  const subtitleFontSize = 135; // 108 * 1.25
+  // Subtitle - pink/magenta (dynamic sizing based on text length)
+  let subtitleFontSize = 135; // 기본 크기 (한국어용)
+  if (subtitleText.length > 15) subtitleFontSize = 110; // 영어 "Korean Listening Practice"
+  if (subtitleText.length > 25) subtitleFontSize = 90;
+  if (subtitleText.length > 35) subtitleFontSize = 75;
+
   const subtitleY = HEIGHT - 30;
   const titleY = subtitleY - subtitleFontSize - 24; // 24px gap
 

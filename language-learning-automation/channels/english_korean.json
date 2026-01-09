@@ -32,9 +32,9 @@
   },
 
   "tts": {
-    "provider": "edge",
-    "maleVoice": "ko-KR-InJoonNeural",
-    "femaleVoice": "ko-KR-SunHiNeural",
+    "provider": "google",
+    "maleVoice": "ko-KR-Chirp3-HD-Achird",
+    "femaleVoice": "ko-KR-Chirp3-HD-Achernar",
     "targetLanguageCode": "ko-KR",
     "speed": 1.0
   },
@@ -55,7 +55,7 @@
     "step2Desc": "Listen with subtitles and check the parts you missed.",
     "step3Desc": "[Slow-Fill in the Blank-Fast] repetition helps Korean start to click.",
     "step4Desc": "Experience how much clearer Korean sounds now!",
-    "step3PhaseTitle": "STEP 3 · Repetition Training",
+    "step3PhaseTitle": "Repetition Training",
     "phaseIntro": "🎧 Listen Slowly",
     "phaseTraining": "🧩 Fill in the Blank",
     "phaseChallenge": "⚡ Listen Fast",
@@ -65,7 +65,7 @@
   "thumbnail": {
     "channelName": "Listen Up! Korean!",
     "characterStyle": "custom",
-    "customCharacters": "a friendly American man and a cheerful Korean woman happily conversing and learning Korean together",
-    "backgroundColor": "dark blue"
+    "customCharacters": "a friendly korean man and a cheerful American woman happily conversing and learning Korean together",
+    "backgroundColor": "sky blue"
   }
 }

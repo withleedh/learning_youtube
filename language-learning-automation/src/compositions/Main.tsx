@@ -130,6 +130,7 @@ export const Main: React.FC<MainProps> = ({
           introBackgroundPath={theme.introBackground}
           thumbnailPath={thumbnailPath}
           targetLanguage={config.meta.targetLanguage}
+          nativeLanguage={config.meta.nativeLanguage}
           viralNarrationPath={viralNarrationPath}
           viralNarrationDuration={viralNarrationDuration}
           guideNarrationPath={guideNarrationPath}
@@ -148,6 +149,7 @@ export const Main: React.FC<MainProps> = ({
           stepNumber={1}
           ttsPath={stepTransitionTtsPaths?.[0]}
           bellSoundPath={stepTransitionBellPath}
+          nativeLanguage={config.meta.nativeLanguage}
         />
       </Sequence>
 
@@ -167,6 +169,7 @@ export const Main: React.FC<MainProps> = ({
           stepNumber={2}
           ttsPath={stepTransitionTtsPaths?.[1]}
           bellSoundPath={stepTransitionBellPath}
+          nativeLanguage={config.meta.nativeLanguage}
         />
       </Sequence>
 
@@ -191,6 +194,7 @@ export const Main: React.FC<MainProps> = ({
           stepNumber={3}
           ttsPath={stepTransitionTtsPaths?.[2]}
           bellSoundPath={stepTransitionBellPath}
+          nativeLanguage={config.meta.nativeLanguage}
         />
       </Sequence>
 
@@ -213,6 +217,7 @@ export const Main: React.FC<MainProps> = ({
           stepNumber={4}
           ttsPath={stepTransitionTtsPaths?.[3]}
           bellSoundPath={stepTransitionBellPath}
+          nativeLanguage={config.meta.nativeLanguage}
         />
       </Sequence>
 
@@ -231,6 +236,7 @@ export const Main: React.FC<MainProps> = ({
         <Ending
           backgroundPath={endingBackgroundPath || theme.introBackground}
           targetLanguage={config.meta.targetLanguage}
+          nativeLanguage={config.meta.nativeLanguage}
           narrationPath={endingNarrationPath}
         />
       </Sequence>

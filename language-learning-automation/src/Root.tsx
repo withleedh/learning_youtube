@@ -11,16 +11,40 @@ import type { ChannelConfig } from './config/types';
 import type { Script } from './script/types';
 import type { AudioFile } from './tts/types';
 
+// =============================================================================
+// Dynamic Loading from public/ folder
+// When running "npm run start", place these files in public/:
+//   - script.json (from output folder)
+//   - config.json (from channels/ folder)
+//   - audio/manifest.json (from output folder)
+//   - background.png
+//   - assets/ folder
+// =============================================================================
+
+// Try to load dynamic data from public/ folder
+let dynamicScript: Script | null = null;
+let dynamicConfig: ChannelConfig | null = null;
+let dynamicAudioFiles: AudioFile[] | null = null;
+
+try {
+  // These will be loaded at build time if files exist in public/
+  dynamicScript = require('../public/script.json') as Script;
+  dynamicConfig = require('../public/config.json') as ChannelConfig;
+  const rawAudioFiles = require('../public/audio/manifest.json') as AudioFile[];
+  // Convert paths to relative paths for staticFile()
+  dynamicAudioFiles = rawAudioFiles.map((af) => ({
+    ...af,
+    path: `audio/${af.path.split('/').pop()}`,
+  }));
+  console.log('✅ Loaded dynamic data from public/ folder');
+} catch {
+  console.log('ℹ️ Using sample data (no dynamic data in public/)');
+}
+
 // TTS duration (실제 파일에서 측정된 값)
-// intro-viral.mp3: 5.256초
-// intro-narration.mp3: 3.936초
-// intro-step1~4.mp3: 각각 약 7-9초
-// intro-closing.mp3: 2.952초
 const VIRAL_TTS_DURATION = 5.256;
 const GUIDE_TTS_DURATION = 3.936;
-
-// Step TTS durations (측정된 실제 값)
-const STEP_TTS_DURATIONS = [8.52, 8.904, 9.72, 7.464]; // step1~4
+const STEP_TTS_DURATIONS = [8.52, 8.904, 9.72, 7.464];
 const CLOSING_TTS_DURATION = 2.952;
 
 // Sample config for preview
@@ -101,6 +125,10 @@ const sampleScript: Script = {
       target: 'Morning Coffee Chat',
       native: '아침 커피 대화',
     },
+    characters: [
+      { id: 'M' as const, name: 'James', gender: 'male' as const, ethnicity: 'American', role: 'friend' },
+      { id: 'F' as const, name: 'Soo-jin', gender: 'female' as const, ethnicity: 'Korean', role: 'friend' },
+    ],
   },
   sentences: [
     {
@@ -203,15 +231,22 @@ const sampleAudioFiles: AudioFile[] = sampleScript.sentences.flatMap((sentence) 
   },
 ]);
 
+// =============================================================================
+// Use dynamic data if available, otherwise fall back to sample data
+// =============================================================================
+const activeConfig = dynamicConfig ?? sampleConfig;
+const activeScript = dynamicScript ?? sampleScript;
+const activeAudioFiles = dynamicAudioFiles ?? sampleAudioFiles;
+
 // Calculate durations
-const step1Duration = calculateStep1Duration(sampleAudioFiles);
-const step2Duration = calculateStep2Duration(sampleScript.sentences, sampleAudioFiles);
+const step1Duration = calculateStep1Duration(activeAudioFiles);
+const step2Duration = calculateStep2Duration(activeScript.sentences, activeAudioFiles);
 const step3Duration = calculateStep3Duration(
-  sampleScript.sentences,
-  sampleAudioFiles,
-  sampleConfig.content.repeatCount
+  activeScript.sentences,
+  activeAudioFiles,
+  activeConfig.content.repeatCount
 );
-const step4Duration = calculateStep4Duration(sampleAudioFiles);
+const step4Duration = calculateStep4Duration(activeAudioFiles);
 
 // 동적 인트로 길이 계산
 const introDuration = calculateIntroDuration(
@@ -221,9 +256,9 @@ const introDuration = calculateIntroDuration(
   CLOSING_TTS_DURATION
 );
 const totalDuration = calculateTotalDuration(
-  sampleScript.sentences,
-  sampleAudioFiles,
-  sampleConfig.content.repeatCount,
+  activeScript.sentences,
+  activeAudioFiles,
+  activeConfig.content.repeatCount,
   VIRAL_TTS_DURATION,
   GUIDE_TTS_DURATION,
   STEP_TTS_DURATIONS,
@@ -247,6 +282,10 @@ const calculateMainMetadata = ({ props }: { props: MainProps }) => {
 };
 
 export const RemotionRoot: React.FC = () => {
+  // Asset path prefix based on active config
+  const assetPrefix = `assets/`;
+  // const assetPrefix = `assets/${activeConfig.channelId}`;
+
   return (
     <>
       {/* Full Video - All Steps */}
@@ -259,31 +298,31 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{
-          config: sampleConfig,
-          script: sampleScript,
-          audioFiles: sampleAudioFiles,
+          config: activeConfig,
+          script: activeScript,
+          audioFiles: activeAudioFiles,
           backgroundImage: 'background.png',
-          thumbnailPath: 'assets/english/thumbnail.png',
-          viralNarrationPath: 'assets/english/intro-viral.mp3',
+          thumbnailPath: `${assetPrefix}/thumbnail.png`,
+          viralNarrationPath: `${assetPrefix}/intro-viral.mp3`,
           viralNarrationDuration: VIRAL_TTS_DURATION,
-          guideNarrationPath: 'assets/english/intro-narration.mp3',
+          guideNarrationPath: `${assetPrefix}/intro-narration.mp3`,
           guideNarrationDuration: GUIDE_TTS_DURATION,
           stepNarrationPaths: [
-            'assets/english/intro-step1.mp3',
-            'assets/english/intro-step2.mp3',
-            'assets/english/intro-step3.mp3',
-            'assets/english/intro-step4.mp3',
+            `${assetPrefix}/intro-step1.mp3`,
+            `${assetPrefix}/intro-step2.mp3`,
+            `${assetPrefix}/intro-step3.mp3`,
+            `${assetPrefix}/intro-step4.mp3`,
           ],
           stepNarrationDurations: STEP_TTS_DURATIONS,
-          closingNarrationPath: 'assets/english/intro-closing.mp3',
+          closingNarrationPath: `${assetPrefix}/intro-closing.mp3`,
           closingNarrationDuration: CLOSING_TTS_DURATION,
           stepTransitionTtsPaths: [
-            'assets/english/step-transition-1.mp3',
-            'assets/english/step-transition-2.mp3',
-            'assets/english/step-transition-3.mp3',
-            'assets/english/step-transition-4.mp3',
+            `${assetPrefix}/step-transition-1.mp3`,
+            `${assetPrefix}/step-transition-2.mp3`,
+            `${assetPrefix}/step-transition-3.mp3`,
+            `${assetPrefix}/step-transition-4.mp3`,
           ],
-          stepTransitionBellPath: 'assets/english/bell.wav',
+          stepTransitionBellPath: `${assetPrefix}/bell.wav`,
         }}
         calculateMetadata={calculateMainMetadata}
       />
@@ -298,26 +337,28 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{
-          channelName: sampleConfig.meta.name,
-          primaryColor: sampleConfig.theme.primaryColor,
-          secondaryColor: sampleConfig.theme.secondaryColor,
-          introSoundPath: 'assets/english/intro.mp3',
-          introBackgroundPath: 'assets/english/intro/background.png',
-          thumbnailPath: 'assets/english/thumbnail.png',
-          targetLanguage: sampleConfig.meta.targetLanguage,
-          viralNarrationPath: 'assets/english/intro-viral.mp3',
+          channelName: activeConfig.meta.name,
+          primaryColor: activeConfig.theme.primaryColor,
+          secondaryColor: activeConfig.theme.secondaryColor,
+          introSoundPath: `${assetPrefix}/intro.mp3`,
+          introBackgroundPath: `${assetPrefix}/intro/background.png`,
+          thumbnailPath: `${assetPrefix}/thumbnail.png`,
+          targetLanguage: activeConfig.meta.targetLanguage,
+          nativeLanguage: activeConfig.meta.nativeLanguage,
+          viralNarrationPath: `${assetPrefix}/intro-viral.mp3`,
           viralNarrationDuration: VIRAL_TTS_DURATION,
-          guideNarrationPath: 'assets/english/intro-narration.mp3',
+          guideNarrationPath: `${assetPrefix}/intro-narration.mp3`,
           guideNarrationDuration: GUIDE_TTS_DURATION,
           stepNarrationPaths: [
-            'assets/english/intro-step1.mp3',
-            'assets/english/intro-step2.mp3',
-            'assets/english/intro-step3.mp3',
-            'assets/english/intro-step4.mp3',
+            `${assetPrefix}/intro-step1.mp3`,
+            `${assetPrefix}/intro-step2.mp3`,
+            `${assetPrefix}/intro-step3.mp3`,
+            `${assetPrefix}/intro-step4.mp3`,
           ],
           stepNarrationDurations: STEP_TTS_DURATIONS,
-          closingNarrationPath: 'assets/english/intro-closing.mp3',
+          closingNarrationPath: `${assetPrefix}/intro-closing.mp3`,
           closingNarrationDuration: CLOSING_TTS_DURATION,
+          uiLabels: activeConfig.uiLabels,
         }}
       />
 
@@ -332,8 +373,8 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         defaultProps={{
           backgroundImage: 'background.png',
-          audioFiles: sampleAudioFiles,
-          title: sampleScript.metadata.title.target,
+          audioFiles: activeAudioFiles,
+          title: activeScript.metadata.title.target,
         }}
       />
 
@@ -348,12 +389,12 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         defaultProps={{
           backgroundImage: 'background.png',
-          sentences: sampleScript.sentences,
-          audioFiles: sampleAudioFiles,
+          sentences: activeScript.sentences,
+          audioFiles: activeAudioFiles,
           colors: {
-            maleText: sampleConfig.colors.maleText,
-            femaleText: sampleConfig.colors.femaleText,
-            nativeText: sampleConfig.colors.nativeText,
+            maleText: activeConfig.colors.maleText,
+            femaleText: activeConfig.colors.femaleText,
+            nativeText: activeConfig.colors.nativeText,
           },
         }}
       />
@@ -369,12 +410,12 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         defaultProps={{
           backgroundImage: 'background.png',
-          sentences: sampleScript.sentences,
-          audioFiles: sampleAudioFiles,
-          colors: sampleConfig.colors,
-          repeatCount: sampleConfig.content.repeatCount,
-          imageRatio: sampleConfig.layout.step3ImageRatio,
-          uiLabels: sampleConfig.uiLabels,
+          sentences: activeScript.sentences,
+          audioFiles: activeAudioFiles,
+          colors: activeConfig.colors,
+          repeatCount: activeConfig.content.repeatCount,
+          imageRatio: activeConfig.layout.step3ImageRatio,
+          uiLabels: activeConfig.uiLabels,
         }}
       />
 
@@ -389,8 +430,8 @@ export const RemotionRoot: React.FC = () => {
         height={1080}
         defaultProps={{
           backgroundImage: 'background.png',
-          audioFiles: sampleAudioFiles,
-          title: sampleScript.metadata.title.target,
+          audioFiles: activeAudioFiles,
+          title: activeScript.metadata.title.target,
         }}
       />
 
@@ -407,8 +448,9 @@ export const RemotionRoot: React.FC = () => {
           height={1080}
           defaultProps={{
             stepNumber: stepNum,
-            ttsPath: `assets/english/step-transition-${stepNum}.mp3`,
-            bellSoundPath: 'assets/english/bell.wav',
+            ttsPath: `${assetPrefix}/step-transition-${stepNum}.mp3`,
+            bellSoundPath: `${assetPrefix}/bell.wav`,
+            nativeLanguage: activeConfig.meta.nativeLanguage,
           }}
         />
       ))}
@@ -423,8 +465,9 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={{
-          backgroundPath: 'assets/english/intro/background.png',
-          targetLanguage: sampleConfig.meta.targetLanguage,
+          backgroundPath: `${assetPrefix}/intro/background.png`,
+          targetLanguage: activeConfig.meta.targetLanguage,
+          nativeLanguage: activeConfig.meta.nativeLanguage,
         }}
       />
     </>

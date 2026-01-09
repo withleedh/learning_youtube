@@ -67,13 +67,29 @@ ${categoryDesc}
 # Output Format (JSON)
 {
   "metadata": {
-    "imagePrompt": "A warm illustration of [describe the scene and characters based on the conversation topic and speakers]. Include character genders matching the dialogue speakers.",
     "topic": "specific topic description",
     "style": "casual/formal/narrative",
     "title": {
       "target": "Title in ${meta.targetLanguage}",
       "native": "Title in ${meta.nativeLanguage}"
-    }
+    },
+    "characters": [
+      {
+        "id": "M",
+        "name": "Character name (e.g., James, Minho)",
+        "gender": "male",
+        "ethnicity": "e.g., American, Korean, British",
+        "role": "e.g., customer, barista, teacher"
+      },
+      {
+        "id": "F",
+        "name": "Character name (e.g., Sarah, Yuna)",
+        "gender": "female",
+        "ethnicity": "e.g., American, Korean, British",
+        "role": "e.g., customer, barista, teacher"
+      }
+    ],
+    "imagePrompt": "A warm illustration of [scene description incorporating the characters above - use their exact gender, ethnicity, and role]. Be specific about the setting and character appearances."
   },
   "sentences": [
     {
@@ -100,7 +116,8 @@ ${categoryDesc}
 - Keep sentences SHORT (5-11 words) - this is crucial for beginners
 - Use contractions (I'm, don't, can't) for natural speech
 - Avoid complex grammar (relative clauses, passive voice, conditionals)
-- imagePrompt: Describe the scene with characters matching the dialogue (e.g., "a man ordering coffee from a female barista at a cozy cafe")
+- characters: Define BOTH M and F characters with realistic names, specific ethnicity (not just "Asian"), and their role in the dialogue
+- imagePrompt: MUST reference the characters array - describe the exact characters (gender, ethnicity, role) in the scene
 
 Generate ONLY the JSON output, no additional text.`;
 }

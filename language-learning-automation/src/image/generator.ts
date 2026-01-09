@@ -85,16 +85,24 @@ The image should visually represent the conversation topic in a way that helps l
 
 /**
  * Generate background image for language learning video
+ * @param topic - 스크립트 주제
+ * @param title - 스크립트 제목
+ * @param outputDir - 출력 디렉토리
+ * @param imagePrompt - GPT가 생성한 커스텀 이미지 프롬프트 (있으면 이걸 사용)
  */
 export async function generateBackgroundImage(
   topic: string,
   title: string,
-  outputDir: string
+  outputDir: string,
+  imagePrompt?: string
 ): Promise<string> {
   const filename = 'background.png';
   const outputPath = path.join(outputDir, filename);
 
-  return generateIllustration(topic, title, 'warm cozy illustration with soft colors', outputPath);
+  // imagePrompt가 있으면 해당 프롬프트를 스타일로 사용
+  const style = imagePrompt || 'warm cozy illustration with soft colors';
+
+  return generateIllustration(topic, title, style, outputPath);
 }
 
 /**

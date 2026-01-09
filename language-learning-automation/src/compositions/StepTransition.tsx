@@ -20,13 +20,29 @@ export interface StepTransitionProps {
   ttsPath?: string;
   /** 하단 안내 문구 (선택) */
   notices?: string[];
+  /** 시청자 모국어 - 안내 문구 언어 결정용 */
+  nativeLanguage?: string;
 }
 
-// 기본 안내 문구
-const DEFAULT_NOTICES = [
-  // '* 전체 영어 스크립트는 영상 하단의 "더보기"에서 확인하실 수 있습니다.',
-  '* 본 영상은 학습을 위한 픽션으로, 실제 사건 및 인물,단체,사건과 관련이 없습니다.',
-];
+// 언어별 기본 안내 문구
+function getDefaultNotices(nativeLanguage: string = 'Korean'): string[] {
+  const notices: Record<string, string[]> = {
+    Korean: [
+      '* 본 영상은 학습을 위한 픽션으로, 실제 사건 및 인물, 단체와 관련이 없습니다.',
+    ],
+    English: [
+      '* This video is fictional for learning purposes and has no relation to real events or persons.',
+    ],
+    Japanese: [
+      '* 本動画は学習用のフィクションであり、実際の事件や人物とは関係ありません。',
+    ],
+    Chinese: [
+      '* 本视频为虚构学习内容，与实际事件或人物无关。',
+    ],
+  };
+
+  return notices[nativeLanguage] || notices['English'];
+}
 
 // 전환 화면 기본 길이 (3초)
 export const STEP_TRANSITION_DURATION = 3 * 30; // 90 frames
@@ -35,8 +51,10 @@ export const StepTransition: React.FC<StepTransitionProps> = ({
   stepNumber,
   bellSoundPath,
   ttsPath,
-  notices = DEFAULT_NOTICES,
+  notices,
+  nativeLanguage = 'Korean',
 }) => {
+  const finalNotices = notices || getDefaultNotices(nativeLanguage);
   const frame = useCurrentFrame();
   const colors = getStepColors(stepNumber - 1);
 
@@ -115,7 +133,7 @@ export const StepTransition: React.FC<StepTransitionProps> = ({
           gap: 8,
         }}
       >
-        {notices.map((notice, index) => (
+        {finalNotices.map((notice, index) => (
           <div
             key={index}
             style={{

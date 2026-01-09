@@ -19,6 +19,8 @@ export interface EndingProps {
   narrationPath?: string;
   /** 학습 언어 (예: English, Japanese) - 텍스트 자동 생성용 */
   targetLanguage?: string;
+  /** 시청자 모국어 (예: Korean, English) - UI 언어 */
+  nativeLanguage?: string;
 }
 
 // 엔딩 화면 기본 길이 (5초)
@@ -30,16 +32,14 @@ export const Ending: React.FC<EndingProps> = ({
   line2,
   narrationPath,
   targetLanguage = 'English',
+  nativeLanguage = 'Korean',
 }) => {
   const frame = useCurrentFrame();
 
   // 언어에 따른 기본 텍스트
-  const defaultLine1 = '고생하셨습니다.';
-  const languageKr = getLanguageInKorean(targetLanguage);
-  const defaultLine2 = `${languageKr}가 들리는 그 순간까지! 내일 다시 만나요.`;
-
-  const displayLine1 = line1 ?? defaultLine1;
-  const displayLine2 = line2 ?? defaultLine2;
+  const endingMessages = getEndingMessages(targetLanguage, nativeLanguage);
+  const displayLine1 = line1 ?? endingMessages.line1;
+  const displayLine2 = line2 ?? endingMessages.line2;
 
   // 배경 페이드인
   const bgOpacity = interpolate(frame, [0, 20], [0, 1], {
@@ -160,22 +160,67 @@ export const Ending: React.FC<EndingProps> = ({
 };
 
 /**
- * 언어명을 한국어로 변환
+ * 다국어 엔딩 메시지 생성
  */
-function getLanguageInKorean(language: string): string {
-  const languageMap: Record<string, string> = {
-    English: '영어',
-    Japanese: '일본어',
-    Chinese: '중국어',
-    Spanish: '스페인어',
-    French: '프랑스어',
-    German: '독일어',
-    Korean: '한국어',
-    Vietnamese: '베트남어',
-    Thai: '태국어',
-    Indonesian: '인도네시아어',
+function getEndingMessages(
+  targetLanguage: string,
+  nativeLanguage: string
+): { line1: string; line2: string } {
+  const langName = getLanguageName(targetLanguage, nativeLanguage);
+
+  const messages: Record<string, { line1: string; line2: string }> = {
+    Korean: {
+      line1: '고생하셨습니다.',
+      line2: `${langName}가 들리는 그 순간까지! 내일 다시 만나요.`,
+    },
+    English: {
+      line1: 'Great job today!',
+      line2: `Keep practicing until ${langName} clicks! See you tomorrow.`,
+    },
+    Japanese: {
+      line1: 'お疲れ様でした。',
+      line2: `${langName}が聞こえるその瞬間まで！また明日。`,
+    },
+    Chinese: {
+      line1: '辛苦了！',
+      line2: `直到${langName}听懂的那一刻！明天见。`,
+    },
   };
-  return languageMap[language] || language;
+
+  return messages[nativeLanguage] || messages['English'];
+}
+
+/**
+ * 언어명을 시청자 언어로 변환
+ */
+function getLanguageName(targetLanguage: string, nativeLanguage: string): string {
+  const languageNames: Record<string, Record<string, string>> = {
+    Korean: {
+      English: '영어',
+      Japanese: '일본어',
+      Chinese: '중국어',
+      Korean: '한국어',
+    },
+    English: {
+      English: 'English',
+      Japanese: 'Japanese',
+      Chinese: 'Chinese',
+      Korean: 'Korean',
+    },
+    Japanese: {
+      English: '英語',
+      Korean: '韓国語',
+      Chinese: '中国語',
+    },
+    Chinese: {
+      English: '英语',
+      Korean: '韩语',
+      Japanese: '日语',
+    },
+  };
+
+  const names = languageNames[nativeLanguage] || languageNames['English'];
+  return names[targetLanguage] || targetLanguage;
 }
 
 /**

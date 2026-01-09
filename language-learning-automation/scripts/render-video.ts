@@ -38,6 +38,7 @@ async function copyDir(src: string, dest: string): Promise<void> {
 async function setupPublicFolder(channelId: string, outputFolder: string): Promise<void> {
   const sourceDir = path.join(process.cwd(), 'output', channelId, outputFolder);
   const assetsDir = path.join(process.cwd(), 'output', channelId, 'assets');
+  const configPath = path.join(process.cwd(), 'channels', `${channelId}.json`);
   const publicDir = path.join(process.cwd(), 'public');
 
   console.log('\n📁 Setting up public folder...');
@@ -54,13 +55,32 @@ async function setupPublicFolder(channelId: string, outputFolder: string): Promi
   console.log(`   Copying ${outputFolder}/ → public/`);
   await copyDir(sourceDir, publicDir);
 
-  // Copy shared assets if exists
+  // Copy shared assets directly to public/assets/
   try {
     await fs.access(assetsDir);
     console.log(`   Copying assets/ → public/assets/`);
     await copyDir(assetsDir, path.join(publicDir, 'assets'));
   } catch {
     console.log(`   ⚠️ No shared assets folder found`);
+  }
+
+  // Copy channel config for Remotion preview
+  try {
+    console.log(`   Copying ${channelId}.json → public/config.json`);
+    await fs.copyFile(configPath, path.join(publicDir, 'config.json'));
+  } catch {
+    console.log(`   ⚠️ Channel config not found`);
+  }
+
+  // Find and copy script.json for Remotion preview
+  const files = await fs.readdir(sourceDir);
+  const scriptFile = files.find(f => f.endsWith('.json') && !f.includes('manifest'));
+  if (scriptFile) {
+    console.log(`   Copying ${scriptFile} → public/script.json`);
+    await fs.copyFile(
+      path.join(sourceDir, scriptFile),
+      path.join(publicDir, 'script.json')
+    );
   }
 
   console.log('   ✅ Public folder ready');

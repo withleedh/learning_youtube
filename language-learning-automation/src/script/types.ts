@@ -29,6 +29,15 @@ export const categorySchema = z.enum([
   'fairytale', // 일요일 - 영어 동화
 ]);
 
+// Character schema for image generation
+export const characterSchema = z.object({
+  id: z.enum(['M', 'F']), // speaker ID와 매칭
+  name: z.string().min(1, 'Character name is required'),
+  gender: z.enum(['male', 'female']),
+  ethnicity: z.string().min(1, 'Ethnicity is required'), // e.g., "Korean", "American", "British"
+  role: z.string().min(1, 'Role is required'), // e.g., "customer", "barista", "teacher"
+});
+
 // Script metadata schema
 export const metadataSchema = z.object({
   imagePrompt: z.string().optional(), // GPT가 생성한 배경 이미지 프롬프트
@@ -38,6 +47,7 @@ export const metadataSchema = z.object({
     target: z.string().min(1, 'Target title is required'),
     native: z.string().min(1, 'Native title is required'),
   }),
+  characters: z.array(characterSchema).length(2), // 항상 M, F 두 명
 });
 
 // Full Script schema
@@ -53,6 +63,7 @@ export const scriptSchema = z.object({
 export type Word = z.infer<typeof wordSchema>;
 export type Sentence = z.infer<typeof sentenceSchema>;
 export type Category = z.infer<typeof categorySchema>;
+export type Character = z.infer<typeof characterSchema>;
 export type Metadata = z.infer<typeof metadataSchema>;
 export type Script = z.infer<typeof scriptSchema>;
 
