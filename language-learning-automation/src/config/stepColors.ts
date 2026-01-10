@@ -12,29 +12,28 @@ export interface StepColorConfig {
   background: string;
 }
 
-// 스텝별 색상 설정
-// primary: 인트로에서 사용하는 메인 색상
-// complementary: 스텝 전환 화면 배경색 (보색 계열)
+// 스텝별 색상 설정 (블루-틸 그라데이션 조화)
+// 차분하고 세련된 느낌의 색상 팔레트
 export const STEP_COLOR_CONFIG: StepColorConfig[] = [
   {
-    primary: '#E53935', // 빨강
-    complementary: '#8B2635', // 어두운 와인색 (이미지 참고)
-    background: 'rgba(229, 57, 53, 0.15)',
+    primary: '#3B82F6', // 밝은 파랑
+    complementary: '#1E3A5F', // 어두운 네이비
+    background: 'rgba(59, 130, 246, 0.15)',
   },
   {
-    primary: '#FB8C00', // 주황
-    complementary: '#8B5A00', // 어두운 주황/갈색
-    background: 'rgba(251, 140, 0, 0.15)',
+    primary: '#06B6D4', // 시안/틸
+    complementary: '#164E63', // 어두운 틸
+    background: 'rgba(6, 182, 212, 0.15)',
   },
   {
-    primary: '#1E88E5', // 파랑
-    complementary: '#1A4B7A', // 어두운 파랑
-    background: 'rgba(30, 136, 229, 0.15)',
+    primary: '#8B5CF6', // 바이올렛
+    complementary: '#4C1D95', // 어두운 바이올렛
+    background: 'rgba(139, 92, 246, 0.15)',
   },
   {
-    primary: '#8E24AA', // 보라
-    complementary: '#5C1A6B', // 어두운 보라
-    background: 'rgba(142, 36, 170, 0.15)',
+    primary: '#10B981', // 에메랄드
+    complementary: '#065F46', // 어두운 에메랄드
+    background: 'rgba(16, 185, 129, 0.15)',
   },
 ];
 

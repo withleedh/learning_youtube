@@ -141,20 +141,6 @@ import { STEP_COLORS } from '../config/stepColors';
 export { STEP_COLORS };
 
 /**
- * HEX 색상을 톤다운된 배경색으로 변환
- * 원본 색상의 채도를 낮추고 투명도를 적용하여 시인성 좋은 배경색 생성
- */
-function getStepBackgroundColor(hexColor: string, opacity: number = 0.15): string {
-  // HEX to RGB
-  const hex = hexColor.replace('#', '');
-  const r = parseInt(hex.substring(0, 2), 16);
-  const g = parseInt(hex.substring(2, 4), 16);
-  const b = parseInt(hex.substring(4, 6), 16);
-
-  return `rgba(${r}, ${g}, ${b}, ${opacity})`;
-}
-
-/**
  * 스텝 섹션 길이 계산 (TTS 기반)
  */
 export function calculateStepsDuration(
@@ -865,7 +851,7 @@ const FlickerEffect: React.FC<{ frame: number }> = ({ frame }) => {
   );
 };
 
-// 학습 순서 섹션 (새 디자인 - 파란 그라데이션 배경 + 색상 카드)
+// 학습 순서 섹션 (카드 플립 방식 - 3D 플립 애니메이션)
 const StepsSection: React.FC<{
   steps: StepDescription[];
   stepNarrationPaths?: string[];
@@ -882,6 +868,7 @@ const StepsSection: React.FC<{
   fps = 30,
 }) => {
   const frame = useCurrentFrame();
+  const FLIP_DURATION = 20; // 플립 애니메이션 길이 (프레임)
 
   // 각 스텝의 시작 프레임 계산
   const stepStartFrames = useMemo(() => {
@@ -912,6 +899,16 @@ const StepsSection: React.FC<{
     return 240; // 기본 8초
   }, [stepStartFrames, stepNarrationDurations, fps]);
 
+  // 현재 활성 스텝 계산
+  const currentStepIndex = useMemo(() => {
+    for (let i = steps.length - 1; i >= 0; i--) {
+      if (frame >= stepStartFrames[i]) {
+        return i;
+      }
+    }
+    return 0;
+  }, [frame, stepStartFrames, steps.length]);
+
   // 배경 페이드인
   const bgOpacity = interpolate(frame, [0, 15], [0, 1], {
     extrapolateRight: 'clamp',
@@ -941,92 +938,142 @@ const StepsSection: React.FC<{
         );
       })}
 
-      {/* 스텝 카드들 */}
-      <AbsoluteFill
+      {/* 상단 스텝 인디케이터 */}
+      <div
         style={{
+          position: 'absolute',
+          top: 80,
+          left: 0,
+          right: 0,
           display: 'flex',
-          flexDirection: 'column',
           justifyContent: 'center',
           alignItems: 'center',
-          padding: '40px 80px',
           gap: 24,
         }}
       >
-        {steps.map((step, index) => {
-          const stepStart = stepStartFrames[index] ?? index * 60;
-
-          // 페이드인 애니메이션
-          const opacity = interpolate(frame, [stepStart, stepStart + 20], [0, 1], {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-          });
-          const translateY = interpolate(frame, [stepStart, stepStart + 20], [30, 0], {
-            extrapolateLeft: 'clamp',
-            extrapolateRight: 'clamp',
-          });
-
-          // 스텝 색상
+        {steps.map((_, index) => {
+          const isActive = index === currentStepIndex;
+          const isPast = index < currentStepIndex;
           const stepColor = STEP_COLORS[index] ?? STEP_COLORS[0];
-          // 톤다운된 배경색 (원본 색상의 15% 투명도)
-          const stepBgColor = getStepBackgroundColor(stepColor, 0.15);
 
           return (
             <div
               key={index}
               style={{
+                width: isActive ? 64 : 48,
+                height: isActive ? 64 : 48,
+                borderRadius: '50%',
+                background: isActive ? stepColor : isPast ? stepColor : 'rgba(255,255,255,0.2)',
                 display: 'flex',
-                alignItems: 'stretch',
-                width: '100%',
-                maxWidth: 1200,
-                opacity,
-                transform: `translateY(${translateY}px)`,
-                background: stepBgColor,
-                borderRadius: 16,
-                overflow: 'hidden',
+                justifyContent: 'center',
+                alignItems: 'center',
+                transition: 'all 0.3s ease',
+                boxShadow: isActive ? `0 0 30px ${stepColor}88` : 'none',
+                opacity: isPast ? 0.6 : 1,
               }}
             >
-              {/* 왼쪽 색상 바 + 번호 */}
-              <div
+              <span
                 style={{
-                  width: 80,
-                  background: stepColor,
-                  display: 'flex',
-                  justifyContent: 'center',
-                  alignItems: 'center',
-                  flexShrink: 0,
+                  fontSize: isActive ? 32 : 24,
+                  fontWeight: 700,
+                  color: '#FFFFFF',
+                  fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
                 }}
               >
-                <span
-                  style={{
-                    fontSize: 54,
-                    fontWeight: 800,
-                    color: '#FFFFFF',
-                    fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-                  }}
-                >
-                  {index + 1}
-                </span>
-              </div>
+                {isPast ? '✓' : index + 1}
+              </span>
+            </div>
+          );
+        })}
+      </div>
 
-              {/* 텍스트 영역 */}
+      {/* 카드 플립 컨테이너 */}
+      <AbsoluteFill
+        style={{
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          perspective: 2000,
+        }}
+      >
+        {steps.map((step, index) => {
+          const stepStart = stepStartFrames[index] ?? index * 60;
+          const isLastStep = index === steps.length - 1;
+          const nextStepStart = isLastStep
+            ? closingStartFrame
+            : (stepStartFrames[index + 1] ?? (index + 1) * 60);
+          const stepColor = STEP_COLORS[index] ?? STEP_COLORS[0];
+
+          // 카드 등장 (플립 인)
+          const flipInProgress = interpolate(
+            frame,
+            [stepStart, stepStart + FLIP_DURATION],
+            [0, 1],
+            { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
+          );
+
+          // 카드 퇴장 (플립 아웃) - 마지막 스텝은 플립 아웃 없음
+          const flipOutStart = nextStepStart - FLIP_DURATION / 2;
+          const flipOutProgress = isLastStep
+            ? 0
+            : interpolate(frame, [flipOutStart, nextStepStart], [0, 1], {
+                extrapolateLeft: 'clamp',
+                extrapolateRight: 'clamp',
+              });
+
+          // 3D 회전 계산
+          const rotateY =
+            interpolate(flipInProgress, [0, 1], [-90, 0]) +
+            (isLastStep ? 0 : interpolate(flipOutProgress, [0, 1], [0, 90]));
+
+          // 가시성 (뒷면일 때 숨김)
+          const isVisible = isLastStep
+            ? frame >= stepStart
+            : frame >= stepStart && frame < nextStepStart + FLIP_DURATION / 2;
+          const isFrontFacing = Math.abs(rotateY) < 90;
+
+          if (!isVisible) return null;
+
+          return (
+            <div
+              key={index}
+              style={{
+                position: 'absolute',
+                width: 1400,
+                minHeight: 320,
+                transformStyle: 'preserve-3d',
+                transform: `rotateY(${rotateY}deg)`,
+                backfaceVisibility: 'hidden',
+                opacity: isFrontFacing ? 1 : 0,
+              }}
+            >
+              {/* 카드 앞면 */}
               <div
                 style={{
-                  flex: 1,
-                  padding: '24px 32px',
+                  width: '100%',
+                  height: '100%',
+                  background: `linear-gradient(135deg, ${stepColor}22 0%, ${stepColor}11 100%)`,
+                  borderRadius: 32,
+                  border: `3px solid ${stepColor}`,
+                  boxShadow: `0 20px 60px rgba(0,0,0,0.4), 0 0 40px ${stepColor}44`,
+                  padding: '48px 64px',
                   display: 'flex',
                   flexDirection: 'column',
                   justifyContent: 'center',
-                  gap: 8,
+                  alignItems: 'center',
+                  gap: 20,
                 }}
               >
                 {/* 타이틀 */}
                 <div
                   style={{
-                    fontSize: 64,
+                    fontSize: 72,
                     fontWeight: 700,
                     color: '#FFFFFF',
                     fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-                    lineHeight: 1.2,
+                    textAlign: 'center',
+                    lineHeight: 1.3,
+                    textShadow: '0 4px 20px rgba(0,0,0,0.3)',
                   }}
                 >
                   {step.title}
@@ -1035,11 +1082,13 @@ const StepsSection: React.FC<{
                 {/* 설명 */}
                 <div
                   style={{
-                    fontSize: 42,
+                    fontSize: 44,
                     fontWeight: 400,
-                    color: 'rgba(255, 255, 255, 0.6)',
+                    color: 'rgba(255, 255, 255, 0.7)',
                     fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-                    lineHeight: 1.4,
+                    textAlign: 'center',
+                    lineHeight: 1.5,
+                    maxWidth: 1200,
                   }}
                 >
                   {step.description}

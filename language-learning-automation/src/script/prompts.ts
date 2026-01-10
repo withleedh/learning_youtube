@@ -38,37 +38,65 @@ export function generateScriptPrompt(
   const categoryDesc = categoryDescriptions[category];
 
   return `# Role
-Act as a friendly ESL instructor creating content for pre-intermediate learners.
+Act as a **skilled screenwriter** who creates relatable, slice-of-life dialogues for language learners.
 
 # Task
-Create a simple, practical ${meta.targetLanguage} conversation script for a language learning video.
+Create a natural ${meta.targetLanguage} conversation script that feels like a **real moment from everyday life**.
+The goal is to make learners think: "I've been in this situation before!" or "I might need to say this someday."
 
 ## Category: ${category}
 ${categoryDesc}
 
-## Topic: ${topic || 'Choose an engaging topic that fits the category'}
+## Topic: ${topic || 'Choose a specific, relatable everyday situation from the category'}
 
 # Constraints (Content)
-1. **Level:** CEFR A2~B1 (초중급/Pre-Intermediate). Clear, practical, easy to follow.
-2. **Characters:** Two characters (M = Male, F = Female). Alternate speakers starting with M.
+1. **Level:** CEFR A2~B1 (Pre-Intermediate). Easy but natural.
+2. **Characters:** Two characters (M = Male, F = Female) in a realistic situation.
 3. **Length:** Exactly ${content.sentenceCount} sentences total.
 4. **Difficulty:** ${content.difficulty}
-5. **Sentence Length:** 5-11 words in ${meta.targetLanguage} (keep it short and clear)
-6. **Key Expressions:** Use common, practical expressions learners can use right away
-   - Basic requests: "Can I have...", "I'd like...", "Could you..."
-   - Simple questions: "How much is...", "Where is...", "What time..."
-   - Common responses: "Sure", "No problem", "Here you go"
-7. **Dialogue Flow:** 
-   - Basic request + simple options/choices
-   - NO complex problem-solving or conflicts
-   - Natural but simple conversation
-8. **Blank Logic:** For each sentence, select ONE key word (verb, noun, adjective) crucial for understanding
+5. **Sentence Length:** 5-12 words (Keep it conversational).
+
+6. **Tone & Style:**
+   - Natural, relatable, engaging
+   - Can be: helpful, curious, relieved, slightly frustrated then resolved, encouraging
+   - **Avoid:** Overly sweet/romantic tone, dry transactional exchanges, textbook-style dialogues
+
+7. **Story Arc (Make it feel like a mini-story):**
+   - **Hook (1-2 sentences):** Start with a specific situation or small problem (NOT generic greetings)
+     Examples: "Excuse me, is this seat taken?", "Oh no, I think I left my wallet...", "This line is so long today."
+   - **Development (middle):** Natural back-and-forth where characters actually respond to each other
+   - **Resolution (last 2-3 sentences):** A satisfying ending with:
+     - Small relief: "Phew!", "That was close."
+     - Achievement: "I did it!", "It worked!"
+     - Gratitude: "Thanks, you saved me."
+     - Encouragement: "You've got this!", "Good luck!"
+
+8. **Natural Dialogue Techniques:**
+   - Softeners: "Actually,", "Well,", "I think...", "Maybe..."
+   - Reactions: "Oh!", "Really?", "Wait, what?", "That's a relief."
+   - Hesitation: "Um...", "Let me see...", "Hmm..."
+   - Follow-up questions (shows active listening): "How long?", "Which one?", "Are you sure?"
+
+9. **Characters Must:**
+   - Actually RESPOND to what the other person says (not just take turns talking)
+   - Show realistic reactions to the situation
+   - Have a clear reason to be talking to each other
+
+# Good vs Bad Examples
+✅ GOOD Hook: "Excuse me, do you know if this bus goes downtown?"
+❌ BAD Hook: "Hello! How are you today?"
+
+✅ GOOD Ending: "Oh, that's my stop. Thanks for the help!" / "No problem. Have a good one!"
+❌ BAD Ending: "Goodbye." / "Goodbye."
+
+✅ GOOD Reaction: "Wait, it's buy one get one free? I didn't see that!"
+❌ BAD Reaction: "That is good information. Thank you."
 
 # Output Format (JSON)
 {
   "metadata": {
-    "topic": "specific topic description",
-    "style": "casual/formal/narrative",
+    "topic": "Specific situation (e.g., 'Helping a stranger find the right bus stop')",
+    "style": "Relatable/Slice-of-life/Natural",
     "title": {
       "target": "Title in ${meta.targetLanguage}",
       "native": "Title in ${meta.nativeLanguage}"
@@ -76,50 +104,47 @@ ${categoryDesc}
     "characters": [
       {
         "id": "M",
-        "name": "Character name (e.g., James, Minho)",
+        "name": "Name",
         "gender": "male",
-        "ethnicity": "e.g., American, Korean, British",
-        "role": "e.g., customer, barista, teacher"
+        "ethnicity": "specific ethnicity",
+        "role": "specific role in this situation (e.g., local commuter)"
       },
       {
         "id": "F",
-        "name": "Character name (e.g., Sarah, Yuna)",
+        "name": "Name",
         "gender": "female",
-        "ethnicity": "e.g., American, Korean, British",
-        "role": "e.g., customer, barista, teacher"
+        "ethnicity": "specific ethnicity",
+        "role": "specific role in this situation (e.g., tourist asking for directions)"
       }
     ],
-    "imagePrompt": "A warm illustration of [scene description incorporating the characters above - use their exact gender, ethnicity, and role]. Be specific about the setting and character appearances."
+    "imagePrompt": "A realistic, warm illustration of [specific scene]. Show [specific action/interaction]. Natural lighting, everyday setting, expressive faces."
   },
   "sentences": [
     {
       "id": 1,
       "speaker": "M",
       "target": "Full sentence in ${meta.targetLanguage}",
-      "targetPronunciation": "Pronunciation written in ${meta.nativeLanguage} script (e.g., if target is English and native is Korean: 'Hello' -> '헬로우', if target is Korean and native is English: '안녕' -> 'annyeong')",
-      "targetBlank": "Sentence with _______ replacing the key word",
-      "blankAnswer": "the key word that was replaced",
-      "native": "Natural translation in ${meta.nativeLanguage}",
+      "targetPronunciation": "Pronunciation in ${meta.nativeLanguage} script",
+      "targetBlank": "Sentence with _______",
+      "blankAnswer": "key word",
+      "native": "Natural spoken ${meta.nativeLanguage} (NOT literal translation)",
       "words": [
-        { "word": "vocabulary", "meaning": "뜻" },
-        { "word": "word2", "meaning": "뜻2" }
+        { "word": "vocabulary", "meaning": "meaning" }
       ]
     }
   ]
 }
 
 # Critical Rules
-- The blankAnswer MUST appear in the target sentence
-- The targetBlank MUST contain exactly "_______" (7 underscores) where blankAnswer was
-- targetPronunciation: Write how to pronounce the target sentence using ${meta.nativeLanguage} characters
-- Words array should include the blankAnswer and 2-3 other important vocabulary
-- Keep sentences SHORT (5-11 words) - this is crucial for beginners
-- Use contractions (I'm, don't, can't) for natural speech
-- Avoid complex grammar (relative clauses, passive voice, conditionals)
-- characters: Define BOTH M and F characters with realistic names, specific ethnicity (not just "Asian"), and their role in the dialogue
-- imagePrompt: MUST reference the characters array - describe the exact characters (gender, ethnicity, role) in the scene
+- **Native translation:** Must sound like how people actually talk, not textbook translation.
+  ❌ "나는 커피를 원합니다" → ✅ "커피 주세요" or "커피 한 잔 할게요"
+- The blankAnswer MUST appear in the target sentence.
+- targetBlank MUST contain exactly "_______".
+- Words array: Include blankAnswer + 1-2 useful words from the sentence.
+- **Dialogue must flow:** Each line should connect to the previous one.
+- **Ending:** Must feel complete and satisfying (not abrupt).
 
-Generate ONLY the JSON output, no additional text.`;
+Generate ONLY the JSON output. No additional text.`;
 }
 
 /**

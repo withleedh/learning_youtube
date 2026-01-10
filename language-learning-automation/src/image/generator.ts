@@ -8,27 +8,31 @@ import { GEMINI_API_URLS, getGeminiApiKey, type GeminiImageResponse } from '../c
 export async function generateIllustration(
   topic: string,
   title: string,
-  style: string = 'warm illustration',
+  style: string = '3D clay animation',
   outputPath: string
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
 
   // Create a prompt for image generation
-  const prompt = `Generate a warm, friendly illustration image for a language learning video.
+  const prompt = `3D clay animation style illustration for a language learning video background.
 
 Topic: ${topic}
 Title: ${title}
 
-Style requirements:
-- ${style} style, similar to children's book illustrations
-- Warm, inviting colors
-- Simple but expressive characters
+Style (CRITICAL):
+- 3D clay animation style, stop motion aesthetic
+- Soft studio lighting, playful atmosphere
+- Cute and friendly character proportions
+- High quality, 4K render
+
+Scene requirements:
+- ${style}
 - Clear scene that represents the topic
 - No text or words in the image
-- 16:9 aspect ratio suitable for YouTube
-- Soft lighting, cozy atmosphere
+- 16:9 aspect ratio
+- Warm, inviting atmosphere
 
-The image should visually represent the conversation topic in a way that helps language learners understand the context.`;
+The image should visually represent the conversation topic.`;
 
   const requestBody = {
     contents: [
@@ -100,7 +104,7 @@ export async function generateBackgroundImage(
   const outputPath = path.join(outputDir, filename);
 
   // imagePrompt가 있으면 해당 프롬프트를 스타일로 사용
-  const style = imagePrompt || 'warm cozy illustration with soft colors';
+  const style = imagePrompt || 'cozy indoor or outdoor scene with clay characters';
 
   return generateIllustration(topic, title, style, outputPath);
 }
@@ -159,6 +163,9 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
     case 'custom':
       characterDescription = customCharacters || 'two friendly characters standing side by side';
       break;
+    default:
+      characterDescription =
+        'two cute, original anthropomorphic animal characters (e.g., a fox and a bear) standing side by side';
   }
 
   // 학습 언어에 따른 말풍선 내용 생성
@@ -204,7 +211,8 @@ ${titleText}
 
 - Above the text, ${characterDescription}
 - Characters have surprised and joyful expressions (happy that they can understand the language)
-- Characters look like handmade clay dolls
+- Characters are cute and trendy 3D claymation style illustration
+- Soft, rounded, friendly, high-quality 3D render like a Pixar movie character.
 
 Speech Bubbles (IMPORTANT - exactly TWO bubbles only):
 - The left character (male) has ONE speech bubble saying "${foreignSpeechBubble}" in ${targetLanguage}
