@@ -8,31 +8,40 @@ import { GEMINI_API_URLS, getGeminiApiKey, type GeminiImageResponse } from '../c
 export async function generateIllustration(
   topic: string,
   title: string,
-  style: string = '3D clay animation',
+  sceneDescription: string = '',
   outputPath: string
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
 
-  // Create a prompt for image generation
-  const prompt = `3D clay animation style illustration for a language learning video background.
+  // 프롬프트 구조: 헤더(스타일) + 본문(상황) + 푸터(기술 요구사항)
+  const styleHeader = `High-quality 3D animation style, reminiscent of Pixar or Disney movies. Octane render
+Photorealistic rendering with stylized characters.
+Cute but mature characters with highly expressive facial features and large, detailed eyes.
+Cinematic lighting with volumetric lighting effects, subsurface scattering for realistic skin glow.
+Rich, vibrant textures with attention to material details.`;
+
+  const sceneBody = sceneDescription
+    ? `Scene: ${sceneDescription}`
+    : `Scene: A warm, inviting scene that represents "${topic}". 
+Characters naturally interacting in the environment.
+Expressive body language and facial expressions that convey emotion.`;
+
+  const technicalFooter = `Technical requirements:
+- 16:9 aspect ratio (widescreen cinematic composition)
+- 8K resolution quality, masterpiece level detail
+- Warm, natural lighting with soft shadows
+- Shallow depth of field for cinematic feel
+- No text, words, or letters in the image
+- Clean composition suitable for video background`;
+
+  const prompt = `${styleHeader}
+
+${sceneBody}
 
 Topic: ${topic}
 Title: ${title}
 
-Style (CRITICAL):
-- 3D clay animation style, stop motion aesthetic
-- Soft studio lighting, playful atmosphere
-- Cute and friendly character proportions
-- High quality, 4K render
-
-Scene requirements:
-- ${style}
-- Clear scene that represents the topic
-- No text or words in the image
-- 16:9 aspect ratio
-- Warm, inviting atmosphere
-
-The image should visually represent the conversation topic.`;
+${technicalFooter}`;
 
   const requestBody = {
     contents: [
@@ -92,7 +101,7 @@ The image should visually represent the conversation topic.`;
  * @param topic - 스크립트 주제
  * @param title - 스크립트 제목
  * @param outputDir - 출력 디렉토리
- * @param imagePrompt - GPT가 생성한 커스텀 이미지 프롬프트 (있으면 이걸 사용)
+ * @param imagePrompt - LLM이 생성한 구체적 장면 설명 (있으면 이걸 사용)
  */
 export async function generateBackgroundImage(
   topic: string,
@@ -103,10 +112,10 @@ export async function generateBackgroundImage(
   const filename = 'background.png';
   const outputPath = path.join(outputDir, filename);
 
-  // imagePrompt가 있으면 해당 프롬프트를 스타일로 사용
-  const style = imagePrompt || 'cozy indoor or outdoor scene with clay characters';
+  // imagePrompt가 있으면 구체적 장면 설명으로 사용
+  const sceneDescription = imagePrompt || '';
 
-  return generateIllustration(topic, title, style, outputPath);
+  return generateIllustration(topic, title, sceneDescription, outputPath);
 }
 
 /**

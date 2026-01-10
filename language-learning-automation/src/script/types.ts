@@ -47,7 +47,7 @@ export const metadataSchema = z.object({
     target: z.string().min(1, 'Target title is required'),
     native: z.string().min(1, 'Native title is required'),
   }),
-  characters: z.array(characterSchema).length(2), // 항상 M, F 두 명
+  characters: z.array(characterSchema).min(1).max(2), // 나레이션은 1명, 대화는 2명
 });
 
 // Full Script schema

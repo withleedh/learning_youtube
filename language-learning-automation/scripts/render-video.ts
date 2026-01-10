@@ -74,13 +74,10 @@ async function setupPublicFolder(channelId: string, outputFolder: string): Promi
 
   // Find and copy script.json for Remotion preview
   const files = await fs.readdir(sourceDir);
-  const scriptFile = files.find(f => f.endsWith('.json') && !f.includes('manifest'));
+  const scriptFile = files.find((f) => f.endsWith('.json') && !f.includes('manifest'));
   if (scriptFile) {
     console.log(`   Copying ${scriptFile} → public/script.json`);
-    await fs.copyFile(
-      path.join(sourceDir, scriptFile),
-      path.join(publicDir, 'script.json')
-    );
+    await fs.copyFile(path.join(sourceDir, scriptFile), path.join(publicDir, 'script.json'));
   }
 
   console.log('   ✅ Public folder ready');
@@ -222,7 +219,22 @@ async function renderVideo() {
     },
   });
 
-  console.log(`\n\n✅ Video rendered successfully!`);
+  // Remove metadata (Remotion watermark)
+  console.log(`\n\n🧹 Removing metadata...`);
+  const cleanPath = outputPath.replace('.mp4', '_clean.mp4');
+  const { execSync } = await import('child_process');
+  try {
+    execSync(`ffmpeg -y -i "${outputPath}" -map_metadata -1 -c copy "${cleanPath}"`, {
+      stdio: 'pipe',
+    });
+    await fs.unlink(outputPath);
+    await fs.rename(cleanPath, outputPath);
+    console.log(`   ✅ Metadata removed`);
+  } catch {
+    console.log(`   ⚠️ Could not remove metadata (ffmpeg not found?)`);
+  }
+
+  console.log(`\n✅ Video rendered successfully!`);
   console.log(`📁 Output: ${outputPath}`);
 
   // Get file size
