@@ -105,6 +105,7 @@ async function main() {
         break;
       case '--render':
         autoRender = true;
+        renderShorts = true;
         break;
       case '--shorts':
         renderShorts = true;

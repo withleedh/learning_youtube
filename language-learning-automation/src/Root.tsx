@@ -134,8 +134,20 @@ const sampleScript: Script = {
       native: '아침 커피 대화',
     },
     characters: [
-      { id: 'M' as const, name: 'James', gender: 'male' as const, ethnicity: 'American', role: 'friend' },
-      { id: 'F' as const, name: 'Soo-jin', gender: 'female' as const, ethnicity: 'Korean', role: 'friend' },
+      {
+        id: 'M' as const,
+        name: 'James',
+        gender: 'male' as const,
+        ethnicity: 'American',
+        role: 'friend',
+      },
+      {
+        id: 'F' as const,
+        name: 'Soo-jin',
+        gender: 'female' as const,
+        ethnicity: 'Korean',
+        role: 'friend',
+      },
     ],
   },
   sentences: [
@@ -477,42 +489,33 @@ export const RemotionRoot: React.FC = () => {
           targetLanguage: activeConfig.meta.targetLanguage,
           nativeLanguage: activeConfig.meta.nativeLanguage,
         }}
-            />
+      />
 
-      {/* Single Sentence Shorts (9:16 Vertical) */}
-      {activeScript.sentences.map((sentence, _index) => {
-        const audioFile = activeAudioFiles.find(
-          (af) => af.sentenceId === sentence.id && af.speed === '1.0x'
-        );
-        if (!audioFile) return null;
-        
-        const shortDuration = calculateSingleSentenceShortDuration(audioFile);
-        
-        return (
-          <Composition
-            key={`SingleSentenceShort-${sentence.id}`}
-            id={`SingleSentenceShort-${sentence.id}`}
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            component={SingleSentenceShort as any}
-            durationInFrames={shortDuration}
-            fps={30}
-            width={1080}
-            height={1920}
-            defaultProps={{
-              sentence,
-              audioFile,
-              config: activeConfig,
-              backgroundImage: 'background.png',
-            }}
-            calculateMetadata={({ props }) => ({
-              durationInFrames: calculateSingleSentenceShortDuration(
-                props.audioFile,
-                props.introAudioFile
-              ),
-            })}
-          />
-        );
-      })}
+      {/* Single Sentence Short - Dynamic composition that accepts sentence via inputProps */}
+      <Composition
+        id="SingleSentenceShort"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={SingleSentenceShort as any}
+        durationInFrames={300} // Default, will be overridden by calculateMetadata
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          sentence: activeScript.sentences[0],
+          audioFile:
+            activeAudioFiles.find(
+              (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '1.0x'
+            ) || activeAudioFiles[0],
+          config: activeConfig,
+          backgroundImage: 'background.png',
+        }}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: calculateSingleSentenceShortDuration(
+            props.audioFile,
+            props.introAudioFile
+          ),
+        })}
+      />
     </>
   );
 };

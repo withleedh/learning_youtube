@@ -27,6 +27,10 @@ export interface PipelineOptions {
   autoRender?: boolean;
   /** Render individual Shorts for each sentence */
   renderShorts?: boolean;
+  /** Number of topic candidates to generate (default: 3) */
+  topicCandidates?: number;
+  /** Number of script candidates to generate (default: 3) */
+  scriptCandidates?: number;
 }
 
 export interface PipelineResult {
@@ -57,6 +61,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     skipImage = false,
     autoRender = false,
     renderShorts = false,
+    scriptCandidates = 3,
   } = options;
 
   console.log(`\n🚀 Starting pipeline for channel: ${channelId}`);
@@ -79,7 +84,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       script = createSampleScript(config, category || 'conversation');
       console.log('   ✓ Created sample script (mock mode)');
     } else {
-      script = await generateScript(config, category, topic);
+      script = await generateScript(config, category, topic, scriptCandidates);
       console.log(`   ✓ Generated script: "${script.metadata.title.target}"`);
     }
 
@@ -889,8 +894,6 @@ async function renderShortsBatch(
 ): Promise<void> {
   const { bundle } = await import('@remotion/bundler');
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
-  const { calculateSingleSentenceShortDuration } =
-    await import('../compositions/SingleSentenceShort');
 
   // Create shorts output directory
   const shortsDir = path.join(outputDir, 'shorts');
@@ -950,8 +953,8 @@ async function renderShortsBatch(
       continue;
     }
 
-    const compositionId = `SingleSentenceShort-${sentence.id}`;
-    const shortDuration = calculateSingleSentenceShortDuration(audioFile);
+    // Use fixed composition ID - props determine which sentence to render
+    const compositionId = 'SingleSentenceShort';
 
     const inputProps = {
       sentence,

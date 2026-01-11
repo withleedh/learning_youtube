@@ -42,25 +42,58 @@ async function saveTopicToHistory(topic: string, category: Category): Promise<vo
 }
 
 /**
- * Generate a timely, relevant topic using AI
+ * Generate multiple topic candidates and select the best one
  */
 export async function selectTimlyTopic(
   category: Category,
   targetLanguage: string = 'English',
-  nativeLanguage: string = 'Korean'
+  nativeLanguage: string = 'Korean',
+  candidateCount: number = 3
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
-
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
-
-  // Get current date info
-  const now = new Date();
-  const month = now.getMonth() + 1;
 
   // Get recent topic history
   const history = await loadTopicHistory();
   const recentTopics = history.slice(-30).map((h) => h.topic);
+
+  // Step 1: Generate multiple candidates
+  console.log(`   📝 주제 후보 ${candidateCount}개 생성 중...`);
+  const candidates = await generateTopicCandidates(
+    model,
+    category,
+    targetLanguage,
+    nativeLanguage,
+    recentTopics,
+    candidateCount
+  );
+  console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
+
+  // Step 2: LLM selects the best one
+  console.log(`   🤖 최적 주제 선정 중...`);
+  const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
+
+  // Save to history
+  await saveTopicToHistory(bestTopic, category);
+
+  return bestTopic;
+}
+
+/**
+ * Generate multiple topic candidates
+ */
+async function generateTopicCandidates(
+  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  category: Category,
+  targetLanguage: string,
+  nativeLanguage: string,
+  recentTopics: string[],
+  count: number
+): Promise<string[]> {
+  // Get current date info
+  const now = new Date();
+  const month = now.getMonth() + 1;
 
   // Language display names
   const langDisplayNames: Record<string, Record<string, string>> = {
@@ -99,7 +132,7 @@ export async function selectTimlyTopic(
 ${culturalContext}
 
 # Task
-${month}월에 맞는 **감성적이고 스토리가 있는** ${targetLangName} 학습 주제 1개를 제안해줘.
+${month}월에 맞는 **감성적이고 스토리가 있는** ${targetLangName} 학습 주제 **${count}개**를 제안해줘.
 ${culturalCategory ? `오늘은 "${culturalCategory.category}" 관련 주제를 우선 고려해줘.` : ''}
 
 # Category: ${category}
@@ -186,16 +219,85 @@ ${
 ${nativeLangName === 'Korean' ? '한글' : nativeLangName}로 **10-25자** 이내.
 ${getOutputStyleGuidance(category)}
 
+**정확히 ${count}개**의 주제를 줄바꿈으로 구분해서 출력.
 부가 설명 없이 주제만 출력.`;
 
   const result = await model.generateContent(prompt);
-  const response = await result.response;
-  const topic = response.text().trim();
+  const response = result.response;
+  const text = response.text().trim();
 
-  // Save to history
-  await saveTopicToHistory(topic, category);
+  // Parse multiple topics (one per line)
+  const topics = text
+    .split('\n')
+    .map((line) => line.replace(/^\d+[.)]\s*/, '').trim()) // Remove numbering like "1. " or "1) "
+    .filter((line) => line.length > 0)
+    .slice(0, count);
 
-  return topic;
+  return topics.length > 0 ? topics : [text]; // Fallback to single topic if parsing fails
+}
+
+/**
+ * LLM selects the best topic from candidates
+ */
+async function selectBestTopic(
+  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  candidates: string[],
+  category: Category,
+  nativeLanguage: string
+): Promise<string> {
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  const isKorean = nativeLanguage === 'Korean';
+
+  const prompt = isKorean
+    ? `# Task
+다음 ${candidates.length}개의 유튜브 영상 주제 후보 중에서 **가장 클릭하고 싶은** 주제 1개를 선택해줘.
+
+# 후보
+${candidates.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+
+# 선정 기준
+1. **호기심 유발**: "이게 뭐지?" 하고 클릭하고 싶은 정도
+2. **감정적 공감**: 시청자가 "나도 그런 적 있어" 하고 느낄 수 있는 정도
+3. **구체성**: 막연하지 않고 상황이 그려지는 정도
+4. **시의성**: 지금 시기에 맞는 정도
+
+# Output
+선택한 주제만 출력 (번호나 설명 없이)`
+    : `# Task
+Select the **most clickable** topic from these ${candidates.length} YouTube video topic candidates.
+
+# Candidates
+${candidates.map((c, i) => `${i + 1}. ${c}`).join('\n')}
+
+# Selection Criteria
+1. **Curiosity**: How much it makes you want to click
+2. **Emotional resonance**: How relatable it is
+3. **Specificity**: How concrete and vivid the situation is
+4. **Timeliness**: How relevant it is to the current season
+
+# Output
+Output only the selected topic (no number or explanation)`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  const selected = response.text().trim();
+
+  // Find the closest match from candidates (in case LLM slightly modifies it)
+  const exactMatch = candidates.find((c) => c === selected);
+  if (exactMatch) return exactMatch;
+
+  // Fuzzy match - find candidate that contains the selected text or vice versa
+  const fuzzyMatch = candidates.find(
+    (c) =>
+      selected.includes(c) || c.includes(selected) || selected.toLowerCase() === c.toLowerCase()
+  );
+  if (fuzzyMatch) return fuzzyMatch;
+
+  // Default to first candidate if no match
+  return candidates[0];
 }
 
 function getCategoryGuidance(category: Category, targetLangName: string): string {

@@ -14,12 +14,13 @@ function getGeminiClient() {
 }
 
 /**
- * Generate a script using Gemini API
+ * Generate a script using Gemini API with candidate selection
  */
 export async function generateScript(
   config: ChannelConfig,
   category?: Category,
-  topic?: string
+  topic?: string,
+  candidateCount: number = 3
 ): Promise<Script> {
   const genAI = getGeminiClient();
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
@@ -34,17 +35,56 @@ export async function generateScript(
     selectedTopic = await selectTimlyTopic(
       scriptCategory,
       config.meta.targetLanguage,
-      config.meta.nativeLanguage
+      config.meta.nativeLanguage,
+      3 // Generate 3 topic candidates
     );
     console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
   }
 
+  // Generate multiple script candidates
+  console.log(`   📝 스크립트 후보 ${candidateCount}개 생성 중...`);
+  const candidates: Script[] = [];
+
+  for (let i = 0; i < candidateCount; i++) {
+    try {
+      const script = await generateSingleScript(model, config, scriptCategory, selectedTopic);
+      candidates.push(script);
+      console.log(`   ✓ 후보 ${i + 1}/${candidateCount} 생성 완료`);
+    } catch (error) {
+      console.warn(`   ⚠️ 후보 ${i + 1} 생성 실패: ${error}`);
+    }
+  }
+
+  if (candidates.length === 0) {
+    throw new Error('Failed to generate any valid script candidates');
+  }
+
+  if (candidates.length === 1) {
+    return candidates[0];
+  }
+
+  // LLM selects the best script
+  console.log(`   🤖 최적 스크립트 선정 중...`);
+  const bestScript = await selectBestScript(model, candidates, config.meta.nativeLanguage);
+
+  return bestScript;
+}
+
+/**
+ * Generate a single script (internal helper)
+ */
+async function generateSingleScript(
+  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  config: ChannelConfig,
+  category: Category,
+  topic: string
+): Promise<Script> {
   // Generate prompt
-  const prompt = generateScriptPrompt(config, scriptCategory, selectedTopic);
+  const prompt = generateScriptPrompt(config, category, topic);
 
   // Call Gemini API
   const result = await model.generateContent(prompt);
-  const response = await result.response;
+  const response = result.response;
   const text = response.text();
 
   // Parse JSON from response
@@ -65,7 +105,7 @@ export async function generateScript(
   const scriptData = {
     channelId: config.channelId,
     date: today,
-    category: scriptCategory,
+    category,
     ...(parsedResponse as object),
   };
 
@@ -79,6 +119,82 @@ export async function generateScript(
   }
 
   return validationResult.data;
+}
+
+/**
+ * LLM selects the best script from candidates
+ */
+async function selectBestScript(
+  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  candidates: Script[],
+  nativeLanguage: string
+): Promise<Script> {
+  const isKorean = nativeLanguage === 'Korean';
+
+  // Create summaries of each script for comparison
+  const summaries = candidates.map((script, i) => {
+    const firstSentences = script.sentences
+      .slice(0, 3)
+      .map((s) => s.target)
+      .join(' ');
+    const lastSentences = script.sentences
+      .slice(-2)
+      .map((s) => s.target)
+      .join(' ');
+    return `## 후보 ${i + 1}
+제목: ${script.metadata.title.target}
+스타일: ${script.metadata.style}
+시작: ${firstSentences}
+끝: ${lastSentences}`;
+  });
+
+  const prompt = isKorean
+    ? `# Task
+다음 ${candidates.length}개의 영어 학습 스크립트 후보 중에서 **가장 좋은** 스크립트 1개를 선택해줘.
+
+${summaries.join('\n\n')}
+
+# 선정 기준
+1. **자연스러움**: 실제 원어민이 쓸 법한 자연스러운 표현
+2. **흐름**: 문장 간 연결이 자연스럽고 스토리가 잘 흐르는지
+3. **학습 가치**: 유용한 표현과 어휘가 포함되어 있는지
+4. **감정적 공감**: 시청자가 공감할 수 있는 내용인지
+5. **완결성**: 시작과 끝이 잘 마무리되는지
+
+# Output
+선택한 후보 번호만 출력 (예: 1, 2, 또는 3)`
+    : `# Task
+Select the **best** script from these ${candidates.length} language learning script candidates.
+
+${summaries.join('\n\n')}
+
+# Selection Criteria
+1. **Naturalness**: Sounds like what a native speaker would actually say
+2. **Flow**: Sentences connect naturally and the story flows well
+3. **Learning value**: Contains useful expressions and vocabulary
+4. **Emotional resonance**: Content that viewers can relate to
+5. **Completeness**: Has a good beginning and satisfying ending
+
+# Output
+Output only the selected candidate number (e.g., 1, 2, or 3)`;
+
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  const selected = response.text().trim();
+
+  // Parse the selected number
+  const match = selected.match(/(\d+)/);
+  if (match) {
+    const index = parseInt(match[1], 10) - 1;
+    if (index >= 0 && index < candidates.length) {
+      console.log(`   ✓ 후보 ${index + 1} 선정됨`);
+      return candidates[index];
+    }
+  }
+
+  // Default to first candidate
+  console.log(`   ✓ 기본값으로 후보 1 선정됨`);
+  return candidates[0];
 }
 
 /**
@@ -144,8 +260,20 @@ export function createSampleScript(config: ChannelConfig, category: Category): S
         native: '샘플 스크립트',
       },
       characters: [
-        { id: 'M' as const, name: 'James', gender: 'male' as const, ethnicity: 'American', role: 'customer' },
-        { id: 'F' as const, name: 'Sarah', gender: 'female' as const, ethnicity: 'American', role: 'barista' },
+        {
+          id: 'M' as const,
+          name: 'James',
+          gender: 'male' as const,
+          ethnicity: 'American',
+          role: 'customer',
+        },
+        {
+          id: 'F' as const,
+          name: 'Sarah',
+          gender: 'female' as const,
+          ethnicity: 'American',
+          role: 'barista',
+        },
       ],
     },
     sentences,
