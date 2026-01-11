@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { GEMINI_API_URLS, getGeminiApiKey, type GeminiImageResponse } from '../config/gemini';
+import type { Script, Category, Character } from '../script/types';
 
 /**
  * Generate an illustration image using Gemini API based on the script topic
@@ -492,4 +493,183 @@ export async function generateChannelThumbnail(
     nativeLanguage: config.meta.nativeLanguage,
     outputPath,
   });
+}
+
+// =============================================================================
+// Shorts Background Image Generation
+// =============================================================================
+
+/**
+ * 카테고리별 스타일 힌트
+ */
+const CATEGORY_STYLE_HINTS: Record<Category, string> = {
+  travel_business: 'professional setting, modern interior, service interaction',
+  conversation: 'casual everyday setting, cozy atmosphere, friendly interaction',
+  story: 'emotional cinematic mood, dramatic lighting, personal moment',
+  news: 'broadcast studio feel, formal tone, informative setting',
+  announcement: 'public space, clear signage visible, official atmosphere',
+  lesson: 'classroom or study environment, educational setting',
+  fairytale: 'whimsical storybook aesthetic, magical elements, fantasy setting',
+};
+
+/**
+ * 공통 쇼츠 스타일 프롬프트
+ */
+const SHORTS_COMMON_STYLE = `comic book illustration style, clean bold line art, soft pastel color palette, bright friendly atmosphere, digital art, single continuous scene filling entire vertical 9:16 frame, NO panels NO borders NO dividing lines, background extends to all edges of image, characters positioned in lower half of frame, upper half shows extended background environment like ceiling walls or sky, warm natural lighting, slight depth blur on distant background`;
+
+/**
+ * LLM을 사용해 상황별 프롬프트 생성
+ */
+async function generateSituationalPrompt(script: Script): Promise<string> {
+  const apiKey = getGeminiApiKey();
+
+  const charactersDesc = script.metadata.characters
+    .map((c: Character) => `${c.name} (${c.gender} ${c.role})`)
+    .join(', ');
+
+  const sampleDialogue = script.sentences
+    .slice(0, 3)
+    .map((s) => `${s.speaker}: "${s.target}"`)
+    .join('\n');
+
+  const prompt = `You are an expert at creating image generation prompts for educational language learning shorts (9:16 vertical).
+
+**INPUT:**
+- Episode title: ${script.metadata.title.native}
+- Topic: ${script.metadata.topic}
+- Characters: ${charactersDesc}
+- Sample dialogue:
+${sampleDialogue}
+
+**OUTPUT:** 
+A single situational prompt describing the scene.
+
+**CRITICAL COMPOSITION RULES:**
+- ONE CONTINUOUS SCENE filling the entire 9:16 vertical frame
+- NO comic panels, NO borders, NO dividing lines
+- Background must extend to ALL EDGES of the image (top, bottom, left, right)
+- Characters positioned in the LOWER 50% of the frame
+- Upper 50% shows the environment (ceiling, walls, sky, trees, etc.)
+- Wide/medium shot perspective showing full upper body of characters
+
+**RULES:**
+- NO style keywords (handled separately)
+- Focus ONLY on the scene content
+- Keep it under 80 words
+- Describe setting details that fill the upper portion (ceiling lights, shelves, sky, etc.)
+
+**EXAMPLE:**
+Output:
+"Office interior with high ceiling and fluorescent lights visible above, bookshelves and windows in upper background, young man in sweater holding planner standing in lower portion of frame, female colleague with papers facing him, friendly conversation moment, potted plants on desks, warm afternoon lighting through windows"
+
+Now create a situational prompt. Output ONLY the prompt text.`;
+
+  try {
+    const requestBody = {
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 200,
+      },
+    };
+
+    const response = await fetch(`${GEMINI_API_URLS.text}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error(`   ⚠️ Gemini text API error: ${response.status} - ${errorText}`);
+      // 폴백: 스크립트의 imagePrompt 사용
+      if (script.metadata.imagePrompt) {
+        console.log(`   📝 Using script's imagePrompt as fallback`);
+        return script.metadata.imagePrompt;
+      }
+      return `${script.metadata.topic} scene with ${charactersDesc}`;
+    }
+
+    const data = await response.json();
+    const generatedText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!generatedText || generatedText.trim().length < 20) {
+      console.error(`   ⚠️ Empty or too short response from Gemini`);
+      // 폴백: 스크립트의 imagePrompt 사용
+      if (script.metadata.imagePrompt) {
+        console.log(`   📝 Using script's imagePrompt as fallback`);
+        return script.metadata.imagePrompt;
+      }
+      return `${script.metadata.topic} scene with ${charactersDesc}`;
+    }
+
+    return generatedText.trim().replace(/^["']|["']$/g, '');
+  } catch (error) {
+    console.error(`   ⚠️ Error generating situational prompt:`, error);
+    // 폴백: 스크립트의 imagePrompt 사용
+    if (script.metadata.imagePrompt) {
+      console.log(`   📝 Using script's imagePrompt as fallback`);
+      return script.metadata.imagePrompt;
+    }
+    return `${script.metadata.topic} scene with ${charactersDesc}`;
+  }
+}
+
+/**
+ * 쇼츠용 배경 이미지 생성
+ */
+export async function generateShortsBackground(script: Script, outputDir: string): Promise<string> {
+  const apiKey = getGeminiApiKey();
+  const outputPath = path.join(outputDir, 'episode-shorts-background.png');
+
+  console.log(`🎨 Generating shorts background for "${script.metadata.title.native}"...`);
+
+  // 1. LLM으로 상황별 프롬프트 생성
+  console.log(`   📝 Generating situational prompt...`);
+  const situationalPrompt = await generateSituationalPrompt(script);
+  console.log(`   ✅ Situational: "${situationalPrompt.substring(0, 80)}..."`);
+
+  // 2. 카테고리별 스타일 힌트
+  const categoryHint = CATEGORY_STYLE_HINTS[script.category] || '';
+
+  // 3. 최종 프롬프트 조합 (상황 먼저 → 스타일 뒤에)
+  const finalPrompt = `${situationalPrompt}, ${categoryHint}, ${SHORTS_COMMON_STYLE}, no text or words in image --ar 9:16`;
+
+  console.log(`   🖼️ Generating image...`);
+
+  const requestBody = {
+    contents: [{ parts: [{ text: finalPrompt }] }],
+    generationConfig: {
+      responseModalities: ['image', 'text'],
+      responseMimeType: 'text/plain',
+    },
+  };
+
+  const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(requestBody),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+  }
+
+  const data = (await response.json()) as GeminiImageResponse;
+
+  // 이미지 추출 및 저장
+  for (const candidate of data.candidates || []) {
+    for (const part of candidate.content?.parts || []) {
+      if (part.inlineData?.data) {
+        const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
+        await fs.mkdir(path.dirname(outputPath), { recursive: true });
+        await fs.writeFile(outputPath, imageBuffer);
+        console.log(`   ✅ Shorts background saved to: ${outputPath}`);
+        return outputPath;
+      }
+    }
+  }
+
+  throw new Error('No shorts background image generated');
 }
