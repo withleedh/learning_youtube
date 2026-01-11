@@ -189,6 +189,31 @@ Examples:
     console.log(`   ❌ Failed to copy ding-dong.mp3: ${error}`);
   }
 
+  // Copy shorts_ending.mp3 - 채널별 먼저 시도, 없으면 common fallback
+  const channelAssetsSource = path.join(process.cwd(), 'assets', channelId);
+  const channelAssetsDest = path.join(channelOutputDir, 'assets', channelId);
+  await fs.mkdir(channelAssetsDest, { recursive: true });
+
+  const channelEndingSrc = path.join(channelAssetsSource, 'shorts_ending.mp3');
+  const commonEndingSrc = path.join(commonAssetsSource, 'shorts_ending.mp3');
+  const channelEndingDest = path.join(channelAssetsDest, 'shorts_ending.mp3');
+  const commonEndingDest = path.join(commonAssetsDest, 'shorts_ending.mp3');
+
+  try {
+    // 채널별 엔딩 파일 복사 시도
+    await fs.access(channelEndingSrc);
+    await fs.copyFile(channelEndingSrc, channelEndingDest);
+    console.log(`   ✅ Copied shorts_ending.mp3 from assets/${channelId}/`);
+  } catch {
+    // 채널별 없으면 common에서 복사
+    try {
+      await fs.copyFile(commonEndingSrc, commonEndingDest);
+      console.log(`   ✅ Copied shorts_ending.mp3 from assets/common/ (fallback)`);
+    } catch (error) {
+      console.log(`   ⚠️ No shorts_ending.mp3 found: ${error}`);
+    }
+  }
+
   const bundleLocation = await bundle({
     entryPoint: path.join(process.cwd(), 'src/index.ts'),
     webpackOverride: (cfg) => cfg,
@@ -207,6 +232,11 @@ Examples:
       console.warn(`   ⚠️ No audio for sentence ${sentence.id}, skipping`);
       continue;
     }
+
+    // Debug: log audio durations
+    console.log(
+      `   Audio duration: ${audioFile.duration}s, Intro duration: ${introAudioFile.duration}s`
+    );
 
     // Use fixed composition ID - props determine which sentence to render
     const compositionId = 'SingleSentenceShort';
@@ -230,7 +260,12 @@ Examples:
         serveUrl: bundleLocation,
         id: compositionId,
         inputProps,
+        timeoutInMilliseconds: 60000, // 60초로 늘림
       });
+
+      console.log(
+        `   Duration: ${composition.durationInFrames} frames (${(composition.durationInFrames / 30).toFixed(1)}s)`
+      );
 
       const outputPath = path.join(shortsDir, `short_${String(i + 1).padStart(2, '0')}.mp4`);
 
@@ -240,6 +275,7 @@ Examples:
         codec: 'h264',
         outputLocation: outputPath,
         inputProps,
+        timeoutInMilliseconds: 120000, // 렌더링 타임아웃 120초
         onProgress: ({ progress }) => {
           process.stdout.write(`\r   Progress: ${(progress * 100).toFixed(1)}%`);
         },
