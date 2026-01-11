@@ -1,7 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { GEMINI_API_URLS, getGeminiApiKey, type GeminiImageResponse } from '../config/gemini';
-import type { Script, Category, Character } from '../script/types';
 
 /**
  * Generate an illustration image using Gemini API based on the script topic
@@ -9,40 +8,27 @@ import type { Script, Category, Character } from '../script/types';
 export async function generateIllustration(
   topic: string,
   title: string,
-  sceneDescription: string = '',
+  style: string = 'warm illustration',
   outputPath: string
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
 
-  // 프롬프트 구조: 헤더(스타일) + 본문(상황) + 푸터(기술 요구사항)
-  const styleHeader = `High-quality 3D animation style, reminiscent of Pixar or Disney movies. Octane render
-Photorealistic rendering with stylized characters.
-Cute but mature characters with highly expressive facial features and large, detailed eyes.
-Cinematic lighting with volumetric lighting effects, subsurface scattering for realistic skin glow.
-Rich, vibrant textures with attention to material details.`;
-
-  const sceneBody = sceneDescription
-    ? `Scene: ${sceneDescription}`
-    : `Scene: A warm, inviting scene that represents "${topic}". 
-Characters naturally interacting in the environment.
-Expressive body language and facial expressions that convey emotion.`;
-
-  const technicalFooter = `Technical requirements:
-- 16:9 aspect ratio (widescreen cinematic composition)
-- 8K resolution quality, masterpiece level detail
-- Warm, natural lighting with soft shadows
-- Shallow depth of field for cinematic feel
-- No text, words, or letters in the image
-- Clean composition suitable for video background`;
-
-  const prompt = `${styleHeader}
-
-${sceneBody}
+  // Create a prompt for image generation
+  const prompt = `Generate a warm, friendly illustration image for a language learning video.
 
 Topic: ${topic}
 Title: ${title}
 
-${technicalFooter}`;
+Style requirements:
+- ${style} style, similar to children's book illustrations
+- Warm, inviting colors
+- Simple but expressive characters
+- Clear scene that represents the topic
+- No text or words in the image
+- 16:9 aspect ratio suitable for YouTube
+- Soft lighting, cozy atmosphere
+
+The image should visually represent the conversation topic in a way that helps language learners understand the context.`;
 
   const requestBody = {
     contents: [
@@ -99,24 +85,16 @@ ${technicalFooter}`;
 
 /**
  * Generate background image for language learning video
- * @param topic - 스크립트 주제
- * @param title - 스크립트 제목
- * @param outputDir - 출력 디렉토리
- * @param imagePrompt - LLM이 생성한 구체적 장면 설명 (있으면 이걸 사용)
  */
 export async function generateBackgroundImage(
   topic: string,
   title: string,
-  outputDir: string,
-  imagePrompt?: string
+  outputDir: string
 ): Promise<string> {
   const filename = 'background.png';
   const outputPath = path.join(outputDir, filename);
 
-  // imagePrompt가 있으면 구체적 장면 설명으로 사용
-  const sceneDescription = imagePrompt || '';
-
-  return generateIllustration(topic, title, sceneDescription, outputPath);
+  return generateIllustration(topic, title, 'warm cozy illustration with soft colors', outputPath);
 }
 
 /**
@@ -151,11 +129,11 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
   const {
     channelName,
     episodeTitle,
-    characterStyle,
+    characterStyle = 'animals',
     customCharacters,
-    backgroundColor,
-    targetLanguage,
-    nativeLanguage,
+    backgroundColor = 'dark blue',
+    targetLanguage = 'English',
+    nativeLanguage = 'Korean',
     outputPath,
   } = options;
 
@@ -173,17 +151,11 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
     case 'custom':
       characterDescription = customCharacters || 'two friendly characters standing side by side';
       break;
-    default:
-      characterDescription =
-        'two cute, original anthropomorphic animal characters (e.g., a fox and a bear) standing side by side';
   }
 
   // 학습 언어에 따른 말풍선 내용 생성
-  const foreignSpeechBubble = generateForeignPhrase(targetLanguage || '');
-  const nativeSpeechBubble = generateUnderstandingPhrase(
-    targetLanguage || '',
-    nativeLanguage || ''
-  );
+  const foreignSpeechBubble = generateForeignPhrase(targetLanguage);
+  const nativeSpeechBubble = generateUnderstandingPhrase(targetLanguage, nativeLanguage);
 
   // 에피소드 제목이 있으면 추가 (5도 기울임)
   const titleText = episodeTitle
@@ -203,42 +175,36 @@ export async function generateThumbnail(options: ThumbnailOptions): Promise<stri
   Both lines are centered and stacked vertically`
     : `'${channelName}' in a single line, tilted approximately 5 degrees clockwise`;
 
-  const prompt = `3D clay animation style illustration for a YouTube language learning channel thumbnail.
+  const prompt = `A warm, hand-drawn 2D cartoon illustration for a YouTube language learning channel thumbnail.
 
-Style (CRITICAL):
-- 3D clay animation style, stop motion aesthetic
-- Plastiline clay texture, handmade feel
-- Soft studio lighting, playful atmosphere
-- Cute and friendly character proportions
-- High quality, 4K render
+Style:
+- Hand-drawn, warm and friendly 2D cartoon illustration
+- Clear, bold outlines
+- Soft, rich colors
+- Textured solid color background
 
 Composition:
-- At the bottom center, large, bold, 3D blocky channel name text ${channelNameText}
-- The text must look like it is made of clay or plastic blocks
-- Text should be the most prominent element, eye-catching with white outline
-
+- At the bottom center, large, bold, three-dimensional channel name text ${channelNameText}
+- The text should be the most prominent element, eye-catching and readable with white outline and colorful shadows
 ${titleText}
-
 - Above the text, ${characterDescription}
 - Characters have surprised and joyful expressions (happy that they can understand the language)
-- Characters are cute and trendy 3D claymation style illustration
-- Soft, rounded, friendly, high-quality 3D render like a Pixar movie character.
 
 Speech Bubbles (IMPORTANT - exactly TWO bubbles only):
 - The left character (male) has ONE speech bubble saying "${foreignSpeechBubble}" in ${targetLanguage}
 - The right character (female) has ONE speech bubble saying "${nativeSpeechBubble}" expressing joy of understanding
-- Bubbles should look like cut-out paper or clean plastic shapes
-- NO other speech bubbles, musical notes, or decorative elements
+- NO other speech bubbles, musical notes, or decorative elements around the characters
+- Keep it clean and simple with just these two speech bubbles
 
 Background:
-- Clean solid pastel ${backgroundColor} background (e.g., mint, cream, or soft blue)
-- Simple and uncluttered to make characters pop
+- Solid, textured ${backgroundColor} background
+- Clean and uncluttered
 
 Technical requirements:
-- 16:9 aspect ratio (1280x720)
+- 16:9 aspect ratio (1280x720 or similar)
 - High contrast for YouTube thumbnail visibility
-- Text must be clearly readable
-- Vibrant colors`;
+- Text must be clearly readable even at small sizes
+- Vibrant colors that stand out in YouTube search results`;
 
   console.log(`🎨 Generating thumbnail for "${channelName}" using Gemini 3 Pro Image...`);
 
@@ -368,9 +334,7 @@ async function generateThumbnailWithGemini(options: ThumbnailOptions): Promise<s
         'two cheerful young adults from different countries standing side by side';
       break;
     case 'custom':
-      characterDescription =
-        customCharacters ||
-        'An American man character with blonde hair and a denim jacket, and a Korean woman character with dark hair and a modern pastel hanbok standing side by side';
+      characterDescription = customCharacters || 'two friendly characters standing side by side';
       break;
   }
 
@@ -395,41 +359,36 @@ async function generateThumbnailWithGemini(options: ThumbnailOptions): Promise<s
   Both lines are centered and stacked vertically`
     : `'${channelName}' in a single line, tilted approximately 5 degrees clockwise`;
 
-  const prompt = `3D clay animation style illustration for a YouTube language learning channel thumbnail.
+  const prompt = `A warm, hand-drawn 2D cartoon illustration for a YouTube language learning channel thumbnail.
 
-Style (CRITICAL):
-- 3D clay animation style, stop motion aesthetic
-- Plastiline clay texture, handmade feel
-- Soft studio lighting, playful atmosphere
-- Cute and friendly character proportions
-- High quality, 4K render
+Style:
+- Hand-drawn, warm and friendly 2D cartoon illustration
+- Clear, bold outlines
+- Soft, rich colors
+- Textured solid color background
 
 Composition:
-- At the bottom center, large, bold, 3D blocky channel name text ${channelNameText}
-- The text must look like it is made of clay or plastic blocks
-- Text should be the most prominent element, eye-catching with white outline
-
+- At the bottom center, large, bold, three-dimensional channel name text ${channelNameText}
+- The text should be the most prominent element, eye-catching and readable with white outline and colorful shadows
 ${titleText}
-
 - Above the text, ${characterDescription}
 - Characters have surprised and joyful expressions (happy that they can understand the language)
-- Characters look like handmade clay dolls
 
 Speech Bubbles (IMPORTANT - exactly TWO bubbles only):
 - The left character (male) has ONE speech bubble saying "${foreignSpeechBubble}" in ${targetLanguage}
 - The right character (female) has ONE speech bubble saying "${nativeSpeechBubble}" expressing joy of understanding
-- Bubbles should look like cut-out paper or clean plastic shapes
-- NO other speech bubbles, musical notes, or decorative elements
+- NO other speech bubbles, musical notes, or decorative elements around the characters
+- Keep it clean and simple with just these two speech bubbles
 
 Background:
-- Clean solid pastel ${backgroundColor} background (e.g., mint, cream, or soft blue)
-- Simple and uncluttered to make characters pop
+- Solid, textured ${backgroundColor} background
+- Clean and uncluttered
 
 Technical requirements:
-- 16:9 aspect ratio (1280x720)
+- 16:9 aspect ratio (1280x720 or similar)
 - High contrast for YouTube thumbnail visibility
-- Text must be clearly readable
-- Vibrant colors`;
+- Text must be clearly readable even at small sizes
+- Vibrant colors that stand out in YouTube search results`;
 
   const requestBody = {
     contents: [{ parts: [{ text: prompt }] }],
@@ -481,115 +440,11 @@ export async function generateChannelThumbnail(
   const outputDir = path.join(process.cwd(), 'output', channelId);
   const outputPath = path.join(outputDir, 'thumbnail.png');
 
-  const thumbnailConfig = config.thumbnail || {};
-
   return generateThumbnail({
-    channelName: thumbnailConfig.channelName || config.meta.name,
+    channelName: config.meta.name,
     episodeTitle,
-    characterStyle: thumbnailConfig.characterStyle || 'animals',
-    customCharacters: thumbnailConfig.customCharacters,
-    backgroundColor: thumbnailConfig.backgroundColor || 'dark blue',
-    targetLanguage: config.meta.targetLanguage,
-    nativeLanguage: config.meta.nativeLanguage,
+    characterStyle: 'animals',
+    backgroundColor: 'dark blue',
     outputPath,
   });
-}
-
-// =============================================================================
-// Shorts Background Image Generation
-// =============================================================================
-
-/**
- * 카테고리별 스타일 힌트
- */
-const CATEGORY_STYLE_HINTS: Record<Category, string> = {
-  travel_business: 'professional setting, modern interior, service interaction',
-  conversation: 'casual everyday setting, cozy atmosphere, friendly interaction',
-  story: 'emotional cinematic mood, dramatic lighting, personal moment',
-  news: 'broadcast studio feel, formal tone, informative setting',
-  announcement: 'public space, clear signage visible, official atmosphere',
-  lesson: 'classroom or study environment, educational setting',
-  fairytale: 'whimsical storybook aesthetic, magical elements, fantasy setting',
-};
-
-/**
- * 공통 쇼츠 스타일 프롬프트
- */
-const SHORTS_COMMON_STYLE = `comic book illustration style, clean bold line art, soft pastel color palette, bright friendly atmosphere, digital art, single continuous scene filling entire 16:9 frame, NO panels NO borders NO dividing lines, natural character positioning, warm natural lighting, slight depth blur on distant background`;
-
-/**
- * 쇼츠용 배경 이미지 생성
- * 스크립트의 imagePrompt를 재사용하고 스타일만 변경
- */
-export async function generateShortsBackground(script: Script, outputDir: string): Promise<string> {
-  const apiKey = getGeminiApiKey();
-  const outputPath = path.join(outputDir, 'episode-shorts-background.png');
-
-  console.log(`🎨 Generating shorts background for "${script.metadata.title.native}"...`);
-
-  // 1. 스크립트의 imagePrompt에서 Pixar/3D 관련 키워드 제거
-  let scenePrompt = script.metadata.imagePrompt || '';
-
-  // Pixar/Disney/3D 관련 키워드 제거
-  scenePrompt = scenePrompt
-    .replace(/Pixar[- ]?style\s*/gi, '')
-    .replace(/Disney[- ]?style\s*/gi, '')
-    .replace(/3D animation\s*/gi, '')
-    .replace(/with detailed textures\.?\s*/gi, '')
-    .replace(/\s+/g, ' ')
-    .trim();
-
-  // imagePrompt가 없으면 기본 장면 생성
-  if (!scenePrompt) {
-    const charactersDesc = script.metadata.characters
-      .map((c: Character) => `${c.name} (${c.gender} ${c.role})`)
-      .join(', ');
-    scenePrompt = `${script.metadata.topic} scene with ${charactersDesc}`;
-  }
-
-  console.log(`   📝 Scene: "${scenePrompt.substring(0, 60)}..."`);
-
-  // 2. 카테고리별 스타일 힌트
-  const categoryHint = CATEGORY_STYLE_HINTS[script.category] || '';
-
-  // 3. 최종 프롬프트 조합
-  const finalPrompt = `${scenePrompt}, ${categoryHint}, ${SHORTS_COMMON_STYLE}, no text or words in image --ar 16:9`;
-
-  console.log(`   🖼️ Generating image...`);
-
-  const requestBody = {
-    contents: [{ parts: [{ text: finalPrompt }] }],
-    generationConfig: {
-      responseModalities: ['image', 'text'],
-      responseMimeType: 'text/plain',
-    },
-  };
-
-  const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
-  }
-
-  const data = (await response.json()) as GeminiImageResponse;
-
-  // 이미지 추출 및 저장
-  for (const candidate of data.candidates || []) {
-    for (const part of candidate.content?.parts || []) {
-      if (part.inlineData?.data) {
-        const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
-        await fs.mkdir(path.dirname(outputPath), { recursive: true });
-        await fs.writeFile(outputPath, imageBuffer);
-        console.log(`   ✅ Shorts background saved to: ${outputPath}`);
-        return outputPath;
-      }
-    }
-  }
-
-  throw new Error('No shorts background image generated');
 }

@@ -1,0 +1,442 @@
+{
+  "name": "YouTube Auto Upload",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24,
+              "triggerAtHour": 18
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "매일 오후 6시",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_PENDING_FOLDER_ID",
+          "mode": "id"
+        },
+        "options": {
+          "fields": ["id", "name", "mimeType", "parents"]
+        }
+      },
+      "id": "list-pending-files",
+      "name": "대기중 폴더 파일 목록",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [220, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-json",
+              "leftValue": "={{ $json.name }}",
+              "rightValue": "_info.json",
+              "operator": {
+                "type": "string",
+                "operation": "endsWith"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-info-files",
+      "name": "_info.json 파일만 필터",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "operation": "limit",
+        "maxItems": 1
+      },
+      "id": "limit-one",
+      "name": "하루 1개만",
+      "type": "n8n-nodes-base.limit",
+      "typeVersion": 1,
+      "position": [660, 0]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.id }}",
+          "mode": "id"
+        },
+        "options": {}
+      },
+      "id": "download-info",
+      "name": "info.json 다운로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [880, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const infoFileName = $input.first().json.name;\nconst baseName = infoFileName.replace('_info.json', '');\nconst binaryData = $input.first().binary.data;\nconst jsonStr = Buffer.from(binaryData.data, 'base64').toString('utf8');\nconst info = JSON.parse(jsonStr);\n\nreturn [{\n  json: {\n    ...info,\n    baseName,\n    infoFileId: $input.first().json.id,\n    videoFileName: baseName + '.mp4',\n    thumbFileName: baseName + '_thumb.png'\n  }\n}];"
+      },
+      "id": "parse-info",
+      "name": "info 파싱",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "operation": "list",
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_PENDING_FOLDER_ID",
+          "mode": "id"
+        },
+        "options": {
+          "fields": ["id", "name"]
+        }
+      },
+      "id": "list-for-video",
+      "name": "비디오 파일 찾기",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1320, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const info = $('info 파싱').first().json;\nconst files = $input.all().map(i => i.json);\n\nconst videoFile = files.find(f => f.name === info.videoFileName);\nconst thumbFile = files.find(f => f.name === info.thumbFileName);\n\nif (!videoFile) {\n  throw new Error(`Video file not found: ${info.videoFileName}`);\n}\n\nreturn [{\n  json: {\n    ...info,\n    videoFileId: videoFile.id,\n    thumbFileId: thumbFile?.id || null\n  }\n}];"
+      },
+      "id": "find-files",
+      "name": "파일 ID 매칭",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1540, 0]
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.videoFileId }}",
+          "mode": "id"
+        },
+        "options": {
+          "fileName": "={{ $json.videoFileName }}"
+        }
+      },
+      "id": "download-video",
+      "name": "비디오 다운로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1760, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "download",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $json.thumbFileId }}",
+          "mode": "id"
+        },
+        "options": {
+          "fileName": "={{ $json.thumbFileName }}"
+        }
+      },
+      "id": "download-thumb",
+      "name": "썸네일 다운로드",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1760, 200],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": [
+            {
+              "field1": "baseName",
+              "field2": "baseName"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "merge-files",
+      "name": "파일 병합",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [1980, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status",
+        "authentication": "oAuth2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-Upload-Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"snippet\": {\n    \"title\": \"{{ $json.title }}\",\n    \"description\": \"{{ $json.description }}\",\n    \"tags\": {{ JSON.stringify($json.tags || []) }},\n    \"categoryId\": \"27\",\n    \"defaultLanguage\": \"{{ $json.language || 'ko' }}\"\n  },\n  \"status\": {\n    \"privacyStatus\": \"{{ $json.privacyStatus || 'public' }}\",\n    \"selfDeclaredMadeForKids\": false\n  }\n}",
+        "options": {}
+      },
+      "id": "youtube-init-upload",
+      "name": "YouTube 업로드 시작",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2200, 100],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "YOUR_YOUTUBE_CREDENTIAL_ID",
+          "name": "YouTube"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ $json.headers.location }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "video/mp4"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "youtube-upload-video",
+      "name": "비디오 업로드",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2420, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://www.googleapis.com/upload/youtube/v3/thumbnails/set?videoId={{ $json.id }}",
+        "authentication": "oAuth2",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "image/png"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "thumb",
+        "options": {}
+      },
+      "id": "youtube-set-thumbnail",
+      "name": "썸네일 설정",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [2640, 100],
+      "credentials": {
+        "youTubeOAuth2Api": {
+          "id": "YOUR_YOUTUBE_CREDENTIAL_ID",
+          "name": "YouTube"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('파일 ID 매칭').first().json.videoFileId }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_COMPLETED_FOLDER_ID",
+          "mode": "id"
+        }
+      },
+      "id": "move-video",
+      "name": "비디오 완료 폴더로",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2860, 0],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('파일 ID 매칭').first().json.thumbFileId }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_COMPLETED_FOLDER_ID",
+          "mode": "id"
+        }
+      },
+      "id": "move-thumb",
+      "name": "썸네일 완료 폴더로",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2860, 100],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "move",
+        "fileId": {
+          "__rl": true,
+          "value": "={{ $('파일 ID 매칭').first().json.infoFileId }}",
+          "mode": "id"
+        },
+        "folderId": {
+          "__rl": true,
+          "value": "YOUR_COMPLETED_FOLDER_ID",
+          "mode": "id"
+        }
+      },
+      "id": "move-info",
+      "name": "info 완료 폴더로",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2860, 200],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "YOUR_GOOGLE_DRIVE_CREDENTIAL_ID",
+          "name": "Google Drive"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "매일 오후 6시": {
+      "main": [[{ "node": "대기중 폴더 파일 목록", "type": "main", "index": 0 }]]
+    },
+    "대기중 폴더 파일 목록": {
+      "main": [[{ "node": "_info.json 파일만 필터", "type": "main", "index": 0 }]]
+    },
+    "_info.json 파일만 필터": {
+      "main": [[{ "node": "하루 1개만", "type": "main", "index": 0 }]]
+    },
+    "하루 1개만": {
+      "main": [[{ "node": "info.json 다운로드", "type": "main", "index": 0 }]]
+    },
+    "info.json 다운로드": {
+      "main": [[{ "node": "info 파싱", "type": "main", "index": 0 }]]
+    },
+    "info 파싱": {
+      "main": [[{ "node": "비디오 파일 찾기", "type": "main", "index": 0 }]]
+    },
+    "비디오 파일 찾기": {
+      "main": [[{ "node": "파일 ID 매칭", "type": "main", "index": 0 }]]
+    },
+    "파일 ID 매칭": {
+      "main": [
+        [
+          { "node": "비디오 다운로드", "type": "main", "index": 0 },
+          { "node": "썸네일 다운로드", "type": "main", "index": 0 }
+        ]
+      ]
+    },
+    "비디오 다운로드": {
+      "main": [[{ "node": "파일 병합", "type": "main", "index": 0 }]]
+    },
+    "썸네일 다운로드": {
+      "main": [[{ "node": "파일 병합", "type": "main", "index": 1 }]]
+    },
+    "파일 병합": {
+      "main": [[{ "node": "YouTube 업로드 시작", "type": "main", "index": 0 }]]
+    },
+    "YouTube 업로드 시작": {
+      "main": [[{ "node": "비디오 업로드", "type": "main", "index": 0 }]]
+    },
+    "비디오 업로드": {
+      "main": [[{ "node": "썸네일 설정", "type": "main", "index": 0 }]]
+    },
+    "썸네일 설정": {
+      "main": [
+        [
+          { "node": "비디오 완료 폴더로", "type": "main", "index": 0 },
+          { "node": "썸네일 완료 폴더로", "type": "main", "index": 0 },
+          { "node": "info 완료 폴더로", "type": "main", "index": 0 }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
