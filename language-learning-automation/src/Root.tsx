@@ -15,6 +15,7 @@ import {
   SingleSentenceShort,
   calculateSingleSentenceShortDuration,
 } from './compositions/SingleSentenceShort';
+import { CatInterviewShort, calculateCatInterviewDuration } from './compositions/CatInterviewShort';
 import type { ChannelConfig } from './config/types';
 import type { Script } from './script/types';
 import type { AudioFile } from './tts/types';
@@ -515,6 +516,26 @@ export const RemotionRoot: React.FC = () => {
             props.introAudioFile
           ),
         })}
+      />
+
+      {/* Cat Interview Short - 고양이 인터뷰 영어 학습 (9:16) */}
+      <Composition
+        id="CatInterviewShort"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={CatInterviewShort as any}
+        durationInFrames={calculateCatInterviewDuration(2)} // 2개 대화 기본
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          dialogues: [
+            { question: '"눈이 와요"는?', answer: "It's snowing!" },
+            { question: '"추워요"는?', answer: "It's cold!" },
+          ],
+          videoPath: 'cat_interview/2026-01-12/2026-01-12_cat_interview.mp4',
+          theme: 'Snowy Day',
+          channelName: '나비의 영어교실',
+        }}
       />
     </>
   );

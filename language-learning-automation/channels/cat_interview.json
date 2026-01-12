@@ -1,0 +1,30 @@
+{
+  "channelId": "cat_interview",
+  "channelName": "고양이 인터뷰",
+  "contentType": "interview",
+  "character": {
+    "id": "orange_kitten",
+    "name": "나비",
+    "nameEnglish": "Nabi",
+    "type": "animal",
+    "imagePath": "assets/cat_interview/characters/cat.png",
+    "style": "stylized realistic baby kitten with fluffy orange fur",
+    "voiceStyle": "adorable sweet toddler voice",
+    "personality": "curious, playful, innocent",
+    "age": "6-8 weeks old baby kitten"
+  },
+  "props": {
+    "microphone": "assets/cat_interview/props/microphone.png"
+  },
+  "veoConfig": {
+    "useReferenceImages": true,
+    "aspectRatio": "16:9",
+    "durationSeconds": 8,
+    "personGeneration": "allow_adult"
+  },
+  "interviewConfig": {
+    "reporterLanguage": "korean",
+    "characterLanguage": "english",
+    "reporterVisible": false
+  }
+}
