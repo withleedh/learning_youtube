@@ -15,6 +15,11 @@ import {
   SingleSentenceShort,
   calculateSingleSentenceShortDuration,
 } from './compositions/SingleSentenceShort';
+import {
+  ListeningQuizShort,
+  calculateListeningQuizShortDuration,
+  generateQuizChoices,
+} from './compositions/ListeningQuizShort';
 import { CatInterviewShort, calculateCatInterviewDuration } from './compositions/CatInterviewShort';
 import type { ChannelConfig } from './config/types';
 import type { Script } from './script/types';
@@ -535,6 +540,34 @@ export const RemotionRoot: React.FC = () => {
           videoPath: 'cat_interview/2026-01-12/2026-01-12_cat_interview.mp4',
           theme: 'Snowy Day',
           channelName: '나비의 영어교실',
+        }}
+      />
+
+      {/* Listening Quiz Short - 선택지 퀴즈 형식 (9:16) */}
+      <Composition
+        id="ListeningQuizShort"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={ListeningQuizShort as any}
+        durationInFrames={calculateListeningQuizShortDuration()}
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          sentence: {
+            ...activeScript.sentences[0],
+            choices: generateQuizChoices(activeScript.sentences[0]),
+          },
+          audioFile:
+            activeAudioFiles.find(
+              (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '1.0x'
+            ) || activeAudioFiles[0],
+          slowAudioFile: activeAudioFiles.find(
+            (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '0.8x'
+          ),
+          config: activeConfig,
+          backgroundImage: 'background.png',
+          sentenceIndex: 1,
+          episodeTitle: activeScript.metadata.title.native,
         }}
       />
     </>

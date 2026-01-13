@@ -54,7 +54,7 @@ async function generateVideoThumbnail(
   ctx.font = `bold ${titleFontSize}px "Noto Sans KR", "Apple SD Gothic Neo", sans-serif`;
 
   // Subtitle - pink/magenta (125% of previous: 108 * 1.25 = 135)
-  const subtitleFontSize = 135;
+  const subtitleFontSize = 108;
   const subtitleY = HEIGHT - 30;
   const titleY = subtitleY - subtitleFontSize - 24; // 24px gap between title and subtitle
 
@@ -103,7 +103,7 @@ async function main() {
 
   // Find script file
   const files = await fs.readdir(outputDir);
-  const scriptFile = files.find((f) => f.endsWith('.json') && f.includes('announcement'));
+  const scriptFile = files.find((f) => f.endsWith('.json') && f.match(/^\d{4}-\d{2}-\d{2}_/));
 
   if (!scriptFile) {
     console.error('❌ No script file found');
@@ -116,7 +116,7 @@ async function main() {
   const script = JSON.parse(scriptContent);
 
   const titleText = script.metadata.title.native;
-  const subtitleText = '여행 영어';
+  const subtitleText = '하루 20분, 영어가 들려요.';
   const backgroundPath = path.join(outputDir, 'background.png');
   const thumbnailPath = path.join(outputDir, 'thumbnail.png');
 

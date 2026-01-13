@@ -153,7 +153,7 @@ export const Main: React.FC<MainProps> = ({
         />
       </Sequence>
 
-      {/* Step 1: 자막 없이 듣기 */}
+      {/* Step 1: 전체 흐름 파악 (자막 없이 듣기) */}
       <Sequence from={step1Start} durationInFrames={step1Duration}>
         <Step1
           backgroundImage={backgroundImage}

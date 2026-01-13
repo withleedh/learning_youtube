@@ -275,7 +275,7 @@ async function renderVideo() {
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 1. 자막 없이 듣기',
+    label: 'Step 1. 전체 흐름 파악',
   });
   currentFrame += step1Duration;
 

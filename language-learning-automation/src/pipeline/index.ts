@@ -694,8 +694,8 @@ function getTimelineLabels(nativeLanguage: string = 'Korean') {
   > = {
     Korean: {
       timelineHeader: '타임라인',
-      intro: '인트로 (필수!)',
-      step1: 'Step 1. 자막 없이 듣기',
+      intro: '인트로',
+      step1: 'Step 1. 전체 흐름 파악 (자막 없이 듣기)',
       step2: 'Step 2. 자막 보며 듣기',
       step3: 'Step 3. 문장별 3단계 훈련',
       step4: 'Step 4. 최종 확인',
@@ -775,9 +775,9 @@ function generateThumbnailSubtitle(targetLanguage: string, nativeLanguage: strin
   const targetName = names[targetLanguage] || targetLanguage;
 
   if (nativeLanguage === 'Korean') {
-    return `${targetName} 듣기 연습`;
+    return `매일 듣기 20분`;
   } else {
-    return `${targetName} Listening Practice`;
+    return `20Mins Challenge`;
   }
 }
 
@@ -894,6 +894,7 @@ async function renderShortsBatch(
 ): Promise<void> {
   const { bundle } = await import('@remotion/bundler');
   const { renderMedia, selectComposition } = await import('@remotion/renderer');
+  const { generateQuizChoices } = await import('../compositions/ListeningQuizShort');
 
   // Create shorts output directory
   const shortsDir = path.join(outputDir, 'shorts');
@@ -910,12 +911,25 @@ async function renderShortsBatch(
   // Load script
   const scriptPath = path.join(outputDir, scriptFile);
   const scriptContent = await fs.readFile(scriptPath, 'utf-8');
-  const script: Script = JSON.parse(scriptContent);
+  let script: Script = JSON.parse(scriptContent);
 
   // Load channel config
   const configPath = path.join(process.cwd(), 'channels', `${channelId}.json`);
   const configContent = await fs.readFile(configPath, 'utf-8');
   const config: ChannelConfig = JSON.parse(configContent);
+
+  // Check if any sentence is missing wrongAnswers
+  const needsWrongAnswers = script.sentences.some(
+    (s) => !s.wrongAnswers || s.wrongAnswers.length < 2
+  );
+
+  if (needsWrongAnswers) {
+    console.log('🤖 Generating missing wrongAnswers with GPT...');
+    script = await generateMissingWrongAnswers(script, config);
+    // Save updated script
+    await fs.writeFile(scriptPath, JSON.stringify(script, null, 2));
+    console.log('   ✅ Updated script with wrongAnswers');
+  }
 
   // Load audio manifest
   const manifestPath = path.join(outputDir, 'audio/manifest.json');
@@ -932,7 +946,7 @@ async function renderShortsBatch(
   const backgroundImage = `${folderName}/background.png`;
 
   // Bundle Remotion project
-  console.log('📦 Bundling Remotion project for Shorts...');
+  console.log('� Bundling Remotion project for Shorts...');
   const channelOutputDir = path.join(DEFAULT_OUTPUT_DIR, channelId);
   const bundleLocation = await bundle({
     entryPoint: path.join(process.cwd(), 'src/index.ts'),
@@ -940,30 +954,45 @@ async function renderShortsBatch(
     publicDir: channelOutputDir,
   });
 
-  // Render each sentence as a Short
+  // Render each sentence as a Quiz Short
   const totalSentences = script.sentences.length;
-  console.log(`📱 Rendering ${totalSentences} Shorts...`);
+  console.log(`📱 Rendering ${totalSentences} Quiz Shorts...`);
 
   for (let i = 0; i < script.sentences.length; i++) {
     const sentence = script.sentences[i];
     const audioFile = audioFiles.find((af) => af.sentenceId === sentence.id && af.speed === '1.0x');
+    const slowAudioFile = audioFiles.find(
+      (af) => af.sentenceId === sentence.id && af.speed === '0.8x'
+    );
 
     if (!audioFile) {
       console.warn(`   ⚠️ No audio for sentence ${sentence.id}, skipping`);
       continue;
     }
 
-    // Use fixed composition ID - props determine which sentence to render
-    const compositionId = 'SingleSentenceShort';
-
-    const inputProps = {
-      sentence,
-      audioFile,
-      config,
-      backgroundImage,
+    // Generate quiz choices from wrongAnswers or fallback
+    const quizSentence = {
+      ...sentence,
+      choices:
+        sentence.wrongAnswers && sentence.wrongAnswers.length >= 2
+          ? createChoicesFromWrongAnswers(sentence.target, sentence.wrongAnswers, sentence.id)
+          : generateQuizChoices(sentence),
     };
 
-    console.log(`   [${i + 1}/${totalSentences}] Rendering Short for sentence ${sentence.id}...`);
+    // Use ListeningQuizShort composition
+    const compositionId = 'ListeningQuizShort';
+
+    const inputProps = {
+      sentence: quizSentence,
+      audioFile,
+      slowAudioFile,
+      config,
+      backgroundImage,
+      sentenceIndex: i + 1,
+      episodeTitle: script.metadata.title.native,
+    };
+
+    console.log(`   [${i + 1}/${totalSentences}] "${sentence.target.substring(0, 35)}..."`);
 
     try {
       const composition = await selectComposition({
@@ -972,7 +1001,7 @@ async function renderShortsBatch(
         inputProps,
       });
 
-      const outputPath = path.join(shortsDir, `shorts_${String(i + 1).padStart(2, '0')}.mp4`);
+      const outputPath = path.join(shortsDir, `quiz_${String(i + 1).padStart(2, '0')}.mp4`);
 
       await renderMedia({
         composition,
@@ -989,13 +1018,109 @@ async function renderShortsBatch(
 
       const stats = await fs.stat(outputPath);
       console.log(
-        `\n   ✅ Created: shorts_${String(i + 1).padStart(2, '0')}.mp4 (${(stats.size / 1024 / 1024).toFixed(2)} MB)`
+        `\n   ✅ quiz_${String(i + 1).padStart(2, '0')}.mp4 (${(stats.size / 1024 / 1024).toFixed(2)} MB)`
       );
     } catch (error) {
       console.error(`\n   ❌ Failed to render Short ${i + 1}: ${error}`);
     }
   }
 
-  console.log(`\n✅ Shorts batch rendering completed!`);
+  console.log(`\n✅ Quiz Shorts batch rendering completed!`);
   console.log(`📁 Output: ${shortsDir}`);
+}
+
+/**
+ * Create quiz choices from wrongAnswers array
+ */
+function createChoicesFromWrongAnswers(
+  correctAnswer: string,
+  wrongAnswers: string[],
+  sentenceId: number
+): Array<{ text: string; isCorrect: boolean }> {
+  const correctIndex = sentenceId % 3;
+  const choices: Array<{ text: string; isCorrect: boolean }> = [];
+  let wrongIdx = 0;
+
+  for (let i = 0; i < 3; i++) {
+    if (i === correctIndex) {
+      choices.push({ text: correctAnswer, isCorrect: true });
+    } else {
+      choices.push({ text: wrongAnswers[wrongIdx++] || correctAnswer, isCorrect: false });
+    }
+  }
+
+  return choices;
+}
+
+/**
+ * Generate missing wrongAnswers using GPT
+ */
+async function generateMissingWrongAnswers(
+  script: Script,
+  _config: ChannelConfig
+): Promise<Script> {
+  const { GoogleGenerativeAI } = await import('@google/generative-ai');
+  const apiKey = getGeminiApiKey();
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+
+  const sentencesNeedingWrongAnswers = script.sentences.filter(
+    (s) => !s.wrongAnswers || s.wrongAnswers.length < 2
+  );
+
+  if (sentencesNeedingWrongAnswers.length === 0) {
+    return script;
+  }
+
+  const prompt = `Generate wrong answers for listening quiz. For each sentence, create 2 similar-sounding but incorrect sentences.
+
+Rules:
+- Wrong answers should sound similar when spoken quickly
+- Use techniques like: contraction confusion (I'd→I), tense change (liked→like), similar sounds (hear→here)
+- Each wrong answer should differ by only 1-2 words
+- Must be grammatically plausible
+
+Sentences to process:
+${sentencesNeedingWrongAnswers.map((s) => `ID ${s.id}: "${s.target}"`).join('\n')}
+
+Output JSON format:
+{
+  "wrongAnswers": {
+    "1": ["wrong sentence 1", "wrong sentence 2"],
+    "2": ["wrong sentence 1", "wrong sentence 2"]
+  }
+}
+
+Generate ONLY the JSON output.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const responseText = result.response.text();
+
+    // Extract JSON from response
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('   ⚠️ Could not parse GPT response, using fallback');
+      return script;
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+    const wrongAnswersMap = parsed.wrongAnswers || {};
+
+    // Update sentences with generated wrongAnswers
+    const updatedSentences = script.sentences.map((sentence) => {
+      if (!sentence.wrongAnswers || sentence.wrongAnswers.length < 2) {
+        const generated = wrongAnswersMap[String(sentence.id)];
+        if (generated && Array.isArray(generated) && generated.length >= 2) {
+          return { ...sentence, wrongAnswers: generated.slice(0, 2) };
+        }
+      }
+      return sentence;
+    });
+
+    return { ...script, sentences: updatedSentences };
+  } catch (error) {
+    console.warn(`   ⚠️ GPT wrongAnswers generation failed: ${error}`);
+    return script;
+  }
 }

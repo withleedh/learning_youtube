@@ -16,6 +16,8 @@ export const sentenceSchema = z.object({
   blankAnswer: z.string().min(1, 'Blank answer is required'),
   native: z.string().min(1, 'Native translation is required'),
   words: z.array(wordSchema).min(1, 'At least one word is required'),
+  // 선택지 퀴즈용 오답 문장 리스트 (2개)
+  wrongAnswers: z.array(z.string()).optional(),
 });
 
 // Category enum

@@ -94,6 +94,10 @@ ${imagePromptGuide}
       "native": "Natural ${meta.nativeLanguage} translation",
       "words": [
         { "word": "vocabulary", "meaning": "meaning" }
+      ],
+      "wrongAnswers": [
+        "Similar but wrong sentence 1",
+        "Similar but wrong sentence 2"
       ]
     }
   ]
@@ -105,6 +109,7 @@ ${imagePromptGuide}
 - blankAnswer MUST appear exactly in the target sentence.
 - targetBlank MUST contain exactly "_______" (7 underscores).
 - Words array: Include blankAnswer + 1-2 useful vocabulary words.
+- wrongAnswers: Include 2 similar-sounding but incorrect sentences for listening quiz.
 
 Generate ONLY the JSON output. No additional text.`;
 }
@@ -197,6 +202,10 @@ ${imagePromptGuide}
       "native": "Natural ${meta.nativeLanguage} translation",
       "words": [
         { "word": "vocabulary", "meaning": "meaning" }
+      ],
+      "wrongAnswers": [
+        "Similar but wrong sentence 1",
+        "Similar but wrong sentence 2"
       ]
     }
   ]
@@ -208,6 +217,7 @@ ${imagePromptGuide}
 - blankAnswer MUST appear exactly in the target sentence.
 - targetBlank MUST contain exactly "_______" (7 underscores).
 - Dialogue must flow naturally - each line should connect to the previous one.
+- wrongAnswers: Include 2 similar-sounding but incorrect sentences for listening quiz.
 
 Generate ONLY the JSON output. No additional text.`;
 }
@@ -409,7 +419,28 @@ Choose words that are:
 - Articles: "a", "an", "the"
 - Pronouns: "I", "you", "he", "she", "it"
 - Basic verbs: "is", "are", "was", "were", "have", "has"
-- Prepositions alone: "in", "on", "at", "to", "for"`;
+- Prepositions alone: "in", "on", "at", "to", "for"
+
+# WrongAnswers Guide (for Listening Quiz Shorts)
+Generate 2 wrong answer sentences that sound similar to the correct sentence.
+These will be used in A/B/C multiple choice listening quizzes.
+
+**Techniques for creating confusing wrong answers:**
+1. **Contraction confusion:** "I'd like" → "I like", "can't" → "can", "won't" → "want"
+2. **Tense confusion:** "liked" → "like", "wanted" → "want", "was" → "is"
+3. **Similar sounds:** "hear" → "here", "their" → "there", "your" → "you're"
+4. **Word order change:** Slightly rearrange words
+5. **Similar word substitution:** "some" → "same", "then" → "than"
+
+**Example:**
+- Correct: "I'd like some coffee, please."
+- Wrong 1: "I like some coffee, please." (contraction removed)
+- Wrong 2: "I'd like same coffee, please." (similar sound word)
+
+**Rules:**
+- Wrong answers must be grammatically plausible (not obviously wrong)
+- Wrong answers should sound similar when spoken quickly
+- Each wrong answer should differ by only 1-2 words from the correct sentence`;
 }
 
 /**

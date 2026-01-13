@@ -73,10 +73,10 @@ async function generateUploadInfo() {
 
   // Calculate durations with actual TTS durations (matching inputProps from render)
   // These should match the values from pipeline/index.ts inputProps
-  const viralNarrationDuration = 5.256;  // assets/intro-viral.mp3
-  const guideNarrationDuration = 3.936;  // assets/intro-narration.mp3
-  const stepNarrationDurations = [8.52, 8.904, 9.72, 7.464];  // intro-step1~4.mp3
-  const closingNarrationDuration = 2.952;  // assets/intro-closing.mp3
+  const viralNarrationDuration = 5.256; // assets/intro-viral.mp3
+  const guideNarrationDuration = 3.936; // assets/intro-narration.mp3
+  const stepNarrationDurations = [8.52, 8.904, 9.72, 7.464]; // intro-step1~4.mp3
+  const closingNarrationDuration = 2.952; // assets/intro-closing.mp3
 
   const introDuration = calculateIntroDuration(
     viralNarrationDuration,
@@ -97,19 +97,28 @@ async function generateUploadInfo() {
   let currentFrame = 0;
   const timeline: Array<{ time: string; label: string }> = [];
 
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '인트로 (필수!)' });
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '인트로' });
   currentFrame += introDuration;
 
   currentFrame += STEP_TRANSITION_DURATION;
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: 'Step 1. 자막 없이 듣기' });
+  timeline.push({
+    time: formatTime(framesToSeconds(currentFrame)),
+    label: 'Step 1. 전체 흐름 파악 (자막 없이 듣기)',
+  });
   currentFrame += step1Duration;
 
   currentFrame += STEP_TRANSITION_DURATION;
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: 'Step 2. 자막 보며 듣기' });
+  timeline.push({
+    time: formatTime(framesToSeconds(currentFrame)),
+    label: 'Step 2. 자막 보며 듣기',
+  });
   currentFrame += step2Duration;
 
   currentFrame += STEP_TRANSITION_DURATION;
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: 'Step 3. 문장별 3단계 훈련' });
+  timeline.push({
+    time: formatTime(framesToSeconds(currentFrame)),
+    label: 'Step 3. 문장별 3단계 훈련',
+  });
   currentFrame += step3Duration;
 
   currentFrame += STEP_TRANSITION_DURATION;
