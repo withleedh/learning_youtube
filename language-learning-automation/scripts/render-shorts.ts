@@ -182,6 +182,10 @@ Examples:
         },
       });
 
+      // Remove metadata (Remotion watermark)
+      const { removeVideoMetadata } = await import('../src/video/utils');
+      await removeVideoMetadata(outputPath, true);
+
       const stats = await fs.stat(outputPath);
       console.log(`\r   ✅ Done (${(stats.size / 1024 / 1024).toFixed(2)} MB)                    `);
     } catch (error) {
@@ -239,24 +243,56 @@ async function generateMissingWrongAnswers(script: Script): Promise<Script> {
     return script;
   }
 
-  console.log(`   Processing ${sentencesNeedingWrongAnswers.length} sentences...`);
+  // Detect language from script metadata or first sentence
+  const targetLanguage = script.metadata?.targetLanguage || 'English';
 
-  const prompt = `Generate wrong answers for a listening quiz. For each sentence, create 2 similar-sounding but incorrect sentences.
+  console.log(
+    `   Processing ${sentencesNeedingWrongAnswers.length} sentences (${targetLanguage})...`
+  );
 
-Rules:
-- Wrong answers should sound similar when spoken quickly
-- Use techniques like: contraction confusion (I'd→I), tense change (liked→like), similar sounds (hear→here)
-- Each wrong answer should differ by only 1-2 words from the correct sentence
-- Must be grammatically plausible (not obviously wrong)
+  const prompt = `Role: You are an Expert Language Assessment Specialist. Your goal is to create high-quality "distractors" (wrong answers) for a listening comprehension test.
+
+Task:
+Input language: ${targetLanguage}
+For each correct sentence provided below, generate 2 incorrect sentences that act as plausible distractors.
+
+Core Principles for Distractors:
+1. **Phonetic Interference**: The wrong answer should sound very similar to the correct one (e.g., rhyme, minimal pairs, similar linking sounds).
+2. **Contextual Plausibility**: The wrong answer must be grammatically correct and meaningful on its own, not nonsense.
+3. **Length Preservation**: Keep the syllable count and rhythm similar to the original sentence.
+
+Language-Specific Guidelines:
+${
+  targetLanguage === 'Korean'
+    ? `[Korean Guidelines]
+- Particle Confusion: Swap subtle particles that change nuance (e.g., 은/는 vs 이/가, 에 vs 에서).
+- Tense/Honorifics: Change only the verb ending or tense (e.g., 갔습니다 -> 갑니다, 하세요 -> 했어요).
+- Sound Similarity: Use words that share phonemes (e.g., 감기(cold) vs 경기(game), 사람(person) vs 사랑(love)).
+- Negation: subtle changes in positive/negative forms (e.g., 안 갔다 -> 못 갔다).`
+    : targetLanguage === 'English'
+      ? `[English Guidelines]
+- Minimal Pairs: Change one phoneme (e.g., "walk" vs "work", "play" vs "pay").
+- Weak Forms & Contractions: Exploit ambiguous sounds (e.g., "I'd go" -> "I go", "can" vs "can't").
+- Homophones/Near-Homophones: Use words that sound alike (e.g., "flower" vs "flour", "right" vs "light").
+- Tense Shift: "He is running" -> "He was running".`
+      : `[General Guidelines]
+- Focus on changing key verbs or nouns to words that sound phonetically similar in the target language.
+- Modify verb conjugations or grammatical particles slightly.`
+}
 
 Sentences to process:
 ${sentencesNeedingWrongAnswers.map((s) => `ID ${s.id}: "${s.target}"`).join('\n')}
 
-Output JSON format (ONLY output this JSON, no other text):
+Output Format:
+- Return ONLY a valid JSON object.
+- Do NOT use markdown code blocks.
+- Do NOT include explanations.
+
+Example Output Structure:
 {
   "wrongAnswers": {
-    "1": ["wrong sentence 1", "wrong sentence 2"],
-    "2": ["wrong sentence 1", "wrong sentence 2"]
+    "1": ["Phonetically similar wrong sentence 1", "Grammatically confusing wrong sentence 2"],
+    "2": ["...", "..."]
   }
 }`;
 

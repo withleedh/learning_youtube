@@ -73,6 +73,8 @@ export const uiLabelsSchema = z.object({
   phaseTraining: z.string().optional().default('🧩 빈칸 퀴즈'),
   phaseChallenge: z.string().optional().default('⚡ 빠르게 듣기'),
   phaseReview: z.string().optional().default('✨ 마무리'),
+  // Shorts quiz labels
+  quizHook: z.string().optional().default('맞추면 영어괴물!'),
 });
 
 // Thumbnail section schema
@@ -87,6 +89,16 @@ export const thumbnailSchema = z.object({
   backgroundColor: z.string().optional().default('dark blue'),
 });
 
+// Shorts Theme section schema
+export const shortsThemeSchema = z.object({
+  /** Quiz hook text color */
+  quizHookColor: hexColorSchema.optional().default('#FF9500'),
+  /** CTA question text (e.g., "맞추셨나요? 🎉") */
+  ctaQuestion: z.string().optional(),
+  /** CTA action text (e.g., "💬 맞추셨다면 댓글 남겨주세요!") */
+  ctaText: z.string().optional(),
+});
+
 // Full ChannelConfig schema
 export const channelConfigSchema = z.object({
   channelId: z.string().regex(/^[a-z_]+$/, 'Channel ID must be lowercase with underscores only'),
@@ -97,6 +109,7 @@ export const channelConfigSchema = z.object({
   tts: ttsSchema,
   content: contentSchema,
   uiLabels: uiLabelsSchema.optional().default({}),
+  shortsTheme: shortsThemeSchema.optional().default({}),
   thumbnail: thumbnailSchema.optional().default({}),
 });
 
@@ -108,5 +121,6 @@ export type Layout = z.infer<typeof layoutSchema>;
 export type TTS = z.infer<typeof ttsSchema>;
 export type Content = z.infer<typeof contentSchema>;
 export type UILabels = z.infer<typeof uiLabelsSchema>;
+export type ShortsTheme = z.infer<typeof shortsThemeSchema>;
 export type Thumbnail = z.infer<typeof thumbnailSchema>;
 export type ChannelConfig = z.infer<typeof channelConfigSchema>;

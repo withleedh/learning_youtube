@@ -59,7 +59,14 @@
     "phaseIntro": "🎧 Slow Mode",
     "phaseTraining": "🧩 Quiz Time",
     "phaseChallenge": "⚡ Speed Run",
-    "phaseReview": "✨ Final Check"
+    "phaseReview": "✨ Final Check",
+    "quizHook": "Guess it right!"
+  },
+
+  "shortsTheme": {
+    "quizHookColor": "#5B4B8A",
+    "ctaQuestion": "Did you get it? 🎉",
+    "ctaText": "💬 Leave a comment if you got it!"
   },
 
   "thumbnail": {

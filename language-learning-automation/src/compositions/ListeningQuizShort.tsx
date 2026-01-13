@@ -369,7 +369,7 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/* Top Header Area */}
-      <TopHeader episodeTitle={episodeTitle} sentenceIndex={sentenceIndex} />
+      <TopHeader episodeTitle={episodeTitle} sentenceIndex={sentenceIndex} quizHook={config.uiLabels?.quizHook} quizHookColor={config.shortsTheme?.quizHookColor} />
 
       {/* Bottom Image Area */}
       <BottomImageArea backgroundImage={backgroundImage} />
@@ -418,7 +418,7 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
 
         {/* Phase 4: CTA */}
         <Sequence from={phase4Start} durationInFrames={CTA_DURATION}>
-          <Phase4CTA nativeLanguage={config.meta.nativeLanguage} />
+        <Phase4CTA nativeLanguage={config.meta.nativeLanguage} shortsTheme={config.shortsTheme} />
         </Sequence>
       </div>
 
@@ -463,7 +463,9 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
 const TopHeader: React.FC<{
   episodeTitle?: string;
   sentenceIndex?: number;
-}> = ({ episodeTitle, sentenceIndex }) => {
+  quizHook?: string;
+  quizHookColor?: string;
+}> = ({ episodeTitle, sentenceIndex, quizHook, quizHookColor }) => {
   return (
     <div
       style={{
@@ -489,7 +491,7 @@ const TopHeader: React.FC<{
           letterSpacing: 4,
         }}
       >
-        <span style={{ color: '#FF9500' }}>맞추면 영어괴물!</span>
+        <span style={{ color: quizHookColor || '#FF9500' }}>{quizHook || 'Guess it right!'}</span>
       </div>
       <div
         style={{
@@ -823,7 +825,11 @@ const Phase3Reveal: React.FC<{
 
 const Phase4CTA: React.FC<{
   nativeLanguage: string;
-}> = ({ nativeLanguage }) => {
+  shortsTheme?: {
+    ctaQuestion?: string;
+    ctaText?: string;
+  };
+}> = ({ nativeLanguage, shortsTheme }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -833,19 +839,23 @@ const Phase4CTA: React.FC<{
     extrapolateLeft: 'clamp',
   });
 
-  const questionText =
+  // Use config values if available, otherwise fallback to hardcoded
+  const defaultQuestion =
     nativeLanguage === 'Korean'
       ? '맞추셨나요? 🎉'
       : nativeLanguage === 'Japanese'
         ? '正解できましたか？🎉'
         : 'Did you get it? 🎉';
 
-  const ctaText =
+  const defaultCtaText =
     nativeLanguage === 'Korean'
-      ? '👇 다른 문제 더 듣기'
+      ? '💬 맞추셨다면 댓글 남겨주세요!'
       : nativeLanguage === 'Japanese'
-        ? '👇 もっと練習する'
-        : '👇 Practice more';
+        ? '💬 コメントで教えてね！'
+        : '💬 Leave a comment if you got it!';
+
+  const questionText = shortsTheme?.ctaQuestion || defaultQuestion;
+  const ctaText = shortsTheme?.ctaText || defaultCtaText;
 
   return (
     <div

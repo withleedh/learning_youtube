@@ -59,7 +59,14 @@
     "phaseIntro": "🎧 천천히 듣기",
     "phaseTraining": "🧩 빈칸 퀴즈",
     "phaseChallenge": "⚡ 빠르게 듣기",
-    "phaseReview": "✨ 마무리"
+    "phaseReview": "✨ 마무리",
+    "quizHook": "맞추면 영어괴물!"
+  },
+
+  "shortsTheme": {
+    "quizHookColor": "#FF9500",
+    "ctaQuestion": "맞추셨나요? 🎉",
+    "ctaText": "💬 맞추셨다면 댓글 남겨주세요!"
   },
 
   "thumbnail": {

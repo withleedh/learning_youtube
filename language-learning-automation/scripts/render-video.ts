@@ -12,6 +12,7 @@ import { calculateStep2Duration } from '../src/compositions/Step2';
 import { calculateStep3Duration } from '../src/compositions/Step3';
 import { calculateStep4Duration } from '../src/compositions/Step4';
 import { STEP_TRANSITION_DURATION } from '../src/compositions/StepTransition';
+import { getTimelineLabels } from '../src/pipeline/index';
 
 /**
  * Copy directory recursively
@@ -221,18 +222,8 @@ async function renderVideo() {
 
   // Remove metadata (Remotion watermark)
   console.log(`\n\n🧹 Removing metadata...`);
-  const cleanPath = outputPath.replace('.mp4', '_clean.mp4');
-  const { execSync } = await import('child_process');
-  try {
-    execSync(`ffmpeg -y -i "${outputPath}" -map_metadata -1 -c copy "${cleanPath}"`, {
-      stdio: 'pipe',
-    });
-    await fs.unlink(outputPath);
-    await fs.rename(cleanPath, outputPath);
-    console.log(`   ✅ Metadata removed`);
-  } catch {
-    console.log(`   ⚠️ Could not remove metadata (ffmpeg not found?)`);
-  }
+  const { removeVideoMetadata } = await import('../src/video/utils');
+  await removeVideoMetadata(outputPath);
 
   console.log(`\n✅ Video rendered successfully!`);
   console.log(`📁 Output: ${outputPath}`);
@@ -263,19 +254,22 @@ async function renderVideo() {
   );
   const step4Duration = calculateStep4Duration(audioFiles);
 
+  // Get timeline labels based on native language
+  const timelineLabels = getTimelineLabels(config.meta.nativeLanguage);
+
   // Calculate timeline
   let currentFrame = 0;
   const timeline: Array<{ time: string; label: string }> = [];
 
   // Intro
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '인트로 (필수!)' });
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: timelineLabels.intro });
   currentFrame += introDuration;
 
   // Step 1
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 1. 전체 흐름 파악',
+    label: timelineLabels.step1,
   });
   currentFrame += step1Duration;
 
@@ -283,7 +277,7 @@ async function renderVideo() {
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 2. 자막 보며 듣기',
+    label: timelineLabels.step2,
   });
   currentFrame += step2Duration;
 
@@ -291,31 +285,31 @@ async function renderVideo() {
   currentFrame += STEP_TRANSITION_DURATION;
   timeline.push({
     time: formatTime(framesToSeconds(currentFrame)),
-    label: 'Step 3. 문장별 3단계 훈련',
+    label: timelineLabels.step3,
   });
   currentFrame += step3Duration;
 
   // Step 4
   currentFrame += STEP_TRANSITION_DURATION;
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: 'Step 4. 최종 확인' });
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: timelineLabels.step4 });
   currentFrame += step4Duration;
 
   // Ending
-  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: '마무리' });
+  timeline.push({ time: formatTime(framesToSeconds(currentFrame)), label: timelineLabels.ending });
 
   const uploadInfoPath = path.join(baseDir, 'upload_info.txt');
   const timelineText = timeline.map((t) => `${t.time} ${t.label}`).join('\n');
-  const uploadInfo = `타임라인:
+  const uploadInfo = `${timelineLabels.timelineHeader}:
 ${timelineText}
 
-제목: ${script.metadata.title.target}
-토픽: ${script.metadata.topic}
-카테고리: ${script.category}
+${timelineLabels.titleLabel}: ${script.metadata.title.target}
+${timelineLabels.topicLabel}: ${script.metadata.topic}
+${timelineLabels.categoryLabel}: ${script.category}
 `;
 
   await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');
   console.log(`✅ Upload info created: ${uploadInfoPath}`);
-  console.log('\n타임라인:');
+  console.log(`\n${timelineLabels.timelineHeader}:`);
   timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
 }
 
