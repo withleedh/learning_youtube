@@ -352,7 +352,6 @@ export const RemotionRoot: React.FC = () => {
         }}
         calculateMetadata={calculateMainMetadata}
       />
-
       {/* Intro Only - 동적 길이 */}
       <Composition
         id="Intro"
@@ -387,7 +386,6 @@ export const RemotionRoot: React.FC = () => {
           uiLabels: activeConfig.uiLabels,
         }}
       />
-
       {/* Step 1: 자막 없이 듣기 */}
       <Composition
         id="Step1"
@@ -403,7 +401,6 @@ export const RemotionRoot: React.FC = () => {
           title: activeScript.metadata.title.target,
         }}
       />
-
       {/* Step 2: 문장별 듣기 */}
       <Composition
         id="Step2"
@@ -424,7 +421,6 @@ export const RemotionRoot: React.FC = () => {
           },
         }}
       />
-
       {/* Step 3: 10번씩 반복 듣기 (Interval Training) */}
       <Composition
         id="Step3"
@@ -444,7 +440,6 @@ export const RemotionRoot: React.FC = () => {
           uiLabels: activeConfig.uiLabels,
         }}
       />
-
       {/* Step 4: 다시 자막 없이 듣기 */}
       <Composition
         id="Step4"
@@ -460,7 +455,6 @@ export const RemotionRoot: React.FC = () => {
           title: activeScript.metadata.title.target,
         }}
       />
-
       {/* Step Transitions (스텝 전환 화면) */}
       {[1, 2, 3, 4].map((stepNum) => (
         <Composition
@@ -480,7 +474,6 @@ export const RemotionRoot: React.FC = () => {
           }}
         />
       ))}
-
       {/* Ending (엔딩 화면) */}
       <Composition
         id="Ending"
@@ -496,7 +489,6 @@ export const RemotionRoot: React.FC = () => {
           nativeLanguage: activeConfig.meta.nativeLanguage,
         }}
       />
-
       {/* Single Sentence Short - Dynamic composition that accepts sentence via inputProps */}
       <Composition
         id="SingleSentenceShort"
@@ -522,7 +514,6 @@ export const RemotionRoot: React.FC = () => {
           ),
         })}
       />
-
       {/* Cat Interview Short - 고양이 인터뷰 영어 학습 (9:16) */}
       <Composition
         id="CatInterviewShort"
@@ -542,13 +533,19 @@ export const RemotionRoot: React.FC = () => {
           channelName: '나비의 영어교실',
         }}
       />
-
-      {/* Listening Quiz Short - 선택지 퀴즈 형식 (9:16) */}
+      ㅣ{/* Listening Quiz Short - 선택지 퀴즈 형식 (9:16) */}
       <Composition
         id="ListeningQuizShort"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         component={ListeningQuizShort as any}
-        durationInFrames={calculateListeningQuizShortDuration()}
+        durationInFrames={calculateListeningQuizShortDuration(
+          activeAudioFiles.find(
+            (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '1.0x'
+          )?.duration,
+          activeAudioFiles.find(
+            (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '0.8x'
+          )?.duration
+        )}
         fps={30}
         width={1080}
         height={1920}
@@ -568,6 +565,20 @@ export const RemotionRoot: React.FC = () => {
           backgroundImage: 'background.png',
           sentenceIndex: 1,
           episodeTitle: activeScript.metadata.title.native,
+          audioDuration: activeAudioFiles.find(
+            (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '1.0x'
+          )?.duration,
+          slowAudioDuration: activeAudioFiles.find(
+            (af) => af.sentenceId === activeScript.sentences[0]?.id && af.speed === '0.8x'
+          )?.duration,
+        }}
+        calculateMetadata={({ props }) => {
+          return {
+            durationInFrames: calculateListeningQuizShortDuration(
+              props.audioDuration,
+              props.slowAudioDuration
+            ),
+          };
         }}
       />
     </>

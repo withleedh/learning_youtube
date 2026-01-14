@@ -1,0 +1,86 @@
+{
+  "channelId": "japan_english",
+
+  "meta": {
+    "name": "聞こえる！English!",
+    "targetLanguage": "English",
+    "nativeLanguage": "Japanese",
+    "youtubeChannelId": "UC_XXXXX"
+  },
+
+  "theme": {
+    "logo": "assets/logo.png",
+    "introSound": "assets/intro.mp3",
+    "introBackground": "assets/intro/background.png",
+    "backgroundStyle": "illustration",
+    "primaryColor": "#E60012",
+    "secondaryColor": "#FFFFFF",
+    "preferredArtStyle": "clay_animation",
+    "introOverlay": "linear-gradient(180deg, rgba(139,0,0,0.88) 0%, rgba(80,0,0,0.92) 100%)",
+    "stepColors": [
+      { "primary": "#E60012", "complementary": "#8B0000" },
+      { "primary": "#FF6B6B", "complementary": "#A52A2A" },
+      { "primary": "#FFB347", "complementary": "#B8860B" },
+      { "primary": "#98D8C8", "complementary": "#2F4F4F" }
+    ]
+  },
+
+  "colors": {
+    "maleText": "#87CEEB",
+    "femaleText": "#FF69B4",
+    "nativeText": "#FFFFFF",
+    "wordMeaning": "#888888",
+    "background": "#000000"
+  },
+
+  "layout": {
+    "step3ImageRatio": 0.35,
+    "subtitlePosition": "center",
+    "speakerIndicator": "left"
+  },
+
+  "tts": {
+    "provider": "google",
+    "maleVoice": "en-US-Chirp3-HD-Enceladus",
+    "femaleVoice": "en-US-Chirp3-HD-Kore",
+    "targetLanguageCode": "en-US",
+    "speed": 1.0
+  },
+
+  "content": {
+    "sentenceCount": 15,
+    "repeatCount": 10,
+    "difficulty": "beginner"
+  },
+
+  "uiLabels": {
+    "introTitle": "今日のレッスン",
+    "step1Title": "字幕なしで聞く 👂",
+    "step2Title": "字幕付きで確認",
+    "step3Title": "3ステップ反復練習",
+    "step4Title": "奇跡の瞬間 ✨",
+    "step1Desc": "字幕なしで音だけに集中して、場面を想像してみましょう。",
+    "step2Desc": "字幕を見ながら、聞き取れなかった部分を確認しましょう。",
+    "step3Desc": "ゆっくり→穴埋め→速く。ここで英語が聞こえ始めます！",
+    "step4Desc": "驚くほどクリアに聞こえる英語を体験してください！",
+    "step3PhaseTitle": "STEP 3 · 反復トレーニング",
+    "phaseIntro": "🎧 ゆっくり聞く",
+    "phaseTraining": "🧩 穴埋めクイズ",
+    "phaseChallenge": "⚡ 速く聞く",
+    "phaseReview": "✨ 仕上げ",
+    "quizHook": "当てたら英語の達人！"
+  },
+
+  "shortsTheme": {
+    "quizHookColor": "#E60012",
+    "ctaQuestion": "当たりましたか？🎉",
+    "ctaText": "💬 正解したらコメントしてね！"
+  },
+
+  "thumbnail": {
+    "channelName": "聞こえる！English!",
+    "characterStyle": "custom",
+    "customCharacters": "An American man and Japanese woman. They look surprised and happy,",
+    "backgroundColor": "Soft red and white, Japanese style"
+  }
+}

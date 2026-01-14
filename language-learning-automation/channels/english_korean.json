@@ -14,7 +14,8 @@
     "introBackground": "assets/intro/background.png",
     "backgroundStyle": "k-drama",
     "primaryColor": "#5B4B8A",
-    "secondaryColor": "#FFB6C1"
+    "secondaryColor": "#FFB6C1",
+    "preferredArtStyle": "clay_animation"
   },
 
   "colors": {

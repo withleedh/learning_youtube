@@ -210,30 +210,48 @@ function buildInterviewVeoPrompt(
   config: ChannelConfig,
   content: Omit<DailyContent, 'date' | 'veoPrompt'>
 ): string {
-  const { character } = config;
+  const { character, interviewConfig } = config;
   const { dialogues, background, outfit } = content;
 
-  const outfitDesc = outfit ? `The kitten is wearing ${outfit}, dressed like a human.` : '';
+  // Language settings with defaults
+  const reporterLang = interviewConfig?.reporterLanguage || 'Korean';
+  const characterLang = interviewConfig?.characterLanguage || 'English';
+
+  // Determine character type label (e.g., "kitten", "puppy", or just "character")
+  // Simple heuristic: check if style contains "kitten" or "puppy"
+  const charLabel = character.style.toLowerCase().includes('dog') || character.style.toLowerCase().includes('puppy') 
+    ? 'puppy' 
+    : character.style.toLowerCase().includes('cat') || character.style.toLowerCase().includes('kitten') 
+      ? 'kitten' 
+      : 'character';
+
+  const outfitDesc = outfit ? `The ${charLabel} is wearing ${outfit}, dressed like a human.` : '';
 
   // 대화 시퀀스 생성 (제스처 포함)
   const dialogueSequence = dialogues
     .map((d, i) => {
       const gesture = (d as { gesture?: string }).gesture || 'gestures cutely';
-      return `${i + 1}. Reporter asks: "${d.question}" - Kitten ${gesture} and responds: "${d.answer}"`;
+      // Capitalize first char of label for sentence start
+      const charLabelCap = charLabel.charAt(0).toUpperCase() + charLabel.slice(1);
+      return `${i + 1}. Reporter asks in ${reporterLang}: "${d.question}" - ${charLabelCap} ${gesture} and responds in ${characterLang}: "${d.answer}"`;
     })
     .join('\n');
 
   return `Interview style video, medium close-up shot.
 An anthropomorphic ${character.style} (matching the reference image) is centered in the frame, facing the camera directly.
-The kitten has visible paws/hands and uses them expressively while talking, gesturing like a human.
+The ${charLabel} has visible paws/hands and uses them expressively while talking, gesturing like a human.
 ${outfitDesc}
-A pink cat-themed square microphone with a cat face design is positioned at the bottom left corner of the frame.
-The microphone appears to be held from off-screen, no hand visible.
 
-This is an English learning interview. The reporter asks Korean phrases and the kitten translates to English:
+MICROPHONE MOVEMENT (IMPORTANT):
+- A cute handheld microphone (matching the reference image) appears in the scene.
+- When the off-screen reporter asks a question: the microphone is NOT visible or is pulled away from the ${charLabel}.
+- When the ${charLabel} answers: the microphone smoothly moves toward the ${charLabel}'s mouth area.
+- The microphone appears to be held from off-screen, no hand visible.
+
+This is a language learning interview. The reporter asks phrases in ${reporterLang} and the ${charLabel} answers in ${characterLang}:
 ${dialogueSequence}
 
-The kitten gestures cutely with its paws while answering in ${character.voiceStyle}.
+The ${charLabel} gestures cutely with its paws while answering in ${character.voiceStyle}.
 
 ${background}, photorealistic with cinematic bokeh blur, soft natural lighting.
 No subtitles, no captions, no text overlays, no on-screen text of any kind.`;

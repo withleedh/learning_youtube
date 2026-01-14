@@ -19,6 +19,19 @@ export const themeSchema = z.object({
   backgroundStyle: z.string().optional().default('illustration'),
   primaryColor: hexColorSchema.optional().default('#87CEEB'),
   secondaryColor: hexColorSchema.optional().default('#FF69B4'),
+  preferredArtStyle: z.string().optional().default('clay_animation'), // 배경 이미지 아트 스타일
+  /** 인트로 오버레이 그라데이션 (CSS linear-gradient 형식) */
+  introOverlay: z.string().optional(),
+  /** 스텝 전환 화면 색상 (4개 배열: [step1, step2, step3, step4]) */
+  stepColors: z
+    .array(
+      z.object({
+        primary: hexColorSchema,
+        complementary: hexColorSchema,
+      })
+    )
+    .length(4)
+    .optional(),
 });
 
 // Colors section schema

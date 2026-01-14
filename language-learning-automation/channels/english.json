@@ -14,7 +14,8 @@
     "introBackground": "assets/intro/background.png",
     "backgroundStyle": "illustration",
     "primaryColor": "#87CEEB",
-    "secondaryColor": "#FF69B4"
+    "secondaryColor": "#FF69B4",
+    "preferredArtStyle": "clay_animation"
   },
 
   "colors": {

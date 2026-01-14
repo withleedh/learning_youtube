@@ -45,6 +45,9 @@ export interface ListeningQuizShortProps {
   backgroundImage?: string;
   sentenceIndex?: number;
   episodeTitle?: string;
+  // 동적 타이밍용 duration (초 단위)
+  audioDuration?: number;
+  slowAudioDuration?: number;
 }
 
 // =============================================================================
@@ -57,33 +60,54 @@ const BOTTOM_IMAGE_HEIGHT = 608;
 const MIDDLE_HEIGHT = 1920 - TOP_BLACK_HEIGHT - BOTTOM_IMAGE_HEIGHT - BOTTOM_PADDING;
 
 // =============================================================================
-// Timing Constants (30fps)
+// Timing Constants (30fps) - 기본값, 실제는 audioDuration 기반으로 동적 계산
 // =============================================================================
 
 const FPS = 30;
 const AUDIO_PADDING = Math.round(1.0 * FPS); // TTS 후 1초 여유
-const HOOK_DURATION = 3 * FPS + AUDIO_PADDING; // 4초
-const CHOICE_DURATION = Math.round(6.5 * FPS); // 6.5초 (오디오 2.5초 + 카운트다운 4초: 3,2,1,0)
-const REVEAL_DURATION = 4 * FPS + AUDIO_PADDING; // 5초
+const DEFAULT_AUDIO_DURATION = 3.5; // 기본 오디오 길이 (초)
+const COUNTDOWN_DURATION = 4 * FPS; // 카운트다운 4초 (3,2,1,0)
 const CTA_DURATION = 2 * FPS; // 2초
 
 // =============================================================================
-// Duration Calculator
+// Duration Calculator - 동적 타이밍 계산
 // =============================================================================
 
-export function calculateListeningQuizShortDuration(): number {
-  return HOOK_DURATION + CHOICE_DURATION + REVEAL_DURATION + CTA_DURATION;
+export function calculateListeningQuizShortDuration(
+  audioDuration: number = DEFAULT_AUDIO_DURATION,
+  slowAudioDuration: number = audioDuration * 1.25
+): number {
+  const audioStartDelay = 15; // 0.5초 딜레이
+
+  // Phase 1: Hook + Audio (오디오 길이 + 패딩)
+  const phase1Duration = audioStartDelay + Math.ceil(audioDuration * FPS) + AUDIO_PADDING;
+
+  // Phase 2: Choices + Audio replay + Countdown (오디오 + 카운트다운)
+  const phase2AudioStart = 10; // 0.33초 딜레이
+  const phase2Duration = phase2AudioStart + Math.ceil(audioDuration * FPS) + COUNTDOWN_DURATION;
+
+  // Phase 3: Reveal + Slow Audio (느린 오디오 + 패딩)
+  const phase3AudioStart = 15; // 0.5초 딜레이
+  const phase3Duration = phase3AudioStart + Math.ceil(slowAudioDuration * FPS) + AUDIO_PADDING;
+
+  // Phase 4: CTA
+  const phase4Duration = CTA_DURATION;
+
+  return phase1Duration + phase2Duration + phase3Duration + phase4Duration;
 }
 
 // =============================================================================
-// Helper: 선택지 생성 (정답 위치 랜덤)
+// Helper: 선택지 생성 (정답 위치 랜덤) - 단어 기반 퀴즈
 // =============================================================================
 
 export function generateQuizChoices(sentence: Sentence): QuizChoice[] {
-  const correctAnswer = sentence.target;
+  const correctAnswer = sentence.blankAnswer; // 정답은 blankAnswer (단어)
 
-  // 오답 생성 로직
-  const wrongAnswers = generateWrongAnswers(correctAnswer, sentence.id);
+  // wrongWordChoices가 있으면 사용, 없으면 폴백 생성
+  const wrongAnswers =
+    sentence.wrongWordChoices && sentence.wrongWordChoices.length >= 2
+      ? sentence.wrongWordChoices.slice(0, 2)
+      : generateFallbackWrongWords(correctAnswer, sentence.id);
 
   // 정답 위치 랜덤 (sentence.id 기반)
   const correctIndex = sentence.id % 3;
@@ -103,236 +127,163 @@ export function generateQuizChoices(sentence: Sentence): QuizChoice[] {
 }
 
 // =============================================================================
-// 발음 유사 단어 쌍 (리스닝에서 헷갈리기 쉬운 것들)
+// 폴백: 발음 유사 단어 생성 (wrongWordChoices가 없을 때)
 // =============================================================================
 
-const SOUND_ALIKE_PAIRS: Record<string, string[]> = {
-  // 축약형 혼동
-  "i'd": ['i', "i'll", "i've"],
-  "i'll": ['i', "i'd", "i've"],
-  "i've": ['i', "i'd", "i'll"],
-  "i'm": ['i', 'i am'],
-  "you're": ['your', 'you'],
-  "you'll": ['you', "you'd"],
-  "they're": ['their', 'there'],
-  "we're": ['were', 'we'],
-  "it's": ['its', 'it'],
-  "that's": ['that', 'thats'],
-  "what's": ['what', 'whats'],
-  "there's": ['theirs', 'there'],
-  "here's": ['heres', 'here'],
-  "let's": ['lets', 'let'],
-  "don't": ['do', "doesn't"],
-  "doesn't": ['does', "don't"],
-  "didn't": ['did', "doesn't"],
-  "can't": ['can', "couldn't"],
-  "couldn't": ['could', "can't"],
-  "won't": ['want', "wouldn't"],
-  "wouldn't": ['would', "won't"],
-  "shouldn't": ['should', "couldn't"],
-  "haven't": ['have', "hasn't"],
-  "hasn't": ['has', "haven't"],
-  "isn't": ['is', "wasn't"],
-  "wasn't": ['was', "isn't"],
-  "aren't": ['are', "weren't"],
-  "weren't": ['were', "aren't"],
+function generateFallbackWrongWords(correctWord: string, sentenceId: number): string[] {
+  const lower = correctWord.toLowerCase();
 
-  // 시제 혼동
-  like: ['liked', 'likes'],
-  liked: ['like', 'likes'],
-  want: ['wanted', 'wants'],
-  wanted: ['want', 'wants'],
-  need: ['needed', 'needs'],
-  needed: ['need', 'needs'],
-  have: ['had', 'has'],
-  had: ['have', 'has'],
-  is: ['was', 'are'],
-  was: ['is', 'were'],
-  are: ['were', 'is'],
-  were: ['are', 'was'],
-  do: ['did', 'does'],
-  did: ['do', 'does'],
-  go: ['went', 'goes'],
-  went: ['go', 'gone'],
-  come: ['came', 'comes'],
-  came: ['come', 'comes'],
-  get: ['got', 'gets'],
-  got: ['get', 'gotten'],
-  take: ['took', 'takes'],
-  took: ['take', 'taken'],
-  make: ['made', 'makes'],
-  made: ['make', 'makes'],
-  think: ['thought', 'thinks'],
-  thought: ['think', 'thinks'],
-  know: ['knew', 'knows'],
-  knew: ['know', 'known'],
-  see: ['saw', 'seen'],
-  saw: ['see', 'seen'],
-  say: ['said', 'says'],
-  said: ['say', 'says'],
+  // 발음 유사 단어 매핑
+  const similarWords: Record<string, string[]> = {
+    // 동사
+    meeting: ['eating', 'beating'],
+    eating: ['meeting', 'heating'],
+    walking: ['working', 'talking'],
+    working: ['walking', 'waking'],
+    talking: ['walking', 'taking'],
+    looking: ['booking', 'cooking'],
+    coming: ['becoming', 'running'],
+    running: ['coming', 'cunning'],
+    going: ['growing', 'knowing'],
+    playing: ['paying', 'staying'],
+    staying: ['playing', 'saying'],
+    saying: ['staying', 'paying'],
+    thinking: ['drinking', 'sinking'],
+    drinking: ['thinking', 'shrinking'],
+    waiting: ['dating', 'rating'],
+    reading: ['leading', 'feeding'],
+    writing: ['riding', 'fighting'],
+    living: ['giving', 'leaving'],
+    leaving: ['living', 'believing'],
+    // 명사
+    coffee: ['copy', 'coughing'],
+    money: ['honey', 'funny'],
+    family: ['familiar', 'finally'],
+    weather: ['whether', 'feather'],
+    water: ['waiter', 'later'],
+    letter: ['later', 'better'],
+    better: ['letter', 'butter'],
+    dinner: ['winner', 'thinner'],
+    morning: ['warning', 'mourning'],
+    evening: ['leaving', 'believing'],
+    // 형용사
+    familiar: ['similar', 'family'],
+    similar: ['familiar', 'simpler'],
+    different: ['difficult', 'diffident'],
+    important: ['impatient', 'impotent'],
+    beautiful: ['bountiful', 'dutiful'],
+    wonderful: ['wanderful', 'plentiful'],
+    // 부사/기타
+    really: ['rarely', 'nearly'],
+    actually: ['factually', 'virtually'],
+    probably: ['possibly', 'properly'],
+    definitely: ['defiantly', 'infinitely'],
+    // 기본 동사
+    like: ['light', 'life'],
+    want: ["won't", 'want'],
+    need: ['neat', 'knead'],
+    have: ['half', 'halve'],
+    make: ['wake', 'take'],
+    take: ['make', 'wake'],
+    get: ['got', 'jet'],
+    see: ['sea', 'she'],
+    know: ['no', 'now'],
+    think: ['thing', 'sink'],
+    come: ['calm', 'comb'],
+    find: ['fine', 'mind'],
+    give: ['live', 'gift'],
+    tell: ['tall', 'sell'],
+    feel: ['fill', 'fell'],
+    become: ['because', 'welcome'],
+    leave: ['live', 'leaf'],
+    call: ['cool', 'coal'],
+    try: ['dry', 'cry'],
+    ask: ['axe', 'mask'],
+    work: ['walk', 'word'],
+    seem: ['seam', 'steam'],
+    help: ['held', 'health'],
+    show: ['shoe', 'slow'],
+    hear: ['here', 'hair'],
+    play: ['pay', 'pray'],
+    move: ['movie', 'prove'],
+    live: ['leave', 'love'],
+    believe: ['believe', 'relieve'],
+    bring: ['ring', 'thing'],
+    happen: ['happy', 'heaven'],
+    write: ['right', 'white'],
+    sit: ['set', 'hit'],
+    stand: ['sand', 'hand'],
+    lose: ['loose', 'choose'],
+    pay: ['play', 'say'],
+    meet: ['meat', 'beat'],
+    include: ['conclude', 'exclude'],
+    continue: ['contain', 'constrain'],
+    set: ['sit', 'sat'],
+    learn: ['lean', 'earn'],
+    change: ['chance', 'charge'],
+    lead: ['lead', 'read'],
+    understand: ['undertake', 'underhand'],
+    watch: ['wash', 'match'],
+    follow: ['fellow', 'hollow'],
+    stop: ['step', 'shop'],
+    create: ['great', 'crate'],
+    speak: ['speak', 'sneak'],
+    read: ['red', 'lead'],
+    spend: ['send', 'spent'],
+    grow: ['glow', 'throw'],
+    open: ['often', 'oven'],
+    walk: ['work', 'talk'],
+    win: ['win', 'wind'],
+    offer: ['often', 'officer'],
+    remember: ['remember', 'member'],
+    love: ['live', 'dove'],
+    consider: ['consider', 'consist'],
+    appear: ['appeal', 'disappear'],
+    buy: ['by', 'bye'],
+    wait: ['weight', 'late'],
+    serve: ['serve', 'curve'],
+    die: ['dye', 'dry'],
+    send: ['spend', 'sent'],
+    expect: ['except', 'accept'],
+    build: ['built', 'guild'],
+    stay: ['say', 'play'],
+    fall: ['fail', 'fell'],
+    cut: ['cat', 'cot'],
+    reach: ['reach', 'teach'],
+    kill: ['skill', 'fill'],
+    remain: ['remain', 'retain'],
+  };
 
-  // 발음 유사 (위에서 정의 안 된 것들만)
-  some: ['sum', 'same'],
-  of: ['off', 'have'],
-  then: ['than', 'them'],
-  than: ['then', 'that'],
-  there: ['their', "they're"],
-  their: ['there', "they're"],
-  your: ["you're", 'you'],
-  its: ["it's", 'is'],
-  to: ['too', 'two'],
-  too: ['to', 'two'],
-  for: ['four', 'from'],
-  hear: ['here', 'heard'],
-  here: ['hear', 'her'],
-  no: ['know', 'now'],
-  right: ['write', 'rite'],
-  write: ['right', 'wrote'],
-  buy: ['by', 'bye'],
-  by: ['buy', 'bye'],
-  new: ['knew', 'now'],
-  been: ['being', 'bean'],
-  being: ['been', 'begin'],
-};
-
-// =============================================================================
-// 오답 생성 함수
-// =============================================================================
-
-function generateWrongAnswers(correct: string, sentenceId: number): string[] {
-  const words = correct.split(' ');
-  const wrongAnswers: string[] = [];
-
-  // 변형할 단어 인덱스 찾기 (의미있는 단어 우선)
-  const targetIndices = findTargetWordIndices(words);
-
-  // 오답 1: 첫 번째 타겟 단어 변형
-  if (targetIndices.length > 0) {
-    const idx = targetIndices[0];
-    const transformed = transformWordSmart(words[idx], sentenceId);
-    if (transformed !== words[idx]) {
-      const wrong1 = [...words];
-      wrong1[idx] = transformed;
-      wrongAnswers.push(wrong1.join(' '));
-    }
+  // 매핑에 있으면 사용
+  if (similarWords[lower]) {
+    return similarWords[lower];
   }
 
-  // 오답 2: 두 번째 타겟 단어 변형 (또는 다른 위치)
-  if (targetIndices.length > 1) {
-    const idx = targetIndices[1];
-    const transformed = transformWordSmart(words[idx], sentenceId + 1);
-    if (transformed !== words[idx]) {
-      const wrong2 = [...words];
-      wrong2[idx] = transformed;
-      wrongAnswers.push(wrong2.join(' '));
-    }
+  // 폴백: 간단한 변형
+  const fallbacks: string[] = [];
+
+  // 1. 첫 글자 변형
+  const firstLetterAlts = ['b', 'c', 'd', 'f', 'g', 'h', 'l', 'm', 'n', 'p', 'r', 's', 't', 'w'];
+  const altLetter = firstLetterAlts[sentenceId % firstLetterAlts.length];
+  if (lower[0] !== altLetter) {
+    fallbacks.push(altLetter + lower.slice(1));
   }
 
-  // 오답이 부족하면 기본 변형 추가
-  while (wrongAnswers.length < 2) {
-    const fallback = generateFallbackWrong(correct, wrongAnswers.length, sentenceId);
-    if (!wrongAnswers.includes(fallback) && fallback !== correct) {
-      wrongAnswers.push(fallback);
-    } else {
-      // 최후의 수단: 단어 순서 살짝 변경
-      const shuffled = shuffleMiddleWords(words, sentenceId + wrongAnswers.length);
-      wrongAnswers.push(shuffled.join(' '));
-    }
-  }
-
-  return wrongAnswers.slice(0, 2);
-}
-
-// 변형할 가치가 있는 단어 인덱스 찾기
-function findTargetWordIndices(words: string[]): number[] {
-  const indices: number[] = [];
-
-  for (let i = 0; i < words.length; i++) {
-    const word = words[i].toLowerCase().replace(/[.,!?;:'"]+$/, '');
-
-    // 축약형이나 동사는 변형 가치가 높음
-    if (SOUND_ALIKE_PAIRS[word]) {
-      indices.unshift(i); // 우선순위 높음
-    } else if (word.length > 2 && !['the', 'a', 'an', 'and', 'or', 'but'].includes(word)) {
-      indices.push(i);
-    }
-  }
-
-  return indices;
-}
-
-// 스마트 단어 변형
-function transformWordSmart(word: string, seed: number): string {
-  const punctuation = word.match(/[.,!?;:'"]+$/)?.[0] || '';
-  const cleanWord = word.replace(/[.,!?;:'"]+$/, '');
-  const lower = cleanWord.toLowerCase();
-
-  // 발음 유사 단어가 있으면 사용
-  if (SOUND_ALIKE_PAIRS[lower]) {
-    const alternatives = SOUND_ALIKE_PAIRS[lower];
-    const selected = alternatives[seed % alternatives.length];
-    // 원래 대소문자 유지
-    const result =
-      cleanWord[0] === cleanWord[0].toUpperCase()
-        ? selected.charAt(0).toUpperCase() + selected.slice(1)
-        : selected;
-    return result + punctuation;
-  }
-
-  // 기본 변형
-  return transformWordBasic(cleanWord, seed) + punctuation;
-}
-
-// 기본 단어 변형
-function transformWordBasic(word: string, seed: number): string {
-  const lower = word.toLowerCase();
-
-  // 동사 시제 변형
-  if (lower.endsWith('ed')) {
-    return word.slice(0, -2); // walked -> walk
-  }
+  // 2. 끝 변형 (-ing, -ed, -s)
   if (lower.endsWith('ing')) {
-    return word.slice(0, -3); // walking -> walk
+    fallbacks.push(lower.slice(0, -3) + 'ed');
+  } else if (lower.endsWith('ed')) {
+    fallbacks.push(lower.slice(0, -2) + 'ing');
+  } else {
+    fallbacks.push(lower + 'ing');
   }
-  if (lower.endsWith('s') && lower.length > 3) {
-    return word.slice(0, -1); // walks -> walk
+
+  // 최소 2개 보장
+  while (fallbacks.length < 2) {
+    fallbacks.push(lower + 's');
   }
 
-  // 기본: ed 추가
-  if (seed % 2 === 0) {
-    return word + 'ed';
-  }
-  return word + 's';
-}
-
-// 폴백 오답 생성
-function generateFallbackWrong(correct: string, index: number, seed: number): string {
-  const words = correct.split(' ');
-
-  // 중간 단어 하나 변형
-  const midIdx = Math.floor(words.length / 2) + index;
-  const targetIdx = midIdx % words.length;
-
-  const newWords = [...words];
-  newWords[targetIdx] =
-    transformWordBasic(words[targetIdx].replace(/[.,!?;:'"]+$/, ''), seed + index) +
-    (words[targetIdx].match(/[.,!?;:'"]+$/)?.[0] || '');
-
-  return newWords.join(' ');
-}
-
-// 중간 단어 순서 변경 (최후의 수단)
-function shuffleMiddleWords(words: string[], seed: number): string[] {
-  if (words.length < 4) return words;
-
-  const result = [...words];
-  // 첫 단어와 마지막 단어는 유지, 중간만 swap
-  const i = 1 + (seed % (words.length - 2));
-  const j = 1 + ((seed + 1) % (words.length - 2));
-  if (i !== j) {
-    [result[i], result[j]] = [result[j], result[i]];
-  }
-  return result;
+  return fallbacks.slice(0, 2);
 }
 
 // =============================================================================
@@ -347,16 +298,34 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
   backgroundImage,
   sentenceIndex,
   episodeTitle,
+  audioDuration,
+  slowAudioDuration,
 }) => {
   const frame = useCurrentFrame();
+
+  // 동적 타이밍 계산
+  const actualAudioDuration = audioDuration || audioFile.duration || DEFAULT_AUDIO_DURATION;
+  const actualSlowDuration =
+    slowAudioDuration || slowAudioFile?.duration || actualAudioDuration * 1.25;
+
+  const audioStartDelay = 15; // 0.5초
+  const phase1Duration = audioStartDelay + Math.ceil(actualAudioDuration * FPS) + AUDIO_PADDING;
+
+  const phase2AudioStart = 10;
+  const phase2Duration =
+    phase2AudioStart + Math.ceil(actualAudioDuration * FPS) + COUNTDOWN_DURATION;
+
+  const phase3AudioStart = 15;
+  const phase3Duration = phase3AudioStart + Math.ceil(actualSlowDuration * FPS) + AUDIO_PADDING;
+
   const phase1Start = 0;
-  const phase2Start = HOOK_DURATION;
-  const phase3Start = phase2Start + CHOICE_DURATION;
-  const phase4Start = phase3Start + REVEAL_DURATION;
+  const phase2Start = phase1Duration;
+  const phase3Start = phase2Start + phase2Duration;
+  const phase4Start = phase3Start + phase3Duration;
 
   // Phase2 카운트다운 계산 (메인에서 오버레이 렌더링용)
   const phase2Frame = frame - phase2Start;
-  const countdownStart = Math.round(2.5 * FPS);
+  const countdownStart = phase2AudioStart + Math.ceil(actualAudioDuration * FPS); // 오디오 끝난 후 카운트다운
   const isInPhase2 = frame >= phase2Start && frame < phase3Start;
   const showCountdown = isInPhase2 && phase2Frame >= countdownStart;
   const countdownFrame = Math.max(0, phase2Frame - countdownStart);
@@ -369,10 +338,19 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/* Top Header Area */}
-      <TopHeader episodeTitle={episodeTitle} sentenceIndex={sentenceIndex} quizHook={config.uiLabels?.quizHook} quizHookColor={config.shortsTheme?.quizHookColor} />
+      <TopHeader
+        episodeTitle={episodeTitle}
+        sentenceIndex={sentenceIndex}
+        quizHook={config.uiLabels?.quizHook}
+        quizHookColor={config.shortsTheme?.quizHookColor}
+      />
 
       {/* Bottom Image Area */}
-      <BottomImageArea backgroundImage={backgroundImage} />
+      <BottomImageArea
+        backgroundImage={backgroundImage}
+        phase2End={phase3Start}
+        totalDuration={phase4Start + CTA_DURATION}
+      />
 
       {/* Bottom padding */}
       <div
@@ -402,23 +380,27 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
         }}
       >
         {/* Phase 1: Hook + Audio */}
-        <Sequence from={phase1Start} durationInFrames={HOOK_DURATION}>
+        <Sequence from={phase1Start} durationInFrames={phase1Duration}>
           <Phase1Hook audioFile={audioFile} nativeLanguage={config.meta.nativeLanguage} />
         </Sequence>
 
         {/* Phase 2: Choices */}
-        <Sequence from={phase2Start} durationInFrames={CHOICE_DURATION}>
-          <Phase2Choices choices={sentence.choices} audioFile={audioFile} />
+        <Sequence from={phase2Start} durationInFrames={phase2Duration}>
+          <Phase2Choices
+            choices={sentence.choices}
+            audioFile={audioFile}
+            targetBlank={sentence.targetBlank}
+          />
         </Sequence>
 
         {/* Phase 3: Reveal */}
-        <Sequence from={phase3Start} durationInFrames={REVEAL_DURATION}>
+        <Sequence from={phase3Start} durationInFrames={phase3Duration}>
           <Phase3Reveal sentence={sentence} audioFile={slowAudioFile || audioFile} />
         </Sequence>
 
         {/* Phase 4: CTA */}
         <Sequence from={phase4Start} durationInFrames={CTA_DURATION}>
-        <Phase4CTA nativeLanguage={config.meta.nativeLanguage} shortsTheme={config.shortsTheme} />
+          <Phase4CTA nativeLanguage={config.meta.nativeLanguage} shortsTheme={config.shortsTheme} />
         </Sequence>
       </div>
 
@@ -514,12 +496,12 @@ const TopHeader: React.FC<{
 // Bottom Image Area with Breathing + Zoom Effect
 // =============================================================================
 
-const BottomImageArea: React.FC<{ backgroundImage?: string }> = ({ backgroundImage }) => {
+const BottomImageArea: React.FC<{
+  backgroundImage?: string;
+  phase2End: number;
+  totalDuration: number;
+}> = ({ backgroundImage, phase2End, totalDuration }) => {
   const frame = useCurrentFrame();
-
-  // Phase 경계점
-  const phase2End = HOOK_DURATION + CHOICE_DURATION;
-  const phase4End = phase2End + REVEAL_DURATION + CTA_DURATION;
 
   let scale: number;
 
@@ -529,7 +511,7 @@ const BottomImageArea: React.FC<{ backgroundImage?: string }> = ({ backgroundIma
     scale = 1.01 + breathCycle;
   } else {
     // Phase 3-4: 1.0 → 1.2 확대
-    const zoomProgress = (frame - phase2End) / (phase4End - phase2End);
+    const zoomProgress = (frame - phase2End) / (totalDuration - phase2End);
     scale = 1 + zoomProgress * 0.2; // 1.0 → 1.2
   }
 
@@ -627,54 +609,63 @@ const Phase1Hook: React.FC<{
 };
 
 // =============================================================================
-// Shared Choice Item Component
+// Shared Choice Item Component - 단어 퀴즈용 (가로 배치, 컴팩트)
 // =============================================================================
 
 const CHOICE_STYLE = {
   container: {
     display: 'flex' as const,
     alignItems: 'center' as const,
+    justifyContent: 'center' as const,
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: '16px 32px',
-    width: '90%',
-    maxWidth: 900,
+    padding: '16px 24px',
+    minWidth: 200,
     boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
-    border: '3px solid transparent', // 기본 투명 border로 크기 일관성 유지
+    border: '4px solid transparent',
   },
   label: {
-    fontSize: 48,
+    fontSize: 36,
     fontWeight: 900 as const,
     color: '#FF9500',
-    marginRight: 24,
+    marginRight: 12,
     fontFamily: 'Pretendard, -apple-system, sans-serif',
   },
   text: {
-    fontSize: 36,
-    fontWeight: 600 as const,
+    fontSize: 42,
+    fontWeight: 700 as const,
     color: '#333',
     fontFamily: 'Pretendard, -apple-system, sans-serif',
   },
 };
 
 // =============================================================================
-// Phase 2: Choices with Countdown
+// Phase 2: Choices with Countdown - 빈칸 문장 + 선택지 (가로 배치)
 // =============================================================================
 
 const Phase2Choices: React.FC<{
   choices: QuizChoice[];
   audioFile: AudioFile;
-}> = ({ choices, audioFile }) => {
+  targetBlank: string;
+}> = ({ choices, audioFile, targetBlank }) => {
+  const frame = useCurrentFrame();
+
+  // 빈칸 문장 페이드인
+  const blankOpacity = interpolate(frame, [0, 15], [0, 1], {
+    extrapolateRight: 'clamp',
+  });
+
   return (
     <div
       style={{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
         width: '100%',
         height: '100%',
-        gap: 20,
+        paddingTop: 120,
+        gap: 32,
       }}
     >
       {/* Audio - 선택지 보여주면서 한번 더 재생 */}
@@ -682,23 +673,74 @@ const Phase2Choices: React.FC<{
         {audioFile.path && <Audio src={staticFile(audioFile.path)} volume={1} />}
       </Sequence>
 
-      {/* Choices - 바로 나타남 (애니메이션 없음) */}
-      {choices.map((choice, index) => {
-        const label = ['A', 'B', 'C'][index];
+      {/* 빈칸 문장 표시 */}
+      <div
+        style={{
+          fontSize: 40,
+          fontWeight: 600,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          fontFamily: 'Pretendard, -apple-system, sans-serif',
+          lineHeight: 1.4,
+          padding: '0 24px',
+          opacity: blankOpacity,
+        }}
+      >
+        {highlightBlank(targetBlank)}
+      </div>
 
-        return (
-          <div key={index} style={CHOICE_STYLE.container}>
-            <div style={CHOICE_STYLE.label}>{label}.</div>
-            <div style={CHOICE_STYLE.text}>{choice.text}</div>
-          </div>
-        );
-      })}
+      {/* Choices - 가로 배치 */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+          padding: '0 16px',
+        }}
+      >
+        {choices.map((choice, index) => {
+          const label = ['A', 'B', 'C'][index];
+
+          return (
+            <div key={index} style={CHOICE_STYLE.container}>
+              <div style={CHOICE_STYLE.label}>{label}.</div>
+              <div style={CHOICE_STYLE.text}>{choice.text}</div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 };
 
+// 빈칸(_______)을 노란색 밑줄로 하이라이트
+function highlightBlank(text: string): React.ReactNode {
+  const parts = text.split('_______');
+  if (parts.length === 1) return text;
+
+  return (
+    <>
+      {parts[0]}
+      <span
+        style={{
+          color: '#FFD93D',
+          fontWeight: 800,
+          borderBottom: '4px solid #FFD93D',
+          paddingBottom: 4,
+        }}
+      >
+        ____
+      </span>
+      {parts[1]}
+    </>
+  );
+}
+
 // =============================================================================
-// Phase 3: Reveal Answer
+// Phase 3: Reveal Answer - 빈칸 문장 유지 + 가로 배치 + 정답 하이라이트
 // =============================================================================
 
 const Phase3Reveal: React.FC<{
@@ -710,29 +752,15 @@ const Phase3Reveal: React.FC<{
   const revealDelay = 10;
   const showResult = frame >= revealDelay;
 
-  // 정답 찾기
-  const correctIndex = sentence.choices.findIndex((c) => c.isCorrect);
-  const correctLabel = ['A', 'B', 'C'][correctIndex];
-
-  // 오답 fade out
-  const wrongOpacity = interpolate(frame, [revealDelay, revealDelay + 15], [1, 0], {
+  // 오답 fade out (but keep space)
+  const wrongOpacity = interpolate(frame, [revealDelay, revealDelay + 20], [1, 0.3], {
     extrapolateRight: 'clamp',
   });
 
-  // 정답이 중앙(2번째 위치)으로 이동하는 애니메이션
-  // 각 선택지 높이 약 80px + gap 20px = 100px
-  const ITEM_HEIGHT = 100;
-  // correctIndex: 0(A) -> 중앙으로 +100px, 1(B) -> 그대로 0, 2(C) -> 중앙으로 -100px
-  const targetOffset = correctIndex === 0 ? ITEM_HEIGHT : correctIndex === 2 ? -ITEM_HEIGHT : 0;
-  const correctYOffset = interpolate(
-    frame,
-    [revealDelay + 15, revealDelay + 35],
-    [0, targetOffset],
-    {
-      extrapolateRight: 'clamp',
-      extrapolateLeft: 'clamp',
-    }
-  );
+  // 정답 문장 표시 (빈칸 → 정답 단어로 변경)
+  const answerRevealOpacity = interpolate(frame, [revealDelay + 25, revealDelay + 40], [0, 1], {
+    extrapolateRight: 'clamp',
+  });
 
   return (
     <div
@@ -740,11 +768,11 @@ const Phase3Reveal: React.FC<{
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
         width: '100%',
         height: '100%',
-        gap: 20,
-        position: 'relative',
+        paddingTop: 120,
+        gap: 32,
       }}
     >
       {/* Audio - 느린 속도로 재생 */}
@@ -752,65 +780,76 @@ const Phase3Reveal: React.FC<{
         {audioFile.path && <Audio src={staticFile(audioFile.path)} volume={1} />}
       </Sequence>
 
-      {/* 선택지들을 원래 순서대로 렌더링 */}
-      {sentence.choices.map((choice, index) => {
-        const label = ['A', 'B', 'C'][index];
-        const isCorrect = choice.isCorrect;
+      {/* 빈칸 문장 → 정답 문장으로 전환 */}
+      <div
+        style={{
+          fontSize: 40,
+          fontWeight: 600,
+          color: '#FFFFFF',
+          textAlign: 'center',
+          fontFamily: 'Pretendard, -apple-system, sans-serif',
+          lineHeight: 1.4,
+          padding: '0 24px',
+        }}
+      >
+        {answerRevealOpacity < 0.5
+          ? highlightBlank(sentence.targetBlank)
+          : highlightBlankAnswer(sentence.target, sentence.blankAnswer)}
+      </div>
 
-        if (!isCorrect) {
-          // 오답 - fade out
+      {/* Choices - 가로 배치, 정답 하이라이트 */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'row',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 16,
+          flexWrap: 'wrap',
+          padding: '0 16px',
+        }}
+      >
+        {sentence.choices.map((choice, index) => {
+          const label = ['A', 'B', 'C'][index];
+          const isCorrect = choice.isCorrect;
+
           return (
             <div
               key={index}
               style={{
                 ...CHOICE_STYLE.container,
-                opacity: wrongOpacity,
+                opacity: isCorrect ? 1 : wrongOpacity,
+                borderColor: isCorrect && showResult ? '#4CAF50' : 'transparent',
+                boxShadow:
+                  isCorrect && showResult
+                    ? `0 0 ${20 + Math.sin(frame * 0.2) * 10}px rgba(76, 175, 80, 0.5)`
+                    : CHOICE_STYLE.container.boxShadow,
+                transform: isCorrect && showResult ? 'scale(1.1)' : 'scale(1)',
               }}
             >
-              <div style={CHOICE_STYLE.label}>{label}.</div>
+              <div
+                style={{
+                  ...CHOICE_STYLE.label,
+                  color: isCorrect && showResult ? '#4CAF50' : CHOICE_STYLE.label.color,
+                }}
+              >
+                {isCorrect && showResult ? '✅' : `${label}.`}
+              </div>
               <div style={CHOICE_STYLE.text}>{choice.text}</div>
             </div>
           );
-        }
+        })}
+      </div>
 
-        // 정답 - 중앙으로 이동 + 펄스 애니메이션
-        return (
-          <div
-            key={index}
-            style={{
-              ...CHOICE_STYLE.container,
-              boxShadow: showResult
-                ? `0 0 ${20 + Math.sin(frame * 0.2) * 10}px rgba(76, 175, 80, 0.5)`
-                : CHOICE_STYLE.container.boxShadow,
-              borderColor: showResult ? '#4CAF50' : 'transparent',
-              transform: `translateY(${correctYOffset}px)`,
-            }}
-          >
-            <div
-              style={{
-                ...CHOICE_STYLE.label,
-                color: showResult ? '#4CAF50' : CHOICE_STYLE.label.color,
-              }}
-            >
-              {showResult ? '✅' : `${correctLabel}.`}
-            </div>
-            <div style={CHOICE_STYLE.text}>{choice.text}</div>
-          </div>
-        );
-      })}
-
-      {/* Korean translation - absolute 배치로 레이아웃 영향 없음 */}
+      {/* 번역 (하단) */}
       <div
         style={{
-          position: 'absolute',
-          bottom: 72,
-          left: 0,
-          right: 0,
-          fontSize: 42,
+          fontSize: 32,
           color: '#AAAAAA',
           textAlign: 'center',
           fontFamily: 'Pretendard, -apple-system, sans-serif',
-          opacity: interpolate(frame, [60, 75], [0, 1], { extrapolateRight: 'clamp' }),
+          opacity: answerRevealOpacity,
+          padding: '0 24px',
         }}
       >
         {sentence.native}
@@ -818,6 +857,29 @@ const Phase3Reveal: React.FC<{
     </div>
   );
 };
+
+// 문장에서 정답 단어를 하이라이트하는 헬퍼 함수
+function highlightBlankAnswer(sentence: string, blankAnswer: string): React.ReactNode {
+  const lowerSentence = sentence.toLowerCase();
+  const lowerAnswer = blankAnswer.toLowerCase();
+  const index = lowerSentence.indexOf(lowerAnswer);
+
+  if (index === -1) {
+    return sentence;
+  }
+
+  const before = sentence.slice(0, index);
+  const match = sentence.slice(index, index + blankAnswer.length);
+  const after = sentence.slice(index + blankAnswer.length);
+
+  return (
+    <>
+      {before}
+      <span style={{ color: '#4CAF50', fontWeight: 800 }}>{match}</span>
+      {after}
+    </>
+  );
+}
 
 // =============================================================================
 // Phase 4: CTA

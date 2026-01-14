@@ -2,24 +2,27 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { GEMINI_API_URLS, getGeminiApiKey, type GeminiImageResponse } from '../config/gemini';
 import type { Script, Category, Character } from '../script/types';
+import { getStyleById, getRandomStyle, type ImageStyle } from './art-styles';
 
 /**
  * Generate an illustration image using Gemini API based on the script topic
+ * @param styleId - 스타일 ID (없으면 랜덤 선택)
  */
 export async function generateIllustration(
   topic: string,
   title: string,
   sceneDescription: string = '',
-  outputPath: string
+  outputPath: string,
+  styleId?: string
 ): Promise<string> {
   const apiKey = getGeminiApiKey();
 
+  // 스타일 선택 (지정된 ID가 있으면 사용, 없으면 랜덤)
+  const style: ImageStyle = styleId ? getStyleById(styleId) || getRandomStyle() : getRandomStyle();
+  console.log(`🎨 Using style: ${style.name}`);
+
   // 프롬프트 구조: 헤더(스타일) + 본문(상황) + 푸터(기술 요구사항)
-  const styleHeader = `High-quality 3D animation style, reminiscent of Pixar or Disney movies. Octane render
-Photorealistic rendering with stylized characters.
-Cute but mature characters with highly expressive facial features and large, detailed eyes.
-Cinematic lighting with volumetric lighting effects, subsurface scattering for realistic skin glow.
-Rich, vibrant textures with attention to material details.`;
+  const styleHeader = style.prompt;
 
   const sceneBody = sceneDescription
     ? `Scene: ${sceneDescription}`
@@ -103,12 +106,14 @@ ${technicalFooter}`;
  * @param title - 스크립트 제목
  * @param outputDir - 출력 디렉토리
  * @param imagePrompt - LLM이 생성한 구체적 장면 설명 (있으면 이걸 사용)
+ * @param styleId - 스타일 ID (없으면 랜덤 선택)
  */
 export async function generateBackgroundImage(
   topic: string,
   title: string,
   outputDir: string,
-  imagePrompt?: string
+  imagePrompt?: string,
+  styleId?: string
 ): Promise<string> {
   const filename = 'background.png';
   const outputPath = path.join(outputDir, filename);
@@ -116,7 +121,7 @@ export async function generateBackgroundImage(
   // imagePrompt가 있으면 구체적 장면 설명으로 사용
   const sceneDescription = imagePrompt || '';
 
-  return generateIllustration(topic, title, sceneDescription, outputPath);
+  return generateIllustration(topic, title, sceneDescription, outputPath, styleId);
 }
 
 /**

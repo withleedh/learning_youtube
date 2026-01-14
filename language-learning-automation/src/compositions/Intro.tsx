@@ -65,6 +65,8 @@ export interface IntroProps {
   };
   /** 스텝 설명 (타이틀 + 설명) */
   stepDescriptions?: StepDescription[];
+  /** 인트로 오버레이 그라데이션 (CSS linear-gradient 형식) */
+  introOverlay?: string;
 }
 
 // Intro duration constants
@@ -212,6 +214,7 @@ export const Intro: React.FC<IntroProps> = ({
   fps = 30,
   uiLabels,
   stepDescriptions,
+  introOverlay,
 }) => {
   // TTS duration에 따른 동적 타이밍 계산
   const viralDurationFrames = viralNarrationDuration
@@ -268,6 +271,7 @@ export const Intro: React.FC<IntroProps> = ({
           introBackgroundPath={hasIntroBackground ? introBackgroundPath : undefined}
           narrationPath={hasViralNarration ? viralNarrationPath : undefined}
           durationFrames={viralDurationFrames}
+          introOverlay={introOverlay}
         />
       </Sequence>
 
@@ -281,6 +285,7 @@ export const Intro: React.FC<IntroProps> = ({
           narrationPath={hasGuideNarration ? guideNarrationPath : undefined}
           durationFrames={guideDurationFrames}
           guideMessage={guideMessage}
+          introOverlay={introOverlay}
         />
       </Sequence>
 
@@ -411,7 +416,8 @@ const ViralMessageSection: React.FC<{
   introBackgroundPath?: string;
   narrationPath?: string;
   durationFrames: number;
-}> = ({ line1, line2, introBackgroundPath, narrationPath, durationFrames }) => {
+  introOverlay?: string;
+}> = ({ line1, line2, introBackgroundPath, narrationPath, durationFrames, introOverlay }) => {
   const frame = useCurrentFrame();
 
   // 배경 페이드인
@@ -450,6 +456,10 @@ const ViralMessageSection: React.FC<{
   const LINE1_COLOR = '#FFFFFF';
   const LINE2_COLOR = '#FFD93D';
 
+  // 기본 오버레이 그라데이션
+  const defaultOverlay = 'linear-gradient(180deg, rgba(10,25,50,0.9) 0%, rgba(5,15,35,0.95) 100%)';
+  const overlayStyle = introOverlay || defaultOverlay;
+
   return (
     <AbsoluteFill style={{ opacity: fadeOut }}>
       {/* TTS 나레이션 */}
@@ -470,10 +480,10 @@ const ViralMessageSection: React.FC<{
         </AbsoluteFill>
       )}
 
-      {/* 어두운 오버레이 */}
+      {/* 어두운 오버레이 (채널별 커스텀 가능) */}
       <AbsoluteFill
         style={{
-          background: 'linear-gradient(180deg, rgba(10,25,50,0.9) 0%, rgba(5,15,35,0.95) 100%)',
+          background: overlayStyle,
           opacity: bgOpacity,
         }}
       />
@@ -535,7 +545,8 @@ const GuideMessageSection: React.FC<{
   narrationPath?: string;
   durationFrames: number;
   guideMessage: { prefix: string; number: string; suffix: string };
-}> = ({ introBackgroundPath, narrationPath, durationFrames, guideMessage }) => {
+  introOverlay?: string;
+}> = ({ introBackgroundPath, narrationPath, durationFrames, guideMessage, introOverlay }) => {
   const frame = useCurrentFrame();
 
   // 배경 페이드인
@@ -563,6 +574,10 @@ const GuideMessageSection: React.FC<{
   const WHITE_COLOR = '#FFFFFF';
   const GOLD_COLOR = '#FFD93D';
 
+  // 기본 오버레이 그라데이션
+  const defaultOverlay = 'linear-gradient(180deg, rgba(10,25,50,0.9) 0%, rgba(5,15,35,0.95) 100%)';
+  const overlayStyle = introOverlay || defaultOverlay;
+
   return (
     <AbsoluteFill style={{ opacity: fadeOut }}>
       {/* TTS 나레이션 */}
@@ -583,10 +598,10 @@ const GuideMessageSection: React.FC<{
         </AbsoluteFill>
       )}
 
-      {/* 어두운 오버레이 */}
+      {/* 어두운 오버레이 (채널별 커스텀 가능) */}
       <AbsoluteFill
         style={{
-          background: 'linear-gradient(180deg, rgba(10,25,50,0.9) 0%, rgba(5,15,35,0.95) 100%)',
+          background: overlayStyle,
           opacity: bgOpacity,
         }}
       />

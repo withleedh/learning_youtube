@@ -50,7 +50,7 @@ ${categoryGuide}
 ${fewShotExample}
 
 # Constraints
-1. **Level:** CEFR A2~B1 (Pre-Intermediate). Natural but accessible.
+1. **Level:** CEFR A1~A2 (Pre-Intermediate). Natural but accessible.
 2. **Speaker:** Single narrator (${speaker} = ${speakerGender})
 3. **Length:** Exactly ${content.sentenceCount} sentences total.
 4. **Sentence Length:** 5-15 words per sentence. Short and clear.
@@ -81,7 +81,7 @@ ${imagePromptGuide}
         "role": "narrator"
       }
     ],
-    "imagePrompt": "Pixar/Disney style 3D animation scene description..."
+    "imagePrompt": ""
   },
   "sentences": [
     {
@@ -95,10 +95,7 @@ ${imagePromptGuide}
       "words": [
         { "word": "vocabulary", "meaning": "meaning" }
       ],
-      "wrongAnswers": [
-        "Similar but wrong sentence 1",
-        "Similar but wrong sentence 2"
-      ]
+      "wrongWordChoices": ["similar_word_1", "similar_word_2"]
     }
   ]
 }
@@ -109,7 +106,7 @@ ${imagePromptGuide}
 - blankAnswer MUST appear exactly in the target sentence.
 - targetBlank MUST contain exactly "_______" (7 underscores).
 - Words array: Include blankAnswer + 1-2 useful vocabulary words.
-- wrongAnswers: Include 2 similar-sounding but incorrect sentences for listening quiz.
+- wrongWordChoices: Include 2 phonetically similar SINGLE WORDS (not sentences!) for word quiz.
 
 Generate ONLY the JSON output. No additional text.`;
 }
@@ -142,7 +139,7 @@ ${categoryGuide}
 ${fewShotExample}
 
 # Constraints
-1. **Level:** CEFR A2~B1 (Pre-Intermediate). Natural but accessible.
+1. **Level:** CEFR A1-A2 (Pre-Intermediate). Natural but accessible.
 2. **Characters:** Two characters (M = Male, F = Female)
 3. **Length:** Exactly ${content.sentenceCount} sentences total.
 4. **Sentence Length:** 5-12 words per sentence. Short and punchy.
@@ -203,10 +200,7 @@ ${imagePromptGuide}
       "words": [
         { "word": "vocabulary", "meaning": "meaning" }
       ],
-      "wrongAnswers": [
-        "Similar but wrong sentence 1",
-        "Similar but wrong sentence 2"
-      ]
+      "wrongWordChoices": ["similar_word_1", "similar_word_2"]
     }
   ]
 }
@@ -217,7 +211,7 @@ ${imagePromptGuide}
 - blankAnswer MUST appear exactly in the target sentence.
 - targetBlank MUST contain exactly "_______" (7 underscores).
 - Dialogue must flow naturally - each line should connect to the previous one.
-- wrongAnswers: Include 2 similar-sounding but incorrect sentences for listening quiz.
+- wrongWordChoices: Include 2 phonetically similar SINGLE WORDS (not sentences!) for word quiz.
 
 Generate ONLY the JSON output. No additional text.`;
 }
@@ -421,26 +415,31 @@ Choose words that are:
 - Basic verbs: "is", "are", "was", "were", "have", "has"
 - Prepositions alone: "in", "on", "at", "to", "for"
 
-# WrongAnswers Guide (for Listening Quiz Shorts)
-Generate 2 wrong answer sentences that sound similar to the correct sentence.
-These will be used in A/B/C multiple choice listening quizzes.
+# WrongWordChoices Guide (CRITICAL for Shorts Quiz)
+Generate 2 wrong SINGLE WORDS that sound similar to the blankAnswer.
+These will be used in A/B/C word-choice quizzes in 5-second Shorts.
 
-**Techniques for creating confusing wrong answers:**
-1. **Contraction confusion:** "I'd like" → "I like", "can't" → "can", "won't" → "want"
-2. **Tense confusion:** "liked" → "like", "wanted" → "want", "was" → "is"
-3. **Similar sounds:** "hear" → "here", "their" → "there", "your" → "you're"
-4. **Word order change:** Slightly rearrange words
-5. **Similar word substitution:** "some" → "same", "then" → "than"
+**IMPORTANT: wrongWordChoices must be SINGLE WORDS, not sentences!**
 
-**Example:**
-- Correct: "I'd like some coffee, please."
-- Wrong 1: "I like some coffee, please." (contraction removed)
-- Wrong 2: "I'd like same coffee, please." (similar sound word)
+**Techniques for creating confusing wrong word choices:**
+1. **Minimal pairs:** "walk" vs "work", "play" vs "pay", "right" vs "light"
+2. **Similar sounds:** "hear" vs "here", "their" vs "there", "some" vs "same"
+3. **Tense confusion:** "meet" vs "met", "like" vs "liked"
+4. **Contraction parts:** "would" vs "wood", "can" vs "can't"
+5. **Rhyming words:** "meeting" vs "eating" vs "beating"
+
+**Examples:**
+- blankAnswer: "meeting" → wrongWordChoices: ["eating", "beating"]
+- blankAnswer: "familiar" → wrongWordChoices: ["similar", "family"]
+- blankAnswer: "flooding" → wrongWordChoices: ["flowing", "floating"]
+- blankAnswer: "becoming" → wrongWordChoices: ["coming", "beginning"]
+- blankAnswer: "coffee" → wrongWordChoices: ["copy", "coughing"]
 
 **Rules:**
-- Wrong answers must be grammatically plausible (not obviously wrong)
-- Wrong answers should sound similar when spoken quickly
-- Each wrong answer should differ by only 1-2 words from the correct sentence`;
+- MUST be single words (1 word only, no phrases)
+- Should sound phonetically similar to blankAnswer
+- Should be real English words (not nonsense)
+- Should be plausible in the sentence context`;
 }
 
 /**
@@ -448,7 +447,7 @@ These will be used in A/B/C multiple choice listening quizzes.
  */
 function getImagePromptGuide(): string {
   return `# ImagePrompt Guide
-Create a Pixar/Disney style 3D animation scene description.
+Create a Pixar/Disney style 2D animation scene description.
 
 **Structure:**
 1. **Scene:** What is happening in the image

@@ -5,7 +5,7 @@ import { generateScript, saveScript, createSampleScript } from '../script/genera
 import { generateAllAudio, createMockAudioFiles } from '../tts/generator';
 import { IntroGenerator } from '../intro/generator';
 import { generateBackgroundImage, generateThumbnail } from '../image/generator';
-import { getGeminiApiKey } from '../config/gemini';
+import { getGeminiApiKey, GEMINI_MODELS } from '../config/gemini';
 import type { IntroAssetConfig } from '../intro/types';
 import type { ChannelConfig } from '../config/types';
 import type { Script } from '../script/types';
@@ -111,7 +111,8 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
           script.metadata.topic,
           script.metadata.title.target,
           outputDir,
-          script.metadata.imagePrompt
+          script.metadata.imagePrompt,
+          config.theme.preferredArtStyle // 채널 설정의 아트 스타일 사용
         );
         console.log(`   ✓ Generated background image: ${backgroundImagePath}`);
       } catch (imageError) {
@@ -748,36 +749,14 @@ export function getTimelineLabels(nativeLanguage: string = 'Korean') {
 /**
  * Generate thumbnail subtitle text based on languages
  */
-function generateThumbnailSubtitle(targetLanguage: string, nativeLanguage: string): string {
-  // Language names in different languages
-  const langNames: Record<string, Record<string, string>> = {
-    Korean: {
-      English: '영어',
-      Japanese: '일본어',
-      Chinese: '중국어',
-      Spanish: '스페인어',
-      French: '프랑스어',
-      German: '독일어',
-      Korean: '한국어',
-    },
-    English: {
-      English: 'English',
-      Japanese: 'Japanese',
-      Chinese: 'Chinese',
-      Spanish: 'Spanish',
-      French: 'French',
-      German: 'German',
-      Korean: 'Korean',
-    },
-  };
-
-  const names = langNames[nativeLanguage] || langNames['English'];
-  const targetName = names[targetLanguage] || targetLanguage;
-
+function generateThumbnailSubtitle(_targetLanguage: string, nativeLanguage: string): string {
+  // 언어별 후킹 문구 (간단하게)
   if (nativeLanguage === 'Korean') {
     return `매일 듣기 20분`;
+  } else if (nativeLanguage === 'Japanese') {
+    return `毎日20分リスニング`;
   } else {
-    return `20Mins Challenge`;
+    return `20 Mins Daily Listening`;
   }
 }
 
@@ -918,17 +897,17 @@ async function renderShortsBatch(
   const configContent = await fs.readFile(configPath, 'utf-8');
   const config: ChannelConfig = JSON.parse(configContent);
 
-  // Check if any sentence is missing wrongAnswers
-  const needsWrongAnswers = script.sentences.some(
-    (s) => !s.wrongAnswers || s.wrongAnswers.length < 2
+  // Check if any sentence is missing wrongWordChoices
+  const needsWrongWords = script.sentences.some(
+    (s) => !s.wrongWordChoices || s.wrongWordChoices.length < 2
   );
 
-  if (needsWrongAnswers) {
-    console.log('🤖 Generating missing wrongAnswers with GPT...');
+  if (needsWrongWords) {
+    console.log('🤖 Generating missing wrongWordChoices with GPT...');
     script = await generateMissingWrongAnswers(script, config);
     // Save updated script
     await fs.writeFile(scriptPath, JSON.stringify(script, null, 2));
-    console.log('   ✅ Updated script with wrongAnswers');
+    console.log('   ✅ Updated script with wrongWordChoices');
   }
 
   // Load audio manifest
@@ -970,12 +949,16 @@ async function renderShortsBatch(
       continue;
     }
 
-    // Generate quiz choices from wrongAnswers or fallback
+    // Generate quiz choices from wrongWordChoices or fallback
     const quizSentence = {
       ...sentence,
       choices:
-        sentence.wrongAnswers && sentence.wrongAnswers.length >= 2
-          ? createChoicesFromWrongAnswers(sentence.target, sentence.wrongAnswers, sentence.id)
+        sentence.wrongWordChoices && sentence.wrongWordChoices.length >= 2
+          ? createChoicesFromWrongAnswers(
+              sentence.blankAnswer,
+              sentence.wrongWordChoices,
+              sentence.id
+            )
           : generateQuizChoices(sentence),
     };
 
@@ -1030,11 +1013,11 @@ async function renderShortsBatch(
 }
 
 /**
- * Create quiz choices from wrongAnswers array
+ * Create quiz choices from wrongWordChoices array (단어 기반)
  */
 function createChoicesFromWrongAnswers(
-  correctAnswer: string,
-  wrongAnswers: string[],
+  blankAnswer: string,
+  wrongWordChoices: string[],
   sentenceId: number
 ): Array<{ text: string; isCorrect: boolean }> {
   const correctIndex = sentenceId % 3;
@@ -1043,9 +1026,9 @@ function createChoicesFromWrongAnswers(
 
   for (let i = 0; i < 3; i++) {
     if (i === correctIndex) {
-      choices.push({ text: correctAnswer, isCorrect: true });
+      choices.push({ text: blankAnswer, isCorrect: true });
     } else {
-      choices.push({ text: wrongAnswers[wrongIdx++] || correctAnswer, isCorrect: false });
+      choices.push({ text: wrongWordChoices[wrongIdx++] || blankAnswer, isCorrect: false });
     }
   }
 
@@ -1053,7 +1036,7 @@ function createChoicesFromWrongAnswers(
 }
 
 /**
- * Generate missing wrongAnswers using GPT
+ * Generate missing wrongWordChoices using GPT (단어 기반 오답)
  */
 async function generateMissingWrongAnswers(
   script: Script,
@@ -1062,62 +1045,46 @@ async function generateMissingWrongAnswers(
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
   const apiKey = getGeminiApiKey();
   const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
-  const sentencesNeedingWrongAnswers = script.sentences.filter(
-    (s) => !s.wrongAnswers || s.wrongAnswers.length < 2
+  // wrongWordChoices가 없는 문장 필터링
+  const sentencesNeedingWrongWords = script.sentences.filter(
+    (s) => !s.wrongWordChoices || s.wrongWordChoices.length < 2
   );
 
-  if (sentencesNeedingWrongAnswers.length === 0) {
+  if (sentencesNeedingWrongWords.length === 0) {
     return script;
   }
 
-  // Detect language from script metadata
-  const targetLanguage = script.metadata?.targetLanguage || 'English';
-
-  const prompt = `Role: You are an Expert Language Assessment Specialist. Your goal is to create high-quality "distractors" (wrong answers) for a listening comprehension test.
+  const prompt = `Role: You are an Expert Language Assessment Specialist creating word-based quiz distractors.
 
 Task:
-Input language: ${targetLanguage}
-For each correct sentence provided below, generate 2 incorrect sentences that act as plausible distractors.
+For each blankAnswer word provided below, generate 2 phonetically similar WRONG WORDS.
+These will be used in A/B/C word-choice quizzes in 5-second YouTube Shorts.
 
-Core Principles for Distractors:
-1. **Phonetic Interference**: The wrong answer should sound very similar to the correct one (e.g., rhyme, minimal pairs, similar linking sounds).
-2. **Contextual Plausibility**: The wrong answer must be grammatically correct and meaningful on its own, not nonsense.
-3. **Length Preservation**: Keep the syllable count and rhythm similar to the original sentence.
+CRITICAL: Output must be SINGLE WORDS only, not sentences or phrases!
 
-Language-Specific Guidelines:
-${
-  targetLanguage === 'Korean'
-    ? `[Korean Guidelines]
-- Particle Confusion: Swap subtle particles that change nuance (e.g., 은/는 vs 이/가, 에 vs 에서).
-- Tense/Honorifics: Change only the verb ending or tense (e.g., 갔습니다 -> 갑니다, 하세요 -> 했어요).
-- Sound Similarity: Use words that share phonemes (e.g., 감기(cold) vs 경기(game), 사람(person) vs 사랑(love)).
-- Negation: subtle changes in positive/negative forms (e.g., 안 갔다 -> 못 갔다).`
-    : targetLanguage === 'English'
-      ? `[English Guidelines]
-- Minimal Pairs: Change one phoneme (e.g., "walk" vs "work", "play" vs "pay").
-- Weak Forms & Contractions: Exploit ambiguous sounds (e.g., "I'd go" -> "I go", "can" vs "can't").
-- Homophones/Near-Homophones: Use words that sound alike (e.g., "flower" vs "flour", "right" vs "light").
-- Tense Shift: "He is running" -> "He was running".`
-      : `[General Guidelines]
-- Focus on changing key verbs or nouns to words that sound phonetically similar in the target language.
-- Modify verb conjugations or grammatical particles slightly.`
-}
+Techniques for creating confusing wrong word choices:
+1. **Minimal pairs:** "walk" vs "work", "play" vs "pay", "right" vs "light"
+2. **Similar sounds:** "hear" vs "here", "their" vs "there", "some" vs "same"
+3. **Tense confusion:** "meet" vs "met", "like" vs "liked"
+4. **Rhyming words:** "meeting" vs "eating" vs "beating"
+5. **Similar spelling:** "familiar" vs "similar", "coffee" vs "copy"
 
-Sentences to process:
-${sentencesNeedingWrongAnswers.map((s) => `ID ${s.id}: "${s.target}"`).join('\n')}
+Words to process:
+${sentencesNeedingWrongWords.map((s) => `ID ${s.id}: blankAnswer="${s.blankAnswer}" (sentence: "${s.target}")`).join('\n')}
 
 Output Format:
 - Return ONLY a valid JSON object.
 - Do NOT use markdown code blocks.
-- Do NOT include explanations.
+- Each value must be an array of exactly 2 SINGLE WORDS.
 
-Example Output Structure:
+Example Output:
 {
-  "wrongAnswers": {
-    "1": ["Phonetically similar wrong sentence 1", "Grammatically confusing wrong sentence 2"],
-    "2": ["...", "..."]
+  "wrongWordChoices": {
+    "1": ["eating", "beating"],
+    "2": ["similar", "family"],
+    "3": ["copy", "coughing"]
   }
 }
 
@@ -1135,14 +1102,14 @@ Generate ONLY the JSON output.`;
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-    const wrongAnswersMap = parsed.wrongAnswers || {};
+    const wrongWordChoicesMap = parsed.wrongWordChoices || {};
 
-    // Update sentences with generated wrongAnswers
+    // Update sentences with generated wrongWordChoices
     const updatedSentences = script.sentences.map((sentence) => {
-      if (!sentence.wrongAnswers || sentence.wrongAnswers.length < 2) {
-        const generated = wrongAnswersMap[String(sentence.id)];
+      if (!sentence.wrongWordChoices || sentence.wrongWordChoices.length < 2) {
+        const generated = wrongWordChoicesMap[String(sentence.id)];
         if (generated && Array.isArray(generated) && generated.length >= 2) {
-          return { ...sentence, wrongAnswers: generated.slice(0, 2) };
+          return { ...sentence, wrongWordChoices: generated.slice(0, 2) };
         }
       }
       return sentence;
@@ -1150,7 +1117,7 @@ Generate ONLY the JSON output.`;
 
     return { ...script, sentences: updatedSentences };
   } catch (error) {
-    console.warn(`   ⚠️ GPT wrongAnswers generation failed: ${error}`);
+    console.warn(`   ⚠️ GPT wrongWordChoices generation failed: ${error}`);
     return script;
   }
 }

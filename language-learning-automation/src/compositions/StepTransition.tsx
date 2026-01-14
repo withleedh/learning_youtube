@@ -22,23 +22,19 @@ export interface StepTransitionProps {
   notices?: string[];
   /** 시청자 모국어 - 안내 문구 언어 결정용 */
   nativeLanguage?: string;
+  /** 채널별 커스텀 스텝 색상 */
+  customStepColors?: Array<{ primary: string; complementary: string }>;
 }
 
 // 언어별 기본 안내 문구
 function getDefaultNotices(nativeLanguage: string = 'Korean'): string[] {
   const notices: Record<string, string[]> = {
-    Korean: [
-      '* 본 영상은 학습을 위한 픽션으로, 실제 사건 및 인물, 단체와 관련이 없습니다.',
-    ],
+    Korean: ['* 본 영상은 학습을 위한 픽션으로, 실제 사건 및 인물, 단체와 관련이 없습니다.'],
     English: [
       '* This video is fictional for learning purposes and has no relation to real events or persons.',
     ],
-    Japanese: [
-      '* 本動画は学習用のフィクションであり、実際の事件や人物とは関係ありません。',
-    ],
-    Chinese: [
-      '* 本视频为虚构学习内容，与实际事件或人物无关。',
-    ],
+    Japanese: ['* 本動画は学習用のフィクションであり、実際の事件や人物とは関係ありません。'],
+    Chinese: ['* 本视频为虚构学习内容，与实际事件或人物无关。'],
   };
 
   return notices[nativeLanguage] || notices['English'];
@@ -53,10 +49,11 @@ export const StepTransition: React.FC<StepTransitionProps> = ({
   ttsPath,
   notices,
   nativeLanguage = 'Korean',
+  customStepColors,
 }) => {
   const finalNotices = notices || getDefaultNotices(nativeLanguage);
   const frame = useCurrentFrame();
-  const colors = getStepColors(stepNumber - 1);
+  const colors = getStepColors(stepNumber - 1, customStepColors);
 
   // 페이드인
   const opacity = interpolate(frame, [0, 15], [0, 1], {

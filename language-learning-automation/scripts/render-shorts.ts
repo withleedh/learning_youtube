@@ -81,17 +81,17 @@ Examples:
   console.log(`   Script: ${script.metadata.title.target}`);
   console.log(`   Sentences: ${script.sentences.length}`);
 
-  // Check if any sentence is missing wrongAnswers
-  const needsWrongAnswers = script.sentences.some(
-    (s) => !s.wrongAnswers || s.wrongAnswers.length < 2
+  // Check if any sentence is missing wrongWordChoices (단어 기반 오답)
+  const needsWrongWords = script.sentences.some(
+    (s) => !s.wrongWordChoices || s.wrongWordChoices.length < 2
   );
 
-  if (needsWrongAnswers) {
-    console.log('\n🤖 Generating missing wrongAnswers with GPT...');
-    script = await generateMissingWrongAnswers(script);
+  if (needsWrongWords) {
+    console.log('\n🤖 Generating missing wrongWordChoices with GPT...');
+    script = await generateMissingWrongWordChoices(script);
     // Save updated script
     await fs.writeFile(scriptPath, JSON.stringify(script, null, 2));
-    console.log('   ✅ Updated script with wrongAnswers');
+    console.log('   ✅ Updated script with wrongWordChoices');
   }
 
   // Load audio manifest
@@ -133,12 +133,16 @@ Examples:
       continue;
     }
 
-    // Generate quiz choices
+    // Generate quiz choices from wrongWordChoices (단어 기반)
     const quizSentence = {
       ...sentence,
       choices:
-        sentence.wrongAnswers && sentence.wrongAnswers.length >= 2
-          ? createChoicesFromWrongAnswers(sentence.target, sentence.wrongAnswers, sentence.id)
+        sentence.wrongWordChoices && sentence.wrongWordChoices.length >= 2
+          ? createChoicesFromWrongWords(
+              sentence.blankAnswer,
+              sentence.wrongWordChoices,
+              sentence.id
+            )
           : generateQuizChoices(sentence),
     };
 
@@ -152,6 +156,9 @@ Examples:
       backgroundImage,
       sentenceIndex: i + 1,
       episodeTitle: script.metadata.title.native,
+      // 동적 타이밍용 duration 전달
+      audioDuration: audioFile.duration,
+      slowAudioDuration: slowAudioFile?.duration,
     };
 
     console.log(`[${i + 1}/${totalSentences}] "${sentence.target.substring(0, 40)}..."`);
@@ -198,11 +205,11 @@ Examples:
 }
 
 /**
- * Create quiz choices from wrongAnswers array
+ * Create quiz choices from wrongWordChoices array (단어 기반)
  */
-function createChoicesFromWrongAnswers(
-  correctAnswer: string,
-  wrongAnswers: string[],
+function createChoicesFromWrongWords(
+  blankAnswer: string,
+  wrongWordChoices: string[],
   sentenceId: number
 ): Array<{ text: string; isCorrect: boolean }> {
   const correctIndex = sentenceId % 3;
@@ -211,9 +218,9 @@ function createChoicesFromWrongAnswers(
 
   for (let i = 0; i < 3; i++) {
     if (i === correctIndex) {
-      choices.push({ text: correctAnswer, isCorrect: true });
+      choices.push({ text: blankAnswer, isCorrect: true });
     } else {
-      choices.push({ text: wrongAnswers[wrongIdx++] || correctAnswer, isCorrect: false });
+      choices.push({ text: wrongWordChoices[wrongIdx++] || blankAnswer, isCorrect: false });
     }
   }
 
@@ -221,80 +228,63 @@ function createChoicesFromWrongAnswers(
 }
 
 /**
- * Generate missing wrongAnswers using GPT
+ * Generate missing wrongWordChoices using GPT (단어 기반 오답)
  */
-async function generateMissingWrongAnswers(script: Script): Promise<Script> {
+async function generateMissingWrongWordChoices(script: Script): Promise<Script> {
   const { GoogleGenerativeAI } = await import('@google/generative-ai');
 
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
-    console.warn('   ⚠️ GEMINI_API_KEY not set, using fallback wrongAnswers');
+    console.warn('   ⚠️ GEMINI_API_KEY not set, using fallback wrongWordChoices');
     return script;
   }
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
-  const sentencesNeedingWrongAnswers = script.sentences.filter(
-    (s) => !s.wrongAnswers || s.wrongAnswers.length < 2
+  const sentencesNeedingWrongWords = script.sentences.filter(
+    (s) => !s.wrongWordChoices || s.wrongWordChoices.length < 2
   );
 
-  if (sentencesNeedingWrongAnswers.length === 0) {
+  if (sentencesNeedingWrongWords.length === 0) {
     return script;
   }
 
-  // Detect language from script metadata or first sentence
-  const targetLanguage = script.metadata?.targetLanguage || 'English';
+  console.log(`   Processing ${sentencesNeedingWrongWords.length} sentences...`);
 
-  console.log(
-    `   Processing ${sentencesNeedingWrongAnswers.length} sentences (${targetLanguage})...`
-  );
-
-  const prompt = `Role: You are an Expert Language Assessment Specialist. Your goal is to create high-quality "distractors" (wrong answers) for a listening comprehension test.
+  const prompt = `Role: You are an Expert Language Assessment Specialist creating word-based quiz distractors.
 
 Task:
-Input language: ${targetLanguage}
-For each correct sentence provided below, generate 2 incorrect sentences that act as plausible distractors.
+For each blankAnswer word provided below, generate 2 phonetically similar WRONG WORDS.
+These will be used in A/B/C word-choice quizzes in 5-second YouTube Shorts.
 
-Core Principles for Distractors:
-1. **Phonetic Interference**: The wrong answer should sound very similar to the correct one (e.g., rhyme, minimal pairs, similar linking sounds).
-2. **Contextual Plausibility**: The wrong answer must be grammatically correct and meaningful on its own, not nonsense.
-3. **Length Preservation**: Keep the syllable count and rhythm similar to the original sentence.
+CRITICAL: Output must be SINGLE WORDS only, not sentences or phrases!
 
-Language-Specific Guidelines:
-${
-  targetLanguage === 'Korean'
-    ? `[Korean Guidelines]
-- Particle Confusion: Swap subtle particles that change nuance (e.g., 은/는 vs 이/가, 에 vs 에서).
-- Tense/Honorifics: Change only the verb ending or tense (e.g., 갔습니다 -> 갑니다, 하세요 -> 했어요).
-- Sound Similarity: Use words that share phonemes (e.g., 감기(cold) vs 경기(game), 사람(person) vs 사랑(love)).
-- Negation: subtle changes in positive/negative forms (e.g., 안 갔다 -> 못 갔다).`
-    : targetLanguage === 'English'
-      ? `[English Guidelines]
-- Minimal Pairs: Change one phoneme (e.g., "walk" vs "work", "play" vs "pay").
-- Weak Forms & Contractions: Exploit ambiguous sounds (e.g., "I'd go" -> "I go", "can" vs "can't").
-- Homophones/Near-Homophones: Use words that sound alike (e.g., "flower" vs "flour", "right" vs "light").
-- Tense Shift: "He is running" -> "He was running".`
-      : `[General Guidelines]
-- Focus on changing key verbs or nouns to words that sound phonetically similar in the target language.
-- Modify verb conjugations or grammatical particles slightly.`
-}
+Techniques for creating confusing wrong word choices:
+1. **Minimal pairs:** "walk" vs "work", "play" vs "pay", "right" vs "light"
+2. **Similar sounds:** "hear" vs "here", "their" vs "there", "some" vs "same"
+3. **Tense confusion:** "meet" vs "met", "like" vs "liked"
+4. **Rhyming words:** "meeting" vs "eating" vs "beating"
+5. **Similar spelling:** "familiar" vs "similar", "coffee" vs "copy"
 
-Sentences to process:
-${sentencesNeedingWrongAnswers.map((s) => `ID ${s.id}: "${s.target}"`).join('\n')}
+Words to process:
+${sentencesNeedingWrongWords.map((s) => `ID ${s.id}: blankAnswer="${s.blankAnswer}" (sentence: "${s.target}")`).join('\n')}
 
 Output Format:
 - Return ONLY a valid JSON object.
 - Do NOT use markdown code blocks.
-- Do NOT include explanations.
+- Each value must be an array of exactly 2 SINGLE WORDS.
 
-Example Output Structure:
+Example Output:
 {
-  "wrongAnswers": {
-    "1": ["Phonetically similar wrong sentence 1", "Grammatically confusing wrong sentence 2"],
-    "2": ["...", "..."]
+  "wrongWordChoices": {
+    "1": ["eating", "beating"],
+    "2": ["similar", "family"],
+    "3": ["copy", "coughing"]
   }
-}`;
+}
+
+Generate ONLY the JSON output.`;
 
   try {
     const result = await model.generateContent(prompt);
@@ -308,15 +298,17 @@ Example Output Structure:
     }
 
     const parsed = JSON.parse(jsonMatch[0]);
-    const wrongAnswersMap = parsed.wrongAnswers || {};
+    const wrongWordChoicesMap = parsed.wrongWordChoices || {};
 
-    // Update sentences with generated wrongAnswers
+    // Update sentences with generated wrongWordChoices
     const updatedSentences = script.sentences.map((sentence) => {
-      if (!sentence.wrongAnswers || sentence.wrongAnswers.length < 2) {
-        const generated = wrongAnswersMap[String(sentence.id)];
+      if (!sentence.wrongWordChoices || sentence.wrongWordChoices.length < 2) {
+        const generated = wrongWordChoicesMap[String(sentence.id)];
         if (generated && Array.isArray(generated) && generated.length >= 2) {
-          console.log(`   ✓ ID ${sentence.id}: Generated wrongAnswers`);
-          return { ...sentence, wrongAnswers: generated.slice(0, 2) };
+          console.log(
+            `   ✓ ID ${sentence.id}: "${sentence.blankAnswer}" → [${generated.slice(0, 2).join(', ')}]`
+          );
+          return { ...sentence, wrongWordChoices: generated.slice(0, 2) };
         }
       }
       return sentence;
@@ -324,7 +316,7 @@ Example Output Structure:
 
     return { ...script, sentences: updatedSentences };
   } catch (error) {
-    console.warn(`   ⚠️ GPT wrongAnswers generation failed: ${error}`);
+    console.warn(`   ⚠️ GPT wrongWordChoices generation failed: ${error}`);
     return script;
   }
 }
