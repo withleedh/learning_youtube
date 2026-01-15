@@ -162,6 +162,9 @@ const SentenceDisplay: React.FC<{
 
 // Calculate total duration for Step 2
 export function calculateStep2Duration(sentences: Sentence[], audioFiles: AudioFile[]): number {
+  if (!sentences || !audioFiles) {
+    return 0;
+  }
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
   let totalFrames = 0;
 

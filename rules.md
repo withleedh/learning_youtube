@@ -81,3 +81,6 @@ Always follow the instructions in plan.md. When I say "go", find the next unmark
 - Use **User Event** library (`user-event`) for simulating interactions, as it closely mimics real browser behavior.
 - Ensure **State Co-location**: Keep state as close to where it's used as possible. Lift state up only when necessary.
 - Use TypeScript interfaces for Props to ensure type safety.
+
+
+Always use Context7 MCP when I need library/API documentation, code generation, setup or configuration steps without me having to explicitly ask.

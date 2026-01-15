@@ -21,6 +21,16 @@ import {
   generateQuizChoices,
 } from './compositions/ListeningQuizShort';
 import { CatInterviewShort, calculateCatInterviewDuration } from './compositions/CatInterviewShort';
+import {
+  ComparisonLongform,
+  calculateTotalDuration as calculateComparisonDuration,
+  getVideoTiming,
+} from './compositions/ComparisonLongform';
+import { ComparisonView } from './compositions/ComparisonView';
+import { HookIntro } from './compositions/HookIntro';
+import { CTAEnding } from './compositions/CTAEnding';
+import { createSampleComparisonScript } from './comparison/sample';
+import type { TimingProfileType } from './comparison/timing-profile';
 import type { ChannelConfig } from './config/types';
 import type { Script } from './script/types';
 import type { AudioFile } from './tts/types';
@@ -40,6 +50,10 @@ let dynamicScript: Script | null = null;
 let dynamicConfig: ChannelConfig | null = null;
 let dynamicAudioFiles: AudioFile[] | null = null;
 
+// ComparisonScript for ComparisonLongform compositions
+import type { ComparisonScript } from './comparison/types';
+let dynamicComparisonScript: ComparisonScript | null = null;
+
 try {
   // These will be loaded at build time if files exist in public/
   dynamicScript = require('../public/script.json') as Script;
@@ -53,6 +67,18 @@ try {
   console.log('✅ Loaded dynamic data from public/ folder');
 } catch {
   console.log('ℹ️ Using sample data (no dynamic data in public/)');
+}
+
+// Try to load ComparisonScript separately (for ComparisonLongform)
+try {
+  const rawScript = require('../public/script.json');
+  // Check if it's a ComparisonScript by looking for 'segments' with ComparisonSegment structure
+  if (rawScript.segments && rawScript.segments[0]?.koreanExpression) {
+    dynamicComparisonScript = rawScript as ComparisonScript;
+    console.log('✅ Loaded ComparisonScript from public/ folder');
+  }
+} catch {
+  // Ignore - will use sample data
 }
 
 // TTS duration (실제 파일에서 측정된 값)
@@ -579,6 +605,81 @@ export const RemotionRoot: React.FC = () => {
               props.slowAudioDuration
             ),
           };
+        }}
+      />
+
+      {/* ================================================================== */}
+      {/* Comparison Longform Compositions (Korean vs Native) */}
+      {/* ================================================================== */}
+
+      {/* ComparisonLongform - Full comparison video */}
+      <Composition
+        id="ComparisonLongform"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={ComparisonLongform as any}
+        durationInFrames={calculateComparisonDuration(30, 'normal')} // 30 segments, normal profile
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          script: dynamicComparisonScript ?? createSampleComparisonScript('korean-vs-native', 30),
+          backgroundImage: 'background.png',
+          timingProfile: 'normal' as TimingProfileType,
+          selectedHookVariant: 0,
+        }}
+        calculateMetadata={({ props }) => ({
+          durationInFrames: calculateComparisonDuration(
+            props.script?.segments?.length ?? 30,
+            props.timingProfile ?? 'normal'
+          ),
+        })}
+      />
+
+      {/* ComparisonView - Single segment preview */}
+      <Composition
+        id="ComparisonView"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={ComparisonView as any}
+        durationInFrames={300} // 10 seconds at 30fps
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          segment: createSampleComparisonScript('korean-vs-native', 25).segments[0],
+          timingProfile: 'normal' as TimingProfileType,
+          isBurst: false,
+        }}
+      />
+
+      {/* HookIntro - Hook intro preview */}
+      <Composition
+        id="HookIntro"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={HookIntro as any}
+        durationInFrames={150} // 5 seconds at 30fps
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          hook: createSampleComparisonScript('korean-vs-native', 25).hook,
+          hookVariants: createSampleComparisonScript('korean-vs-native', 25).hookVariants,
+          selectedVariantIndex: 0,
+          backgroundImage: 'background.png',
+        }}
+      />
+
+      {/* CTAEnding - CTA ending preview */}
+      <Composition
+        id="CTAEnding"
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        component={CTAEnding as any}
+        durationInFrames={450} // 15 seconds at 30fps
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={{
+          cta: createSampleComparisonScript('korean-vs-native', 25).cta,
+          backgroundImage: 'background.png',
         }}
       />
     </>

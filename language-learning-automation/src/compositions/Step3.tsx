@@ -396,6 +396,9 @@ export function calculateStep3Duration(
   audioFiles: AudioFile[],
   _repeatCount: number // ignored, using fixed 10 repetitions
 ): number {
+  if (!sentences || !audioFiles) {
+    return 0;
+  }
   let totalFrames = 0;
 
   sentences.forEach((sentence) => {

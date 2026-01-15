@@ -4,7 +4,9 @@
   "description": "다채널 언어 학습 영상 자동화 시스템",
   "scripts": {
     "start": "remotion studio",
+    "start:comparison": "remotion studio src/ComparisonRoot.tsx",
     "build": "remotion render Main out/video.mp4",
+    "build:comparison": "remotion render src/ComparisonRoot.tsx ComparisonLongform out/comparison.mp4",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
