@@ -1,0 +1,30 @@
+{
+  "channelId": "puppy_interview",
+  "channelName": "강아지 인터뷰",
+  "contentType": "interview",
+  "character": {
+    "id": "baekgu",
+    "name": "백구",
+    "nameEnglish": "Baekgu",
+    "type": "animal",
+    "imagePath": "assets/puppy_interview/characters/puppy.png",
+    "style": "stylized realistic white Samoyed puppy with extremely fluffy snow-white fur and round chubby face",
+    "voiceStyle": "cheerful enthusiastic puppy voice",
+    "personality": "loyal, playful, curious",
+    "age": "3-4 months old Samoyed puppy"
+  },
+  "props": {
+    "microphone": "assets/puppy_interview/props/microphone.png"
+  },
+  "veoConfig": {
+    "useReferenceImages": true,
+    "aspectRatio": "16:9",
+    "durationSeconds": 8,
+    "personGeneration": "allow_adult"
+  },
+  "interviewConfig": {
+    "reporterLanguage": "korean",
+    "characterLanguage": "english",
+    "reporterVisible": false
+  }
+}

@@ -81,13 +81,13 @@ describe('Property Tests: Interval Training Sequence', () => {
           });
         });
 
-        // Property 1: Total sequences = sentences × 10 repetitions
-        expect(allSequences.length).toBe(sentences.length * 10);
+        // Property 1: Total sequences = sentences × 5 repetitions
+        expect(allSequences.length).toBe(sentences.length * 5);
 
-        // Property 2: Each sentence appears exactly 10 times
+        // Property 2: Each sentence appears exactly 5 times
         sentences.forEach((sentence) => {
           const sentenceSequences = allSequences.filter((s) => s.sentenceId === sentence.id);
-          expect(sentenceSequences.length).toBe(10);
+          expect(sentenceSequences.length).toBe(5);
         });
 
         // Property 3: Speed distribution per sentence
@@ -98,9 +98,9 @@ describe('Property Tests: Interval Training Sequence', () => {
             '1.0x': sentenceSequences.filter((s) => s.speed === '1.0x').length,
             '1.2x': sentenceSequences.filter((s) => s.speed === '1.2x').length,
           };
-          expect(speedCounts['0.8x']).toBe(2); // intro
-          expect(speedCounts['1.0x']).toBe(6); // training (4) + review (2)
-          expect(speedCounts['1.2x']).toBe(2); // challenge
+          expect(speedCounts['0.8x']).toBe(1); // intro
+          expect(speedCounts['1.0x']).toBe(3); // training
+          expect(speedCounts['1.2x']).toBe(1); // challenge
         });
 
         return true;
@@ -141,11 +141,11 @@ describe('Property Tests: Interval Training Sequence', () => {
             });
           });
 
-          const totalDuration = calculateStep3Duration(sentences, audioFiles, 10);
+          const totalDuration = calculateStep3Duration(sentences, audioFiles, 5);
 
           // Each repetition: Math.ceil(baseDuration * 30) + 20 frames
-          // Total plays = numSentences × 10 repetitions
-          const totalPlays = numSentences * 10;
+          // Total plays = numSentences × 5 repetitions
+          const totalPlays = numSentences * 5;
           const expectedFrames = totalPlays * (Math.ceil(baseDuration * 30) + 20);
 
           expect(totalDuration).toBe(expectedFrames);
@@ -157,7 +157,7 @@ describe('Property Tests: Interval Training Sequence', () => {
     );
   });
 
-  it('should show blank only during training phase (1.0x × 4)', () => {
+  it('should show blank only during training phase (1.0x × 3)', () => {
     fc.assert(
       fc.property(fc.array(sentenceArbitrary, { minLength: 1, maxLength: 3 }), (sentences) => {
         const allSequences: Array<{

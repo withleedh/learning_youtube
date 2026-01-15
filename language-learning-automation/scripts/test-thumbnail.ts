@@ -97,7 +97,7 @@ async function generateVideoThumbnail(
 }
 
 async function main() {
-  const outputDir = process.argv[2] || 'output/english/2026-01-08_174127';
+  const outputDir = process.argv[2] || 'output/english/2026-01-14_123259';
 
   console.log(`📁 Testing thumbnail generation for: ${outputDir}`);
 
@@ -116,7 +116,7 @@ async function main() {
   const script = JSON.parse(scriptContent);
 
   const titleText = script.metadata.title.native;
-  const subtitleText = '하루 20분, 영어가 들려요.';
+  const subtitleText = '인생이 바뀌는 15분';
   const backgroundPath = path.join(outputDir, 'background.png');
   const thumbnailPath = path.join(outputDir, 'thumbnail.png');
 

@@ -227,11 +227,13 @@ function getNarrationCategoryGuide(category: Category): string {
 - 감정 변화가 있는 자연스러운 흐름
 - 마지막에 깨달음이나 감동적인 결말`,
 
-    news: `**뉴스 앵커 스타일** - 객관적이고 명확한 정보 전달
-- 사실 기반의 정보 전달 (개인 감정 없이)
-- 3인칭 시점으로 객관적 보도
-- "Korean food is becoming popular...", "This trend has grown...", "Experts say..."
-- 통계, 전문가 의견, 현황 설명 포함`,
+    news: `**흥미로운 뉴스 스토리텔링** - 놀라운 사실을 재미있게 전달
+- 청자의 호기심을 자극하는 훅으로 시작
+- "Guess what happened?", "You won't believe this!", "Here's something amazing..."
+- 놀라운 사실, 반전, 드라마틱한 전개 포함
+- 통계나 구체적 숫자로 신뢰감 부여
+- 마지막에 "이게 우리에게 의미하는 것" 또는 감탄으로 마무리
+- 딱딱한 뉴스 앵커가 아닌, 친구에게 신기한 소식 전하는 느낌`,
 
     announcement: `**안내 방송 스타일** - 명확하고 친절한 정보 전달
 - 공항, 기차역, 매장, 아파트 등의 안내 방송

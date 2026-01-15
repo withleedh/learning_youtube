@@ -109,6 +109,34 @@ Examples:
   const backgroundImage = `${folderName}/background.png`;
   console.log(`   Background: ${backgroundImage}`);
 
+  // Setup BGM - copy from channel assets or fallback to english
+  let bgmPath: string | undefined;
+  const channelBgmPath = path.join(process.cwd(), 'assets', channelId, 'quiz_bgm.mp3');
+  const fallbackBgmPath = path.join(process.cwd(), 'assets', 'english', 'quiz_bgm.mp3');
+  const targetAssetsDir = path.join(channelOutputDir, 'assets');
+  const targetBgmPath = path.join(targetAssetsDir, 'quiz_bgm.mp3');
+
+  // Ensure assets directory exists
+  await fs.mkdir(targetAssetsDir, { recursive: true });
+
+  try {
+    // Check if channel has its own BGM
+    await fs.access(channelBgmPath);
+    await fs.copyFile(channelBgmPath, targetBgmPath);
+    bgmPath = 'assets/quiz_bgm.mp3';
+    console.log(`   BGM: ${channelBgmPath}`);
+  } catch {
+    // Fallback to english BGM
+    try {
+      await fs.access(fallbackBgmPath);
+      await fs.copyFile(fallbackBgmPath, targetBgmPath);
+      bgmPath = 'assets/quiz_bgm.mp3';
+      console.log(`   BGM: ${fallbackBgmPath} (fallback)`);
+    } catch {
+      console.log(`   BGM: Not found, skipping`);
+    }
+  }
+
   // Bundle Remotion project
   console.log('\n📦 Bundling Remotion project...');
   const bundleLocation = await bundle({
@@ -159,6 +187,8 @@ Examples:
       // 동적 타이밍용 duration 전달
       audioDuration: audioFile.duration,
       slowAudioDuration: slowAudioFile?.duration,
+      // BGM
+      bgmPath,
     };
 
     console.log(`[${i + 1}/${totalSentences}] "${sentence.target.substring(0, 40)}..."`);

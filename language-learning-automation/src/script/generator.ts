@@ -41,6 +41,9 @@ export async function generateScript(
     console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
   }
 
+  // Debug: Show what we're generating
+  console.log(`   🔍 DEBUG: category=${scriptCategory}, topic="${selectedTopic}"`);
+
   // Generate multiple script candidates
   console.log(`   📝 스크립트 후보 ${candidateCount}개 생성 중...`);
   const candidates: Script[] = [];

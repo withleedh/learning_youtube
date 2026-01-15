@@ -25,11 +25,10 @@ export interface Step3Props {
   };
 }
 
-// Phase configuration for 10 repetitions
-// ① 도입: 0.8x × 2회 (워밍업 & 발음 분석) - 전체 자막 + 해석
-// ② 훈련: 1.0x × 4회 (퀴즈 & 리듬 체화) - 빈칸 자막
-// ③ 챌린지: 1.2x × 2회 (청각 근육 단련) - 정답 강조 자막
-// ④ 정리: 1.0x × 2회 (성취감 & 복습) - 전체 자막
+// Phase configuration for 5 repetitions
+// ① 도입: 0.8x × 1회 (워밍업) - 전체 자막 + 해석
+// ② 훈련: 1.0x × 3회 (퀴즈 & 리듬 체화) - 빈칸 자막
+// ③ 챌린지: 1.2x × 1회 (청각 근육 단련) - 정답 강조 자막
 type Phase = 'intro' | 'training' | 'challenge' | 'review';
 
 interface RepetitionConfig {
@@ -40,20 +39,14 @@ interface RepetitionConfig {
 }
 
 const REPETITION_SEQUENCE: RepetitionConfig[] = [
-  // ① 도입 (0.8x × 2)
+  // ① 도입 (0.8x × 1)
   { speed: '0.8x', phase: 'intro', showBlank: false, showAnswer: false },
-  { speed: '0.8x', phase: 'intro', showBlank: false, showAnswer: false },
-  // ② 훈련 (1.0x × 4)
+  // ② 훈련 (1.0x × 3)
   { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
   { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
   { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
-  { speed: '1.0x', phase: 'training', showBlank: true, showAnswer: false },
-  // ③ 챌린지 (1.2x × 2)
+  // ③ 챌린지 (1.2x × 1)
   { speed: '1.2x', phase: 'challenge', showBlank: false, showAnswer: true },
-  { speed: '1.2x', phase: 'challenge', showBlank: false, showAnswer: true },
-  // ④ 정리 (1.0x × 2)
-  { speed: '1.0x', phase: 'review', showBlank: false, showAnswer: false },
-  { speed: '1.0x', phase: 'review', showBlank: false, showAnswer: false },
 ];
 
 export const Step3: React.FC<Step3Props> = ({

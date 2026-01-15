@@ -542,6 +542,24 @@ async function renderVideo(
     endingBackgroundPath: 'assets/intro/background.png',
   };
 
+  // Generate thumbnail with title text
+  console.log('\n🖼️ Generating thumbnail...');
+  const thumbnailPath = path.join(outputDir, 'episode_thumbnail.png');
+  const backgroundPath = path.join(outputDir, 'background.png');
+
+  // Generate subtitle based on target language and native language
+  const subtitleText = generateThumbnailSubtitle(
+    config.meta.targetLanguage,
+    config.meta.nativeLanguage
+  );
+  await generateVideoThumbnail(
+    backgroundPath,
+    script.metadata.title.native,
+    subtitleText,
+    thumbnailPath
+  );
+  console.log(`✅ Thumbnail created: ${thumbnailPath}`);
+
   const composition = await selectComposition({
     serveUrl: bundleLocation,
     id: 'Main',
@@ -654,24 +672,6 @@ ${timelineLabels.categoryLabel}: ${script.category}
   console.log(`✅ Upload info created: ${uploadInfoPath}`);
   console.log(`\n${timelineLabels.timelineHeader}:`);
   timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
-
-  // Generate thumbnail with title text
-  console.log('\n🖼️ Generating thumbnail...');
-  const thumbnailPath = path.join(outputDir, 'episode_thumbnail.png');
-  const backgroundPath = path.join(outputDir, 'background.png');
-
-  // Generate subtitle based on target language and native language
-  const subtitleText = generateThumbnailSubtitle(
-    config.meta.targetLanguage,
-    config.meta.nativeLanguage
-  );
-  await generateVideoThumbnail(
-    backgroundPath,
-    script.metadata.title.native,
-    subtitleText,
-    thumbnailPath
-  );
-  console.log(`✅ Thumbnail created: ${thumbnailPath}`);
 }
 
 /**
@@ -752,11 +752,11 @@ export function getTimelineLabels(nativeLanguage: string = 'Korean') {
 function generateThumbnailSubtitle(_targetLanguage: string, nativeLanguage: string): string {
   // 언어별 후킹 문구 (간단하게)
   if (nativeLanguage === 'Korean') {
-    return `매일 듣기 20분`;
+    return `인생이 바뀌는 15분`;
   } else if (nativeLanguage === 'Japanese') {
-    return `毎日20分リスニング`;
+    return `毎日15分リスニング`;
   } else {
-    return `20 Mins Daily Listening`;
+    return `15 Mins Daily Listening`;
   }
 }
 

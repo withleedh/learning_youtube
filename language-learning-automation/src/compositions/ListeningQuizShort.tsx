@@ -48,6 +48,8 @@ export interface ListeningQuizShortProps {
   // 동적 타이밍용 duration (초 단위)
   audioDuration?: number;
   slowAudioDuration?: number;
+  // BGM
+  bgmPath?: string;
 }
 
 // =============================================================================
@@ -300,6 +302,7 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
   episodeTitle,
   audioDuration,
   slowAudioDuration,
+  bgmPath,
 }) => {
   const frame = useCurrentFrame();
 
@@ -337,6 +340,9 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      {/* BGM - 전체 재생, 낮은 볼륨 */}
+      {bgmPath && <Audio src={staticFile(bgmPath)} volume={0.15} loop />}
+
       {/* Top Header Area */}
       <TopHeader
         episodeTitle={episodeTitle}
@@ -390,6 +396,7 @@ export const ListeningQuizShort: React.FC<ListeningQuizShortProps> = ({
             choices={sentence.choices}
             audioFile={audioFile}
             targetBlank={sentence.targetBlank}
+            blankAnswer={sentence.blankAnswer}
           />
         </Sequence>
 
@@ -647,7 +654,8 @@ const Phase2Choices: React.FC<{
   choices: QuizChoice[];
   audioFile: AudioFile;
   targetBlank: string;
-}> = ({ choices, audioFile, targetBlank }) => {
+  blankAnswer: string;
+}> = ({ choices, audioFile, targetBlank, blankAnswer }) => {
   const frame = useCurrentFrame();
 
   // 빈칸 문장 페이드인
@@ -686,7 +694,7 @@ const Phase2Choices: React.FC<{
           opacity: blankOpacity,
         }}
       >
-        {highlightBlank(targetBlank)}
+        {highlightBlank(targetBlank, blankAnswer)}
       </div>
 
       {/* Choices - 가로 배치 */}
@@ -716,27 +724,122 @@ const Phase2Choices: React.FC<{
   );
 };
 
-// 빈칸(_______)을 노란색 밑줄로 하이라이트
-function highlightBlank(text: string): React.ReactNode {
-  const parts = text.split('_______');
-  if (parts.length === 1) return text;
+// 긴 텍스트를 두 줄로 나누기 (75% 이상이면 중간에서 분리)
+const MAX_CHARS_PER_LINE = 35; // 약 75% 기준
 
+// 빈칸(_______)을 노란색 밑줄로 하이라이트 (긴 문장은 두 줄로)
+// blankAnswer 길이에 맞춰 빈칸 너비 조절
+function highlightBlank(text: string, blankAnswer: string = ''): React.ReactNode {
+  const parts = text.split('_______');
+  if (parts.length === 1) {
+    const split = splitLongSentence(text);
+    if (split) {
+      return (
+        <>
+          {split.line1}
+          <br />
+          {split.line2}
+        </>
+      );
+    }
+    return text;
+  }
+
+  // 빈칸 스타일 - 정답 길이에 맞춰 언더스코어 개수 조절
+  const blankText = blankAnswer ? '_'.repeat(Math.max(blankAnswer.length, 4)) : '____';
+  const blankStyle = {
+    color: '#FFD93D',
+    fontWeight: 800 as const,
+    borderBottom: '4px solid #FFD93D',
+    paddingBottom: 4,
+  };
+
+  // 긴 문장이면 두 줄로 나누기
+  if (text.length > MAX_CHARS_PER_LINE) {
+    const blankIndex = text.indexOf('_______');
+    const midPoint = Math.floor(text.length / 2);
+
+    // 중간에서 가장 가까운 공백 찾기
+    let splitIndex = midPoint;
+    for (let i = 0; i <= midPoint; i++) {
+      if (text[midPoint + i] === ' ') {
+        splitIndex = midPoint + i;
+        break;
+      }
+      if (text[midPoint - i] === ' ') {
+        splitIndex = midPoint - i;
+        break;
+      }
+    }
+
+    // 빈칸이 첫 줄에 있는지 두번째 줄에 있는지 확인
+    if (blankIndex < splitIndex) {
+      // 빈칸이 첫 줄에 있음
+      const line1 = text.slice(0, splitIndex).trim();
+      const line2 = text.slice(splitIndex).trim();
+
+      const line1Parts = line1.split('_______');
+
+      return (
+        <>
+          {line1Parts[0]}
+          <span style={blankStyle}>{blankText}</span>
+          {line1Parts[1] || ''}
+          <br />
+          {line2}
+        </>
+      );
+    } else {
+      // 빈칸이 두번째 줄에 있음
+      const line1 = text.slice(0, splitIndex).trim();
+      const line2 = text.slice(splitIndex).trim();
+
+      const line2Parts = line2.split('_______');
+
+      return (
+        <>
+          {line1}
+          <br />
+          {line2Parts[0]}
+          <span style={blankStyle}>{blankText}</span>
+          {line2Parts[1] || ''}
+        </>
+      );
+    }
+  }
+
+  // 짧은 문장은 그대로
   return (
     <>
       {parts[0]}
-      <span
-        style={{
-          color: '#FFD93D',
-          fontWeight: 800,
-          borderBottom: '4px solid #FFD93D',
-          paddingBottom: 4,
-        }}
-      >
-        ____
-      </span>
+      <span style={blankStyle}>{blankText}</span>
       {parts[1]}
     </>
   );
+}
+
+// 문장 전체를 두 줄로 나누기 (highlightBlankAnswer용)
+function splitLongSentence(text: string): { line1: string; line2: string } | null {
+  if (text.length <= MAX_CHARS_PER_LINE) return null;
+
+  const midPoint = Math.floor(text.length / 2);
+  let splitIndex = midPoint;
+
+  for (let i = 0; i <= midPoint; i++) {
+    if (text[midPoint + i] === ' ') {
+      splitIndex = midPoint + i;
+      break;
+    }
+    if (text[midPoint - i] === ' ') {
+      splitIndex = midPoint - i;
+      break;
+    }
+  }
+
+  return {
+    line1: text.slice(0, splitIndex).trim(),
+    line2: text.slice(splitIndex).trim(),
+  };
 }
 
 // =============================================================================
@@ -751,11 +854,6 @@ const Phase3Reveal: React.FC<{
 
   const revealDelay = 10;
   const showResult = frame >= revealDelay;
-
-  // 오답 fade out (but keep space)
-  const wrongOpacity = interpolate(frame, [revealDelay, revealDelay + 20], [1, 0.3], {
-    extrapolateRight: 'clamp',
-  });
 
   // 정답 문장 표시 (빈칸 → 정답 단어로 변경)
   const answerRevealOpacity = interpolate(frame, [revealDelay + 25, revealDelay + 40], [0, 1], {
@@ -793,7 +891,7 @@ const Phase3Reveal: React.FC<{
         }}
       >
         {answerRevealOpacity < 0.5
-          ? highlightBlank(sentence.targetBlank)
+          ? highlightBlank(sentence.targetBlank, sentence.blankAnswer)
           : highlightBlankAnswer(sentence.target, sentence.blankAnswer)}
       </div>
 
@@ -813,12 +911,16 @@ const Phase3Reveal: React.FC<{
           const label = ['A', 'B', 'C'][index];
           const isCorrect = choice.isCorrect;
 
+          // 오답은 정답 공개 시 즉시 숨김
+          if (!isCorrect && showResult) {
+            return null;
+          }
+
           return (
             <div
               key={index}
               style={{
                 ...CHOICE_STYLE.container,
-                opacity: isCorrect ? 1 : wrongOpacity,
                 borderColor: isCorrect && showResult ? '#4CAF50' : 'transparent',
                 boxShadow:
                   isCorrect && showResult
@@ -858,19 +960,108 @@ const Phase3Reveal: React.FC<{
   );
 };
 
-// 문장에서 정답 단어를 하이라이트하는 헬퍼 함수
+// 문장에서 정답 단어를 하이라이트하는 헬퍼 함수 (긴 문장은 두 줄로)
 function highlightBlankAnswer(sentence: string, blankAnswer: string): React.ReactNode {
   const lowerSentence = sentence.toLowerCase();
   const lowerAnswer = blankAnswer.toLowerCase();
   const index = lowerSentence.indexOf(lowerAnswer);
 
   if (index === -1) {
+    // 긴 문장이면 두 줄로 나누기
+    const split = splitLongSentence(sentence);
+    if (split) {
+      return (
+        <>
+          {split.line1}
+          <br />
+          {split.line2}
+        </>
+      );
+    }
     return sentence;
   }
 
   const before = sentence.slice(0, index);
   const match = sentence.slice(index, index + blankAnswer.length);
   const after = sentence.slice(index + blankAnswer.length);
+
+  // 긴 문장이면 두 줄로 나누기
+  if (sentence.length > MAX_CHARS_PER_LINE) {
+    const midPoint = Math.floor(sentence.length / 2);
+
+    // 정답 단어가 어느 줄에 있는지 확인
+    if (index + blankAnswer.length <= midPoint) {
+      // 정답이 첫 줄에 있음 - 첫 줄 끝에서 가장 가까운 공백에서 분리
+      let splitIndex = midPoint;
+      for (let i = 0; i <= midPoint; i++) {
+        if (sentence[midPoint + i] === ' ') {
+          splitIndex = midPoint + i;
+          break;
+        }
+        if (sentence[midPoint - i] === ' ') {
+          splitIndex = midPoint - i;
+          break;
+        }
+      }
+
+      const line1 = sentence.slice(0, splitIndex).trim();
+      const line2 = sentence.slice(splitIndex).trim();
+
+      // 첫 줄에서 정답 하이라이트
+      const line1Before = before;
+      const line1After = line1.slice(index + blankAnswer.length);
+
+      return (
+        <>
+          {line1Before}
+          <span style={{ color: '#4CAF50', fontWeight: 800 }}>{match}</span>
+          {line1After}
+          <br />
+          {line2}
+        </>
+      );
+    } else {
+      // 정답이 두번째 줄에 있음
+      let splitIndex = midPoint;
+      for (let i = 0; i <= midPoint; i++) {
+        if (sentence[midPoint + i] === ' ') {
+          splitIndex = midPoint + i;
+          break;
+        }
+        if (sentence[midPoint - i] === ' ') {
+          splitIndex = midPoint - i;
+          break;
+        }
+      }
+
+      const line1 = sentence.slice(0, splitIndex).trim();
+      const line2 = sentence.slice(splitIndex).trim();
+      const line2Index = index - splitIndex - 1; // 두번째 줄에서의 인덱스
+
+      if (line2Index >= 0 && line2Index < line2.length) {
+        const line2Before = line2.slice(0, line2Index);
+        const line2After = line2.slice(line2Index + blankAnswer.length);
+
+        return (
+          <>
+            {line1}
+            <br />
+            {line2Before}
+            <span style={{ color: '#4CAF50', fontWeight: 800 }}>{match}</span>
+            {line2After}
+          </>
+        );
+      }
+
+      return (
+        <>
+          {line1}
+          <br />
+          {line2}
+        </>
+      );
+    }
+  }
 
   return (
     <>

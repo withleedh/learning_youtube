@@ -5,7 +5,15 @@ import { runPipeline, runAllPipelines } from './index';
 import { showTopicHistory } from '../script/topic-selector';
 import type { Category } from '../script/types';
 
-const VALID_CATEGORIES: Category[] = ['conversation'];
+const VALID_CATEGORIES: Category[] = [
+  'story',
+  'conversation',
+  'news',
+  'announcement',
+  'travel_business',
+  'lesson',
+  'fairytale',
+];
 
 function printUsage() {
   console.log(`
@@ -125,6 +133,9 @@ async function main() {
     printUsage();
     process.exit(1);
   }
+
+  // Debug: Show parsed arguments
+  console.log(`🔍 DEBUG CLI: channel=${channelId}, category=${category}, topic="${topic}"`);
 
   try {
     if (runAll) {
