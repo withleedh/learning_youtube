@@ -9,16 +9,12 @@
 
 import React from 'react';
 import { Composition, registerRoot, staticFile } from 'remotion';
-import {
-  SurvivalLongform,
-  calculateSurvivalLongformDuration,
-} from './compositions/SurvivalLongform';
+import { SurvivalLongform } from './compositions/SurvivalLongform';
 import { SurvivalRoundView } from './compositions/SurvivalRoundView';
 import { SurvivalIntro } from './compositions/SurvivalIntro';
 import { SurvivalEnding } from './compositions/SurvivalEnding';
-import { HPBar } from './compositions/HPBar';
+import { TekkenHPBar } from './compositions/TekkenHPBar';
 import { FloorDrop } from './compositions/FloorDrop';
-import { RoundCounter } from './compositions/RoundCounter';
 import { DEFAULT_SURVIVAL_TIMING, calculateRoundDuration } from './survival/timing';
 import type { SurvivalScript, SurvivalCharacter } from './survival/types';
 import type { SurvivalAudioFiles } from './survival/audio';
@@ -239,7 +235,10 @@ export const RemotionRoot: React.FC = () => {
         id="SurvivalLongform-10Rounds"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         component={SurvivalLongform as any}
-        durationInFrames={calculateSurvivalLongformDuration(10, DEFAULT_SURVIVAL_TIMING, FPS)}
+        durationInFrames={calculateDynamicDuration({
+          ...activeScript,
+          rounds: activeScript.rounds.slice(0, 10),
+        })}
         fps={FPS}
         width={1920}
         height={1080}
@@ -315,21 +314,24 @@ export const RemotionRoot: React.FC = () => {
         }}
       />
 
-      {/* HPBar - HP bar preview */}
+      {/* TekkenHPBar - Tekken style HP bar preview */}
       <Composition
-        id="HPBar"
+        id="TekkenHPBar"
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        component={HPBar as any}
+        component={TekkenHPBar as any}
         durationInFrames={3 * FPS}
         fps={FPS}
-        width={400}
-        height={60}
+        width={1920}
+        height={200}
         defaultProps={{
-          character: 'cat' as SurvivalCharacter,
-          currentHP: 85,
-          previousHP: 100,
-          maxHP: 100,
-          showDamage: true,
+          catHP: 75,
+          dogHP: 85,
+          previousCatHP: 100,
+          previousDogHP: 100,
+          currentRound: 25,
+          totalRounds: 50,
+          catWins: 12,
+          dogWins: 13,
         }}
       />
 
@@ -345,36 +347,6 @@ export const RemotionRoot: React.FC = () => {
         defaultProps={{
           loser: 'dog' as SurvivalCharacter,
           durationInFrames: 2 * FPS,
-        }}
-      />
-
-      {/* RoundCounter - Round counter preview */}
-      <Composition
-        id="RoundCounter"
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        component={RoundCounter as any}
-        durationInFrames={2 * FPS}
-        fps={FPS}
-        width={300}
-        height={80}
-        defaultProps={{
-          currentRound: 45,
-          totalRounds: 50,
-        }}
-      />
-
-      {/* RoundCounter - Final stretch */}
-      <Composition
-        id="RoundCounter-FinalStretch"
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        component={RoundCounter as any}
-        durationInFrames={2 * FPS}
-        fps={FPS}
-        width={300}
-        height={80}
-        defaultProps={{
-          currentRound: 48,
-          totalRounds: 50,
         }}
       />
 

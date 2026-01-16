@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import { promises as fs } from 'fs';
 import path from 'path';
+import { GoogleGenerativeAI } from '@google/generative-ai';
 import type { Script } from '../src/script/types';
 import type { ChannelConfig } from '../src/config/types';
 import type { AudioFile } from '../src/tts/types';
@@ -10,6 +11,48 @@ import { calculateStep2Duration } from '../src/compositions/Step2';
 import { calculateStep3Duration } from '../src/compositions/Step3';
 import { calculateStep4Duration } from '../src/compositions/Step4';
 import { STEP_TRANSITION_DURATION } from '../src/compositions/StepTransition';
+import { GEMINI_MODELS, getGeminiApiKey } from '../src/config/gemini';
+
+/**
+ * LLM을 사용해 제목에 어울리는 이모지 3개 생성
+ */
+async function generateEmojisForTitle(title: string): Promise<string> {
+  try {
+    const apiKey = getGeminiApiKey();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+
+    const prompt = `다음 제목에 가장 어울리는 이모지 3개를 선택해주세요.
+제목의 감정, 상황, 분위기를 잘 표현하는 이모지를 골라주세요.
+
+제목: "${title}"
+
+규칙:
+- 이모지만 3개 출력 (공백 없이 붙여서)
+- 설명 없이 이모지만 출력
+- 예시: 😊💼✨
+
+출력:`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text().trim();
+
+    // 이모지만 추출 (3개)
+    const emojiRegex =
+      /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]/gu;
+    const emojis = response.match(emojiRegex) || [];
+
+    if (emojis.length >= 3) {
+      return emojis.slice(0, 3).join('');
+    }
+
+    // 폴백: 기본 이모지
+    return '✨💬🎯';
+  } catch (error) {
+    console.warn('⚠️ Failed to generate emojis with LLM, using fallback');
+    return '✨💬🎯';
+  }
+}
 
 async function generateUploadInfo() {
   // Parse command line arguments
@@ -130,12 +173,22 @@ async function generateUploadInfo() {
   // Write upload_info.txt
   const uploadInfoPath = path.join(baseDir, 'upload_info.txt');
   const timelineText = timeline.map((t) => `${t.time} ${t.label}`).join('\n');
-  const uploadInfo = `타임라인:
+
+  // 네이티브 제목 + LLM이 생성한 이모지 3개
+  const nativeTitle = script.metadata.title.native;
+  console.log('🎨 Generating emojis for title...');
+  const titleEmojis = await generateEmojisForTitle(nativeTitle);
+  const titleWithEmojis = `${titleEmojis} ${nativeTitle}`;
+  console.log(`   ✓ Title: ${titleWithEmojis}`);
+
+  const uploadInfo = `제목: ${titleWithEmojis}
+
+타임라인:
 ${timelineText}
 
-제목: ${script.metadata.title.target}
 토픽: ${script.metadata.topic}
 카테고리: ${script.category}
+영어 제목: ${script.metadata.title.target}
 `;
 
   await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');

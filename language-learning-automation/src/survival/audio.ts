@@ -385,7 +385,8 @@ async function generateWithGoogleTTS(
   text: string,
   languageCode: string,
   voice: VoiceEntry,
-  outputPath: string
+  outputPath: string,
+  speed: number = 1.0
 ): Promise<{ success: boolean; duration: number; error?: string }> {
   try {
     const audioBuffer = await synthesizeWithGoogle(
@@ -393,7 +394,7 @@ async function generateWithGoogleTTS(
       languageCode,
       voice.name,
       voice.gender, // Use the correct gender from voice entry
-      1.0, // Normal speed
+      speed, // Use provided speed
       voice.pitch ?? 0.0 // Use character-specific pitch or default
     );
 
@@ -473,15 +474,17 @@ export async function generatePhaseAudio(
   const filename = generateSurvivalAudioFilename(roundId, phase);
   const outputPath = path.join(outputDir, filename);
 
-  // Determine language and voice based on phase
+  // Determine language, voice, and speed based on phase
   let languageCode: string;
   let voice: VoiceEntry;
+  let speed = 1.0; // Default speed
 
   switch (phase) {
     case 'situation':
-      // Situation is in Korean
+      // Situation is in Korean with pitch 3 and speed 1.2x
       languageCode = config.koreanLanguageCode;
-      voice = config.situationVoice;
+      voice = { ...config.situationVoice, pitch: 3 };
+      speed = 1.2;
       break;
     case 'dogAnswer':
       // Dog answer is in English with dog's voice
@@ -508,7 +511,7 @@ export async function generatePhaseAudio(
   let result: { success: boolean; duration: number; error?: string };
 
   if (config.provider === 'google') {
-    result = await generateWithGoogleTTS(text, languageCode, voice, outputPath);
+    result = await generateWithGoogleTTS(text, languageCode, voice, outputPath, speed);
   } else {
     result = await generateWithEdgeTTS(text, voice.name as EdgeVoice, outputPath);
   }

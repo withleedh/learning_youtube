@@ -17,7 +17,7 @@ import {
   DEFAULT_SURVIVAL_TIMING,
   calculateRoundDuration,
 } from '../survival/timing';
-import { HPSystem, DEFAULT_HP_CONFIG } from '../survival/hp-system';
+import { HPSystem, DEFAULT_HP_CONFIG, HPSystemConfig } from '../survival/hp-system';
 import { SurvivalAudioFiles } from '../survival/audio';
 import { SurvivalIntro } from './SurvivalIntro';
 import { SurvivalRoundView } from './SurvivalRoundView';
@@ -100,18 +100,37 @@ function calculateHPStates(rounds: SurvivalScript['rounds']): Array<{
   dogHP: number;
   previousCatHP: number;
   previousDogHP: number;
+  catWins: number;
+  dogWins: number;
 }> {
-  const hpSystem = new HPSystem(DEFAULT_HP_CONFIG);
+  // Use actual round count for dynamic damage calculation
+  const hpConfig: HPSystemConfig = {
+    ...DEFAULT_HP_CONFIG,
+    totalRounds: rounds.length,
+  };
+  const hpSystem = new HPSystem(hpConfig);
   const states: Array<{
     catHP: number;
     dogHP: number;
     previousCatHP: number;
     previousDogHP: number;
+    catWins: number;
+    dogWins: number;
   }> = [];
+
+  let catWins = 0;
+  let dogWins = 0;
 
   for (let i = 0; i < rounds.length; i++) {
     const round = rounds[i];
     const loser: SurvivalCharacter = round.winner === 'cat' ? 'dog' : 'cat';
+
+    // Count wins
+    if (round.winner === 'cat') {
+      catWins++;
+    } else {
+      dogWins++;
+    }
 
     // Get HP before this round
     const beforeState = hpSystem.getHPState();
@@ -129,6 +148,8 @@ function calculateHPStates(rounds: SurvivalScript['rounds']): Array<{
       dogHP: afterState.dog.currentHP,
       previousCatHP,
       previousDogHP,
+      catWins,
+      dogWins,
     });
   }
 
@@ -234,6 +255,8 @@ export const SurvivalLongform: React.FC<SurvivalLongformProps> = ({
               dogHP={hpState.dogHP}
               previousCatHP={hpState.previousCatHP}
               previousDogHP={hpState.previousDogHP}
+              catWins={hpState.catWins}
+              dogWins={hpState.dogWins}
               audioFiles={
                 roundAudio
                   ? {

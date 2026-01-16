@@ -26,11 +26,54 @@ interface GoogleTTSResponse {
   audioContent: string; // base64 encoded audio
 }
 
-// Google Cloud TTS voice names for English
+// Google Cloud TTS voice names for English (en-US)
+// Full list of high-quality Neural2 and Studio voices
+export const GOOGLE_MALE_VOICES = [
+  'en-US-Neural2-A', // Male
+  'en-US-Neural2-D', // Male
+  'en-US-Neural2-I', // Male
+  'en-US-Neural2-J', // Male
+  // 'en-US-Studio-M', // Male Studio
+  // 'en-US-Studio-Q', // Male Studio
+  // 'en-US-Polyglot-1', // Male Polyglot
+] as const;
+
+export const GOOGLE_FEMALE_VOICES = [
+  'en-US-Neural2-C', // Female
+  'en-US-Neural2-E', // Female
+  'en-US-Neural2-F', // Female
+  'en-US-Neural2-G', // Female
+  'en-US-Neural2-H', // Female
+  // 'en-US-Studio-O', // Female Studio
+] as const;
+
+// Legacy export for backward compatibility
 export const GOOGLE_VOICES = {
-  male: 'en-US-Neural2-D', // Male neural voice
-  female: 'en-US-Neural2-F', // Female neural voice
+  male: 'en-US-Neural2-D',
+  female: 'en-US-Neural2-F',
 } as const;
+
+// Default pitch settings (semitones: -20.0 to 20.0)
+export const DEFAULT_PITCH = {
+  male: -1.0,
+  female: 2.0,
+} as const;
+
+/**
+ * Select random voice for a gender
+ */
+export function selectRandomVoice(gender: 'MALE' | 'FEMALE'): string {
+  const voices = gender === 'MALE' ? GOOGLE_MALE_VOICES : GOOGLE_FEMALE_VOICES;
+  const randomIndex = Math.floor(Math.random() * voices.length);
+  return voices[randomIndex];
+}
+
+/**
+ * Get pitch for a gender
+ */
+export function getPitchForGender(gender: 'MALE' | 'FEMALE'): number {
+  return gender === 'MALE' ? DEFAULT_PITCH.male : DEFAULT_PITCH.female;
+}
 
 /**
  * Get access token from gcloud CLI (Application Default Credentials)
@@ -110,18 +153,23 @@ export async function generateWithGoogleAtSpeed(
   speed: SpeedVariant,
   outputDir: string,
   sentenceId: number | string,
-  speaker: 'M' | 'F'
+  speaker: 'M' | 'F',
+  pitch?: number // Optional pitch override
 ): Promise<AudioGenerationResult> {
   try {
     // Convert speed variant to speaking rate
     const speakingRate = speed === '0.8x' ? 0.8 : speed === '1.0x' ? 1.0 : 1.2;
+
+    // Use provided pitch or default based on gender
+    const actualPitch = pitch ?? getPitchForGender(gender);
 
     const audioBuffer = await synthesizeWithGoogle(
       text,
       languageCode,
       voiceName,
       gender,
-      speakingRate
+      speakingRate,
+      actualPitch
     );
 
     // Ensure output directory exists
@@ -172,7 +220,8 @@ export async function generateAllSpeedsWithGoogle(
   gender: 'MALE' | 'FEMALE',
   outputDir: string,
   sentenceId: number | string,
-  speaker: 'M' | 'F'
+  speaker: 'M' | 'F',
+  pitch?: number // Optional pitch override
 ): Promise<AudioGenerationResult[]> {
   const speeds: SpeedVariant[] = ['0.8x', '1.0x', '1.2x'];
   const results: AudioGenerationResult[] = [];
@@ -186,7 +235,8 @@ export async function generateAllSpeedsWithGoogle(
       speed,
       outputDir,
       sentenceId,
-      speaker
+      speaker,
+      pitch
     );
     results.push(result);
   }

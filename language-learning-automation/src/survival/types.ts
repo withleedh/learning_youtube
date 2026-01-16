@@ -14,8 +14,8 @@ export const CHARACTER_INFO: Record<
     color: string;
   }
 > = {
-  cat: { emoji: '🐱', name: 'Cat', nameKorean: '고양이', color: '#FF9500' },
-  dog: { emoji: '🐶', name: 'Dog', nameKorean: '강아지', color: '#5856D6' },
+  cat: { emoji: '🐱', name: 'Cat', nameKorean: '나비', color: '#FF9500' },
+  dog: { emoji: '🐶', name: 'Dog', nameKorean: '백구', color: '#5856D6' },
 };
 
 // Audio duration info for dynamic timing

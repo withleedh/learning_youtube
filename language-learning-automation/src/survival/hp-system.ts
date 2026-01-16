@@ -72,28 +72,31 @@ export class HPSystem {
   /**
    * Calculate HP decrease for a round.
    *
-   * HP decreases are calculated to ensure:
-   * 1. Loser reaches near 0 HP by round 50
-   * 2. Winner maintains some HP
-   * 3. Variance in decrease amounts for drama
+   * HP decreases are calculated dynamically based on total rounds:
+   * - For 1 round: ~50 HP per loss (one hit = half HP)
+   * - For 50 rounds: ~4 HP per loss (gradual decrease)
    *
-   * Base decrease: 100 HP / ~25 losses = ~4 HP per loss
-   * Add variance: 2-5 HP per loss
+   * Formula: 100 HP / (totalRounds / 2) = base damage per loss
+   * This ensures the loser reaches near 0 HP by the final round.
    *
-   * @param roundNumber - Current round number (1-50)
+   * @param roundNumber - Current round number (1-totalRounds)
    * @param loserTotalLosses - Total losses for the loser so far
-   * @returns HP decrease amount (clamped between minHPDecrease and maxHPDecrease)
+   * @returns HP decrease amount
    */
   calculateHPDecrease(roundNumber: number, loserTotalLosses: number): number {
-    const { totalRounds, minHPDecrease, maxHPDecrease, initialHP } = this.config;
+    const { totalRounds, initialHP } = this.config;
 
-    // Base decrease: 100 HP / ~25 losses = ~4 HP per loss
+    // Dynamic base decrease based on total rounds
     // Assuming approximately half the rounds are lost by each character
-    const expectedLosses = totalRounds / 2;
+    // For 1 round: 100 / 0.5 = 200 (capped to ~50)
+    // For 10 rounds: 100 / 5 = 20
+    // For 50 rounds: 100 / 25 = 4
+    const expectedLosses = Math.max(1, totalRounds / 2);
     const baseDecrease = initialHP / expectedLosses;
 
-    // Add variance: -1 to +1
-    const variance = Math.random() * 2 - 1;
+    // Add variance: ±10% of base decrease
+    const varianceRange = baseDecrease * 0.1;
+    const variance = Math.random() * varianceRange * 2 - varianceRange;
 
     // Adjust decrease based on round progression
     // Later rounds can have slightly higher stakes for drama
@@ -106,8 +109,14 @@ export class HPSystem {
     // Calculate raw decrease with all factors
     const rawDecrease = (baseDecrease + variance) * roundProgressionFactor * lossAdjustment;
 
-    // Clamp between min and max, then round
-    const clampedDecrease = Math.max(minHPDecrease, Math.min(maxHPDecrease, rawDecrease));
+    // Dynamic min/max based on total rounds
+    // For few rounds: allow larger damage (min 30, max 60 for 1 round)
+    // For many rounds: smaller damage (min 2, max 5 for 50 rounds)
+    const dynamicMin = Math.max(2, Math.floor(baseDecrease * 0.6));
+    const dynamicMax = Math.max(5, Math.ceil(baseDecrease * 1.2));
+
+    // Clamp between dynamic min and max, then round
+    const clampedDecrease = Math.max(dynamicMin, Math.min(dynamicMax, rawDecrease));
 
     return Math.round(clampedDecrease);
   }

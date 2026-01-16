@@ -33,9 +33,9 @@
   },
 
   "tts": {
-    "provider": "edge",
-    "maleVoice": "en-US-GuyNeural",
-    "femaleVoice": "en-US-JennyNeural",
+    "provider": "google",
+    "maleVoice": "en-US-Neural2-D",
+    "femaleVoice": "en-US-Neural2-F",
     "targetLanguageCode": "en-US",
     "speed": 1.0
   },

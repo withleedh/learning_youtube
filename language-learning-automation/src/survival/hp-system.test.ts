@@ -69,18 +69,22 @@ describe('HPSystem', () => {
     });
 
     it('should respect custom min/max HP decrease config', () => {
+      // With dynamic calculation, min/max are calculated based on totalRounds
+      // For 50 rounds: baseDecrease = 100/25 = 4, dynamicMin = 2, dynamicMax = 5
       const customConfig: HPSystemConfig = {
         initialHP: 100,
         totalRounds: 50,
-        minHPDecrease: 5,
+        minHPDecrease: 5, // These are now fallback values
         maxHPDecrease: 10,
       };
       const customSystem = new HPSystem(customConfig);
 
       for (let i = 0; i < 100; i++) {
         const decrease = customSystem.calculateHPDecrease(1, 0);
-        expect(decrease).toBeGreaterThanOrEqual(5);
-        expect(decrease).toBeLessThanOrEqual(10);
+        // Dynamic calculation: baseDecrease = 100/25 = 4
+        // dynamicMin = max(2, 4*0.6) = 2, dynamicMax = max(5, 4*1.2) = 5
+        expect(decrease).toBeGreaterThanOrEqual(2);
+        expect(decrease).toBeLessThanOrEqual(5);
       }
     });
   });
@@ -140,11 +144,11 @@ describe('HPSystem', () => {
     });
 
     it('should clamp HP to 0 when decrease would make it negative', () => {
-      // Create a system with low initial HP
+      // Create a system with low initial HP and few rounds for high damage
       const lowHPConfig: HPSystemConfig = {
         initialHP: 5,
-        totalRounds: 50,
-        minHPDecrease: 10, // Decrease is larger than initial HP
+        totalRounds: 1, // 1 round = high damage (100/0.5 = 200, capped)
+        minHPDecrease: 10,
         maxHPDecrease: 15,
       };
       const lowHPSystem = new HPSystem(lowHPConfig);

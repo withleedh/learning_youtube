@@ -1,11 +1,11 @@
 /**
- * SurvivalIntro Component
+ * SurvivalIntro Component - Street Fighter Style
  *
- * Renders the intro sequence for survival quiz:
- * - Game title with dramatic animation
- * - Both characters side by side
- * - HP bars at 100 for both
- * - Rules text
+ * Renders a dramatic VS screen inspired by fighting games:
+ * - Split screen with diagonal divide
+ * - Characters on opposite sides with dramatic lighting
+ * - Electric VS effect in the center
+ * - Dramatic entrance animations
  *
  * Requirements: 7.1, 7.2, 7.3, 7.5
  */
@@ -13,7 +13,6 @@
 import React from 'react';
 import { AbsoluteFill, useCurrentFrame, useVideoConfig, interpolate, spring } from 'remotion';
 import { CHARACTER_INFO } from '../survival/types';
-import { HPBar } from './HPBar';
 
 // =============================================================================
 // Types
@@ -46,7 +45,7 @@ export interface SurvivalIntroStyle {
 // =============================================================================
 
 const DEFAULT_STYLE: Required<SurvivalIntroStyle> = {
-  backgroundColor: '#1A1A2E',
+  backgroundColor: '#0A0A15',
   titleColor: '#FFFFFF',
   catColor: CHARACTER_INFO.cat.color,
   dogColor: CHARACTER_INFO.dog.color,
@@ -57,211 +56,406 @@ const DEFAULT_STYLE: Required<SurvivalIntroStyle> = {
 // =============================================================================
 
 /**
- * Animated Title - Main game title with dramatic entrance
+ * Dramatic Background with split screen effect
  */
-const AnimatedTitle: React.FC<{
-  title: string;
-  subtitle: string;
-  titleColor: string;
-}> = ({ title, subtitle, titleColor }) => {
+const DramaticBackground: React.FC<{
+  catColor: string;
+  dogColor: string;
+}> = ({ catColor, dogColor }) => {
+  const frame = useCurrentFrame();
+
+  // Animated gradient intensity
+  const pulseIntensity = 0.3 + Math.sin(frame * 0.08) * 0.15;
+
+  // Lightning flash effect
+  const lightningFlash = frame % 45 < 3 ? 0.3 : 0;
+
+  return (
+    <>
+      {/* Base dark background */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: '#0A0A15',
+        }}
+      />
+
+      {/* Cat side gradient (left) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '55%',
+          height: '100%',
+          background: `linear-gradient(135deg, ${catColor}${Math.round(pulseIntensity * 255)
+            .toString(16)
+            .padStart(2, '0')} 0%, transparent 70%)`,
+          clipPath: 'polygon(0 0, 100% 0, 70% 100%, 0 100%)',
+        }}
+      />
+
+      {/* Dog side gradient (right) */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          width: '55%',
+          height: '100%',
+          background: `linear-gradient(225deg, ${dogColor}${Math.round(pulseIntensity * 255)
+            .toString(16)
+            .padStart(2, '0')} 0%, transparent 70%)`,
+          clipPath: 'polygon(30% 0, 100% 0, 100% 100%, 0 100%)',
+        }}
+      />
+
+      {/* Center diagonal line */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: '50%',
+          width: 8,
+          height: '100%',
+          background: `linear-gradient(180deg, #FFD700 0%, #FF6B00 50%, #FFD700 100%)`,
+          transform: 'translateX(-50%) skewX(-15deg)',
+          boxShadow: '0 0 30px #FFD700, 0 0 60px #FF6B00',
+        }}
+      />
+
+      {/* Lightning flash overlay */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: `rgba(255, 255, 255, ${lightningFlash})`,
+          pointerEvents: 'none',
+        }}
+      />
+
+      {/* Scan lines effect */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: `repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 0, 0, 0.1) 2px,
+            rgba(0, 0, 0, 0.1) 4px
+          )`,
+          pointerEvents: 'none',
+        }}
+      />
+    </>
+  );
+};
+
+/**
+ * Character Panel - One side of the VS screen
+ */
+const CharacterPanel: React.FC<{
+  character: 'cat' | 'dog';
+  side: 'left' | 'right';
+  color: string;
+}> = ({ character, side, color }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
+  const info = CHARACTER_INFO[character];
 
-  // Title entrance animation
-  const titleScale = spring({
-    frame,
+  // Entrance animation
+  const entranceDelay = side === 'left' ? 10 : 15;
+  const slideX = spring({
+    frame: frame - entranceDelay,
     fps,
-    config: { damping: 10, stiffness: 100 },
-    from: 0,
-    to: 1,
+    config: { damping: 15, stiffness: 100 },
+    from: side === 'left' ? -400 : 400,
+    to: 0,
   });
 
-  const titleOpacity = interpolate(frame, [0, 15], [0, 1], { extrapolateRight: 'clamp' });
+  const opacity = interpolate(frame, [entranceDelay, entranceDelay + 15], [0, 1], {
+    extrapolateRight: 'clamp',
+  });
 
-  // Subtitle entrance (delayed)
-  const subtitleOpacity = interpolate(frame, [20, 35], [0, 1], { extrapolateRight: 'clamp' });
-  const subtitleY = interpolate(frame, [20, 40], [20, 0], { extrapolateRight: 'clamp' });
+  // Breathing/idle animation
+  const breathe = Math.sin(frame * 0.1) * 8;
+  const shadowPulse = 0.5 + Math.sin(frame * 0.15) * 0.3;
 
-  // Glow pulse effect
-  const glowIntensity = 0.5 + Math.sin(frame * 0.1) * 0.3;
+  // Character shake on entrance
+  const shake = frame < entranceDelay + 20 ? Math.sin(frame * 2) * 3 : 0;
 
   return (
     <div
       style={{
+        position: 'absolute',
+        top: 0,
+        [side]: 0,
+        width: '45%',
+        height: '100%',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        gap: 20,
+        justifyContent: 'center',
+        opacity,
+        transform: `translateX(${slideX + shake}px)`,
       }}
     >
-      {/* Main title */}
+      {/* Character emoji - HUGE */}
       <div
         style={{
-          fontSize: 72,
-          fontWeight: 900,
-          color: titleColor,
-          fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-          textAlign: 'center',
-          transform: `scale(${titleScale})`,
-          opacity: titleOpacity,
-          textShadow: `
-            0 0 ${20 * glowIntensity}px #FFD700,
-            0 0 ${40 * glowIntensity}px #FFD700,
-            0 4px 20px rgba(0, 0, 0, 0.5)
-          `,
-          letterSpacing: 4,
+          fontSize: 280,
+          transform: `translateY(${breathe}px) ${side === 'right' ? 'scaleX(-1)' : ''}`,
+          filter: `drop-shadow(0 0 ${40 * shadowPulse}px ${color}) drop-shadow(0 20px 40px rgba(0,0,0,0.8))`,
+          marginBottom: -40,
         }}
       >
-        {title}
+        {info.emoji}
       </div>
 
-      {/* Subtitle */}
+      {/* Character name plate */}
       <div
         style={{
-          fontSize: 32,
-          fontWeight: 600,
-          color: '#FF4444',
-          fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-          textAlign: 'center',
-          opacity: subtitleOpacity,
-          transform: `translateY(${subtitleY}px)`,
-          textShadow: '0 0 20px #FF4444, 0 2px 10px rgba(0, 0, 0, 0.5)',
+          background: `linear-gradient(90deg, transparent, ${color}CC, transparent)`,
+          padding: '15px 60px',
+          marginTop: 20,
         }}
       >
-        {subtitle}
+        <div
+          style={{
+            fontSize: 42,
+            fontWeight: 900,
+            color: '#FFFFFF',
+            fontFamily: 'Impact, Pretendard, sans-serif',
+            textTransform: 'uppercase',
+            letterSpacing: 8,
+            textShadow: `0 0 20px ${color}, 0 4px 10px rgba(0,0,0,0.8)`,
+          }}
+        >
+          {info.nameKorean}
+        </div>
+      </div>
+
+      {/* Stats/Title */}
+      <div
+        style={{
+          fontSize: 20,
+          fontWeight: 600,
+          color: color,
+          fontFamily: 'Pretendard, sans-serif',
+          marginTop: 15,
+          letterSpacing: 4,
+          textShadow: `0 0 10px ${color}`,
+        }}
+      >
+        {/* {character === 'cat' ? '🎀 CHALLENGER' : '🔥 DEFENDER'} */}
       </div>
     </div>
   );
 };
 
 /**
- * Character Introduction - Shows both characters with their HP
+ * Electric VS Badge - Center dramatic VS
  */
-const CharacterIntroduction: React.FC<{
-  catColor: string;
-  dogColor: string;
-}> = ({ catColor, dogColor }) => {
+const ElectricVS: React.FC = () => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Cat entrance (from left)
-  const catX = spring({
-    frame: frame - 30,
-    fps,
-    config: { damping: 12, stiffness: 80 },
-    from: -200,
-    to: 0,
-  });
-  const catOpacity = interpolate(frame, [30, 45], [0, 1], { extrapolateRight: 'clamp' });
-
-  // Dog entrance (from right)
-  const dogX = spring({
-    frame: frame - 35,
-    fps,
-    config: { damping: 12, stiffness: 80 },
-    from: 200,
-    to: 0,
-  });
-  const dogOpacity = interpolate(frame, [35, 50], [0, 1], { extrapolateRight: 'clamp' });
-
-  // VS text entrance
+  // VS entrance with impact
+  const vsDelay = 35;
   const vsScale = spring({
-    frame: frame - 50,
+    frame: frame - vsDelay,
     fps,
-    config: { damping: 8, stiffness: 200 },
-    from: 0,
+    config: { damping: 8, stiffness: 300 },
+    from: 3,
     to: 1,
   });
-  const vsOpacity = interpolate(frame, [50, 60], [0, 1], { extrapolateRight: 'clamp' });
 
-  // Bounce animation for characters
-  const catBounce = Math.sin(frame * 0.15) * 5;
-  const dogBounce = Math.sin(frame * 0.15 + Math.PI) * 5;
+  const vsOpacity = interpolate(frame, [vsDelay, vsDelay + 5], [0, 1], {
+    extrapolateRight: 'clamp',
+  });
+
+  // Electric pulse effect
+  const electricPulse = Math.sin(frame * 0.3) * 0.3 + 0.7;
+  const electricOffset = Math.sin(frame * 0.5) * 3;
+
+  // Rotation wobble
+  const rotation = frame < vsDelay + 30 ? Math.sin(frame * 0.8) * 5 : 0;
+
+  if (frame < vsDelay) return null;
 
   return (
     <div
       style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        gap: 60,
-        marginTop: 40,
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        transform: `translate(-50%, -50%) scale(${vsScale}) rotate(${rotation}deg)`,
+        opacity: vsOpacity,
+        zIndex: 100,
       }}
     >
-      {/* Cat */}
+      {/* Electric glow background */}
       <div
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 15,
-          opacity: catOpacity,
-          transform: `translateX(${catX}px) translateY(${catBounce}px)`,
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          width: 300,
+          height: 300,
+          transform: 'translate(-50%, -50%)',
+          background: `radial-gradient(circle, rgba(255,215,0,${electricPulse * 0.5}) 0%, transparent 70%)`,
+          filter: 'blur(20px)',
         }}
-      >
-        <div
-          style={{
-            fontSize: 120,
-            textShadow: `0 0 30px ${catColor}66`,
-          }}
-        >
-          {CHARACTER_INFO.cat.emoji}
-        </div>
-        <div
-          style={{
-            fontSize: 28,
-            fontWeight: 700,
-            color: catColor,
-            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-          }}
-        >
-          {CHARACTER_INFO.cat.nameKorean}
-        </div>
-      </div>
+      />
 
-      {/* VS */}
+      {/* VS Text with electric effect */}
       <div
         style={{
-          fontSize: 64,
+          fontSize: 180,
           fontWeight: 900,
-          color: '#FFD700',
           fontFamily: 'Impact, sans-serif',
-          opacity: vsOpacity,
-          transform: `scale(${vsScale})`,
-          textShadow: '0 0 20px #FFD700, 0 4px 15px rgba(0, 0, 0, 0.5)',
+          color: '#FFD700',
+          textShadow: `
+            ${electricOffset}px 0 0 #FF6B00,
+            ${-electricOffset}px 0 0 #FFAA00,
+            0 0 30px #FFD700,
+            0 0 60px #FF6B00,
+            0 0 90px #FFD700,
+            0 8px 20px rgba(0,0,0,0.8)
+          `,
+          letterSpacing: -10,
+          WebkitTextStroke: '3px #FF6B00',
         }}
       >
         VS
       </div>
 
-      {/* Dog */}
+      {/* Electric sparks */}
+      {[...Array(6)].map((_, i) => {
+        const angle = (i / 6) * Math.PI * 2 + frame * 0.1;
+        const radius = 100 + Math.sin(frame * 0.2 + i) * 20;
+        const x = Math.cos(angle) * radius;
+        const y = Math.sin(angle) * radius;
+        const sparkOpacity = 0.5 + Math.sin(frame * 0.5 + i * 2) * 0.5;
+
+        return (
+          <div
+            key={i}
+            style={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: '#FFFFFF',
+              transform: `translate(calc(-50% + ${x}px), calc(-50% + ${y}px))`,
+              opacity: sparkOpacity,
+              boxShadow: '0 0 10px #FFD700, 0 0 20px #FFFFFF',
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+};
+
+/**
+ * Title Banner - Top dramatic title
+ */
+const TitleBanner: React.FC<{
+  title: string;
+  subtitle: string;
+}> = ({ title, subtitle }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  // Title drop animation
+  const titleY = spring({
+    frame: frame - 5,
+    fps,
+    config: { damping: 12, stiffness: 100 },
+    from: -100,
+    to: 0,
+  });
+
+  const titleOpacity = interpolate(frame, [5, 20], [0, 1], { extrapolateRight: 'clamp' });
+
+  // Subtitle slide
+  const subtitleOpacity = interpolate(frame, [60, 75], [0, 1], { extrapolateRight: 'clamp' });
+  const subtitleY = interpolate(frame, [60, 80], [30, 0], { extrapolateRight: 'clamp' });
+
+  // Glow pulse
+  const glowPulse = 0.7 + Math.sin(frame * 0.1) * 0.3;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 120,
+        left: 0,
+        right: 0,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        zIndex: 50,
+      }}
+    >
+      {/* Main title */}
       <div
         style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          gap: 15,
-          opacity: dogOpacity,
-          transform: `translateX(${dogX}px) translateY(${dogBounce}px)`,
+          fontSize: 84,
+          fontWeight: 900,
+          color: '#FFFFFF',
+          fontFamily: 'Impact, Pretendard, sans-serif',
+          textTransform: 'uppercase',
+          letterSpacing: 12,
+          opacity: titleOpacity,
+          transform: `translateY(${titleY}px)`,
+          textShadow: `
+            0 0 ${30 * glowPulse}px #FFD700,
+            0 0 ${60 * glowPulse}px #FF6B00,
+            0 6px 20px rgba(0,0,0,0.8)
+          `,
+          WebkitTextStroke: '2px #FFD700',
+        }}
+      >
+        {title}
+      </div>
+
+      {/* Subtitle - danger warning style */}
+      <div
+        style={{
+          marginTop: 20,
+          padding: '10px 40px',
+          background: 'linear-gradient(90deg, transparent, rgba(255,0,0,0.8), transparent)',
+          opacity: subtitleOpacity,
+          transform: `translateY(${subtitleY}px)`,
         }}
       >
         <div
           style={{
-            fontSize: 120,
-            textShadow: `0 0 30px ${dogColor}66`,
-          }}
-        >
-          {CHARACTER_INFO.dog.emoji}
-        </div>
-        <div
-          style={{
             fontSize: 28,
             fontWeight: 700,
-            color: dogColor,
-            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
+            color: '#FFFFFF',
+            fontFamily: 'Pretendard, sans-serif',
+            letterSpacing: 6,
+            textShadow: '0 0 20px #FF0000',
           }}
         >
-          {CHARACTER_INFO.dog.nameKorean}
+          ⚠️ {subtitle} ⚠️
         </div>
       </div>
     </div>
@@ -269,126 +463,357 @@ const CharacterIntroduction: React.FC<{
 };
 
 /**
- * Rules Text - Shows game rules
+ * Tekken-style FIGHT Transition
+ * - Diagonal split opens from center
+ * - Lava/fire flows outward
+ * - Giant FIGHT text appears
  */
-const RulesText: React.FC = () => {
-  const frame = useCurrentFrame();
-
-  const opacity = interpolate(frame, [70, 85], [0, 1], { extrapolateRight: 'clamp' });
-  const y = interpolate(frame, [70, 90], [30, 0], { extrapolateRight: 'clamp' });
-
-  const rules = [
-    '🎯 50라운드 영어 퀴즈 대결!',
-    '❌ 틀리면 바닥이 열립니다!',
-    '💔 HP가 0이 되면 패배!',
-  ];
-
-  return (
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 15,
-        marginTop: 50,
-        opacity,
-        transform: `translateY(${y}px)`,
-      }}
-    >
-      {rules.map((rule, index) => (
-        <div
-          key={index}
-          style={{
-            fontSize: 24,
-            fontWeight: 600,
-            color: '#FFFFFF',
-            fontFamily: 'Pretendard, -apple-system, BlinkMacSystemFont, sans-serif',
-            textShadow: '0 2px 10px rgba(0, 0, 0, 0.5)',
-            opacity: interpolate(frame, [70 + index * 10, 85 + index * 10], [0, 1], {
-              extrapolateRight: 'clamp',
-            }),
-          }}
-        >
-          {rule}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-/**
- * HP Bars Display - Shows both HP bars at 100
- */
-const HPBarsDisplay: React.FC = () => {
-  const frame = useCurrentFrame();
-
-  const opacity = interpolate(frame, [90, 105], [0, 1], { extrapolateRight: 'clamp' });
-
-  return (
-    <div
-      style={{
-        position: 'absolute',
-        top: 40,
-        left: 0,
-        right: 0,
-        display: 'flex',
-        justifyContent: 'space-between',
-        padding: '0 40px',
-        opacity,
-      }}
-    >
-      <HPBar character="cat" currentHP={100} position="left" />
-      <HPBar character="dog" currentHP={100} position="right" />
-    </div>
-  );
-};
-
-/**
- * Start Countdown - "Ready? START!" text
- */
-const StartCountdown: React.FC<{
+const TekkenFightTransition: React.FC<{
   durationInFrames: number;
 }> = ({ durationInFrames }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
-  // Show in last 2 seconds
-  const showFrom = durationInFrames - fps * 2;
+  // FIGHT starts 2 seconds before end
+  const fightStartFrame = durationInFrames - fps * 2;
+  const localFrame = frame - fightStartFrame;
+  const showFight = frame >= fightStartFrame;
 
-  if (frame < showFrom) return null;
+  if (!showFight) return null;
 
-  const localFrame = frame - showFrom;
+  // Animation phases (in local frames)
+  const splitProgress = Math.min(localFrame / 15, 1); // 0.5초 동안 갈라짐
+  const lavaProgress = Math.min(Math.max(localFrame - 8, 0) / 20, 1); // 용암 퍼짐
+  const textProgress = Math.min(Math.max(localFrame - 12, 0) / 10, 1); // 텍스트 등장
 
-  const scale = spring({
-    frame: localFrame,
-    fps,
-    config: { damping: 8, stiffness: 300 },
-    from: 2,
-    to: 1,
+  // Easing functions
+  const easeOutQuart = (t: number) => 1 - Math.pow(1 - t, 4);
+  const easeOutBack = (t: number) => {
+    const c1 = 1.70158;
+    const c3 = c1 + 1;
+    return 1 + c3 * Math.pow(t - 1, 3) + c1 * Math.pow(t - 1, 2);
+  };
+
+  const easedSplit = easeOutQuart(splitProgress);
+  const easedLava = easeOutQuart(lavaProgress);
+  const easedText = easeOutBack(textProgress);
+
+  // Split opening distance
+  const splitDistance = easedSplit * 960; // 화면 절반
+
+  // Lava particles - 더 많이, 더 넓게
+  const lavaParticles = Array.from({ length: 100 }, (_, i) => {
+    const side = i % 2 === 0 ? -1 : 1;
+    const speed = 0.3 + (i % 7) * 0.4;
+    const yOffset = (i % 12) * 80 - 480; // 더 넓은 Y 범위 (-480 ~ +480)
+    const delay = (i % 8) * 1.5;
+    const particleProgress = Math.max(0, (localFrame - 6 - delay) / 30);
+    const x = side * particleProgress * speed * 800; // 더 멀리 퍼짐
+    const y = yOffset + Math.sin(particleProgress * 4 + i) * 40;
+    const opacity = Math.max(0, 1 - particleProgress * 0.7);
+    const size = 8 + (i % 5) * 10;
+    const hue = 15 + (i % 4) * 12; // Orange to red
+    return { x, y, opacity, size, hue };
   });
 
-  const opacity = interpolate(localFrame, [0, 10], [0, 1], { extrapolateRight: 'clamp' });
+  // Extra spark particles - 작은 불꽃들
+  const sparkParticles = Array.from({ length: 80 }, (_, i) => {
+    const angle = (i / 80) * Math.PI * 2;
+    const speed = 1 + (i % 5) * 0.8;
+    const delay = (i % 10) * 1;
+    const particleProgress = Math.max(0, (localFrame - 10 - delay) / 35);
+    const radius = particleProgress * speed * 600;
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius * 0.6; // 타원형으로 퍼짐
+    const opacity = Math.max(0, 1 - particleProgress * 0.8);
+    const size = 4 + (i % 3) * 4;
+    return { x, y, opacity, size };
+  });
 
-  // Flash effect
-  const flash = Math.sin(localFrame * 0.5) > 0 ? 1 : 0.7;
+  // Screen shake
+  const shakeX = localFrame < 20 ? Math.sin(localFrame * 8) * (20 - localFrame) * 0.5 : 0;
+  const shakeY = localFrame < 20 ? Math.cos(localFrame * 10) * (20 - localFrame) * 0.3 : 0;
 
   return (
     <div
       style={{
         position: 'absolute',
-        bottom: 100,
-        left: '50%',
-        transform: `translateX(-50%) scale(${scale})`,
-        fontSize: 48,
-        fontWeight: 900,
-        color: '#00FF00',
-        fontFamily: 'Impact, sans-serif',
-        opacity: opacity * flash,
-        textShadow: '0 0 30px #00FF00, 0 0 60px #00FF00, 0 4px 20px rgba(0, 0, 0, 0.5)',
-        letterSpacing: 8,
+        inset: 0,
+        zIndex: 200,
+        transform: `translate(${shakeX}px, ${shakeY}px)`,
       }}
     >
-      START!
+      {/* Dark overlay */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: `rgba(0, 0, 0, ${0.7 * splitProgress})`,
+        }}
+      />
+
+      {/* Left diagonal panel sliding left */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          left: 0,
+          width: '60%',
+          height: '100%',
+          background: 'linear-gradient(135deg, #1a0a00 0%, #0a0000 100%)',
+          clipPath: 'polygon(0 0, 100% 0, 70% 100%, 0 100%)',
+          transform: `translateX(${-splitDistance}px)`,
+          boxShadow: 'inset -20px 0 60px rgba(255, 100, 0, 0.5)',
+        }}
+      />
+
+      {/* Right diagonal panel sliding right */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 0,
+          right: 0,
+          width: '60%',
+          height: '100%',
+          background: 'linear-gradient(225deg, #1a0a00 0%, #0a0000 100%)',
+          clipPath: 'polygon(30% 0, 100% 0, 100% 100%, 0 100%)',
+          transform: `translateX(${splitDistance}px)`,
+          boxShadow: 'inset 20px 0 60px rgba(255, 100, 0, 0.5)',
+        }}
+      />
+
+      {/* Center lava crack glow */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          width: 20 + easedLava * 100,
+          height: '120%',
+          transform: 'translate(-50%, -50%) skewX(-15deg)',
+          background: `linear-gradient(180deg, 
+            transparent 0%, 
+            rgba(255, 100, 0, ${0.8 * easedLava}) 20%, 
+            rgba(255, 200, 0, ${0.9 * easedLava}) 50%, 
+            rgba(255, 100, 0, ${0.8 * easedLava}) 80%, 
+            transparent 100%)`,
+          filter: 'blur(10px)',
+        }}
+      />
+
+      {/* Lava/fire particles */}
+      {lavaParticles.map((p, i) => (
+        <div
+          key={i}
+          style={{
+            position: 'absolute',
+            top: `calc(50% + ${p.y}px)`,
+            left: `calc(50% + ${p.x}px)`,
+            width: p.size,
+            height: p.size,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, hsl(${p.hue}, 100%, 60%) 0%, hsl(${p.hue + 10}, 100%, 40%) 100%)`,
+            opacity: p.opacity,
+            boxShadow: `0 0 ${p.size}px hsl(${p.hue}, 100%, 50%), 0 0 ${p.size * 2}px hsl(${p.hue}, 80%, 40%)`,
+            filter: 'blur(1px)',
+          }}
+        />
+      ))}
+
+      {/* Extra spark particles - 작은 불꽃들 */}
+      {sparkParticles.map((p, i) => (
+        <div
+          key={`spark-${i}`}
+          style={{
+            position: 'absolute',
+            top: `calc(50% + ${p.y}px)`,
+            left: `calc(50% + ${p.x}px)`,
+            width: p.size,
+            height: p.size,
+            borderRadius: '50%',
+            background: `radial-gradient(circle, #FFFFFF 0%, #FFAA00 50%, #FF6600 100%)`,
+            opacity: p.opacity,
+            boxShadow: `0 0 ${p.size * 2}px #FF8800, 0 0 ${p.size * 4}px #FF4400`,
+          }}
+        />
+      ))}
+
+      {/* Fire streaks from center - 더 많이 */}
+      {Array.from({ length: 24 }, (_, i) => {
+        const side = i < 12 ? -1 : 1;
+        const yPos = (i % 12) * 90 - 495;
+        const streakProgress = Math.max(0, (localFrame - 8 - (i % 4) * 1.5) / 18);
+        const width = streakProgress * 900;
+        const opacity = Math.max(0, 1 - streakProgress * 0.5);
+
+        return (
+          <div
+            key={`streak-${i}`}
+            style={{
+              position: 'absolute',
+              top: `calc(50% + ${yPos}px)`,
+              left: side === -1 ? `calc(50% - ${width}px)` : '50%',
+              width: width,
+              height: 4 + (i % 3) * 2,
+              background: `linear-gradient(${side === -1 ? '270deg' : '90deg'}, 
+                rgba(255, 200, 0, ${opacity}) 0%, 
+                rgba(255, 100, 0, ${opacity * 0.5}) 50%, 
+                transparent 100%)`,
+              filter: 'blur(2px)',
+            }}
+          />
+        );
+      })}
+
+      {/* FIGHT! text - HUGE */}
+      <div
+        style={{
+          position: 'absolute',
+          top: '50%',
+          left: '50%',
+          transform: `translate(-50%, -50%) scale(${easedText * 1})`,
+          opacity: textProgress > 0 ? 1 : 0,
+        }}
+      >
+        {/* Glow background */}
+        <div
+          style={{
+            position: 'absolute',
+            top: '50%',
+            left: '50%',
+            width: 800,
+            height: 400,
+            transform: 'translate(-50%, -50%)',
+            background: 'radial-gradient(ellipse, rgba(255, 150, 0, 0.6) 0%, transparent 70%)',
+            filter: 'blur(40px)',
+          }}
+        />
+
+        {/* Main FIGHT text */}
+        <div
+          style={{
+            fontSize: 220,
+            fontWeight: 900,
+            fontFamily: 'Impact, sans-serif',
+            color: '#FFFFFF',
+            textShadow: `
+              0 0 20px #FF6600,
+              0 0 40px #FF4400,
+              0 0 80px #FF2200,
+              0 0 120px #FF0000,
+              0 10px 40px rgba(0,0,0,0.8),
+              4px 4px 0 #FF6600,
+              -4px -4px 0 #FF6600
+            `,
+            letterSpacing: 30,
+            WebkitTextStroke: '4px #FF4400',
+          }}
+        >
+          FIGHT!
+        </div>
+      </div>
+
+      {/* Flash effect on impact */}
+      {localFrame >= 12 && localFrame < 18 && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            background: `rgba(255, 200, 100, ${0.5 * (1 - (localFrame - 12) / 6)})`,
+          }}
+        />
+      )}
+    </div>
+  );
+};
+
+/**
+ * Bottom Info Bar - Round info and rules
+ */
+const BottomInfoBar: React.FC<{
+  durationInFrames: number;
+}> = ({ durationInFrames }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  // Slide up animation
+  const barY = spring({
+    frame: frame - 80,
+    fps,
+    config: { damping: 15, stiffness: 80 },
+    from: 100,
+    to: 0,
+  });
+
+  const barOpacity = interpolate(frame, [80, 95], [0, 1], { extrapolateRight: 'clamp' });
+
+  // Hide info bar when FIGHT appears
+  const fightStartFrame = durationInFrames - fps * 2;
+  const hideBar = frame >= fightStartFrame;
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        zIndex: 50,
+      }}
+    >
+      {/* Info bar */}
+      {!hideBar && (
+        <div
+          style={{
+            display: 'flex',
+            justifyContent: 'center',
+            gap: 60,
+            padding: '25px 0',
+            background: 'linear-gradient(180deg, transparent, rgba(0,0,0,0.9))',
+            opacity: barOpacity,
+            transform: `translateY(${barY}px)`,
+          }}
+        >
+          {/* <InfoItem icon="🎯" text="50 ROUNDS" />
+          <InfoItem icon="💔" text="HP SYSTEM" />
+          <InfoItem icon="⚡" text="SURVIVAL MODE" /> */}
+        </div>
+      )}
+    </div>
+  );
+};
+
+/**
+ * Info Item - Single info badge
+ */
+const InfoItem: React.FC<{
+  icon: string;
+  text: string;
+}> = ({ icon, text }) => {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 12,
+        padding: '10px 25px',
+        background: 'rgba(255,255,255,0.1)',
+        borderRadius: 8,
+        border: '1px solid rgba(255,255,255,0.2)',
+      }}
+    >
+      <span style={{ fontSize: 24 }}>{icon}</span>
+      <span
+        style={{
+          fontSize: 18,
+          fontWeight: 700,
+          color: '#FFFFFF',
+          fontFamily: 'Pretendard, sans-serif',
+          letterSpacing: 2,
+        }}
+      >
+        {text}
+      </span>
     </div>
   );
 };
@@ -398,16 +823,72 @@ const StartCountdown: React.FC<{
 // =============================================================================
 
 /**
- * SurvivalIntro - Renders the intro sequence
+ * Film Grain & Vignette Overlay
+ */
+const FilmGrainOverlay: React.FC = () => {
+  const frame = useCurrentFrame();
+
+  // Animated grain offset for realistic effect
+  const grainOffset = frame * 100;
+
+  return (
+    <>
+      {/* Film grain noise */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          opacity: 0.08,
+          background: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`,
+          backgroundPosition: `${grainOffset % 200}px ${(grainOffset * 0.7) % 200}px`,
+          pointerEvents: 'none',
+          zIndex: 300,
+          mixBlendMode: 'overlay',
+        }}
+      />
+
+      {/* Vignette effect */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.6) 100%)',
+          pointerEvents: 'none',
+          zIndex: 301,
+        }}
+      />
+
+      {/* Subtle scan lines */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          background: `repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 2px,
+            rgba(0, 0, 0, 0.03) 2px,
+            rgba(0, 0, 0, 0.03) 4px
+          )`,
+          pointerEvents: 'none',
+          zIndex: 302,
+        }}
+      />
+    </>
+  );
+};
+
+/**
+ * SurvivalIntro - Street Fighter Style VS Screen
  *
  * Animation sequence:
- * 1. Title entrance with glow
- * 2. Subtitle entrance
+ * 1. Background split effect appears
+ * 2. Title drops from top
  * 3. Characters slide in from sides
- * 4. VS text appears
- * 5. Rules text fades in
- * 6. HP bars appear
- * 7. "START!" countdown
+ * 4. VS badge impacts center with electric effect
+ * 5. Subtitle warning appears
+ * 6. Bottom info bar slides up
+ * 7. "FIGHT!" appears before transition
  */
 export const SurvivalIntro: React.FC<SurvivalIntroProps> = ({
   title,
@@ -415,58 +896,112 @@ export const SurvivalIntro: React.FC<SurvivalIntroProps> = ({
   durationInFrames,
   style: customStyle,
 }) => {
-  // Merge custom style with defaults
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
   const style = { ...DEFAULT_STYLE, ...customStyle };
+
+  // 2. Camera work - zoom effect (0.5초 = 15프레임 안에 완료)
+  const zoomStart = spring({
+    frame,
+    fps,
+    config: { damping: 20, stiffness: 300 },
+    from: 1.1,
+    to: 1.0,
+  });
+
+  // Slight zoom in during VS reveal
+  const vsZoom = frame > 35 && frame < 60 ? 1 + Math.sin((frame - 35) * 0.15) * 0.03 : 1;
+
+  // Zoom out slightly before FIGHT
+  const fightStartFrame = durationInFrames - fps * 2;
+  const preFightZoom =
+    frame > fightStartFrame - 30 && frame < fightStartFrame
+      ? interpolate(frame, [fightStartFrame - 30, fightStartFrame], [1, 0.95], {
+          extrapolateRight: 'clamp',
+        })
+      : frame >= fightStartFrame
+        ? 0.95
+        : 1;
+
+  const totalZoom = zoomStart * vsZoom * preFightZoom;
+
+  // 6. Color grading - stronger tints on each side
+  const catTintOpacity = 0.15 + Math.sin(frame * 0.05) * 0.05;
+  const dogTintOpacity = 0.15 + Math.sin(frame * 0.05 + Math.PI) * 0.05;
 
   return (
     <AbsoluteFill
       style={{
         backgroundColor: style.backgroundColor,
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        justifyContent: 'center',
         overflow: 'hidden',
       }}
     >
-      {/* Background gradient */}
+      {/* Camera zoom wrapper */}
       <div
         style={{
           position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
-          background: `
-            radial-gradient(ellipse at center, ${style.backgroundColor} 0%, #000000 100%)
-          `,
-        }}
-      />
-
-      {/* HP Bars */}
-      <HPBarsDisplay />
-
-      {/* Main content */}
-      <div
-        style={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          zIndex: 10,
+          inset: 0,
+          transform: `scale(${totalZoom})`,
+          transformOrigin: 'center center',
         }}
       >
-        {/* Title */}
-        <AnimatedTitle title={title} subtitle={subtitle} titleColor={style.titleColor} />
+        {/* Dramatic split background */}
+        <DramaticBackground catColor={style.catColor} dogColor={style.dogColor} />
 
-        {/* Characters */}
-        <CharacterIntroduction catColor={style.catColor} dogColor={style.dogColor} />
+        {/* 6. Color grading overlays */}
+        {/* Cat side (left) - warm orange tint */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            width: '50%',
+            height: '100%',
+            background: `linear-gradient(90deg, ${style.catColor}${Math.round(catTintOpacity * 255)
+              .toString(16)
+              .padStart(2, '0')} 0%, transparent 100%)`,
+            pointerEvents: 'none',
+            zIndex: 5,
+            mixBlendMode: 'color',
+          }}
+        />
 
-        {/* Rules */}
-        <RulesText />
+        {/* Dog side (right) - cool purple tint */}
+        <div
+          style={{
+            position: 'absolute',
+            top: 0,
+            right: 0,
+            width: '50%',
+            height: '100%',
+            background: `linear-gradient(-90deg, ${style.dogColor}${Math.round(dogTintOpacity * 255)
+              .toString(16)
+              .padStart(2, '0')} 0%, transparent 100%)`,
+            pointerEvents: 'none',
+            zIndex: 5,
+            mixBlendMode: 'color',
+          }}
+        />
+
+        {/* Title banner */}
+        <TitleBanner title={title} subtitle={subtitle} />
+
+        {/* Character panels */}
+        <CharacterPanel character="cat" side="left" color={style.catColor} />
+        <CharacterPanel character="dog" side="right" color={style.dogColor} />
+
+        {/* Electric VS badge */}
+        <ElectricVS />
+
+        {/* Bottom info bar */}
+        <BottomInfoBar durationInFrames={durationInFrames} />
       </div>
 
-      {/* Start countdown */}
-      <StartCountdown durationInFrames={durationInFrames} />
+      {/* Tekken-style FIGHT transition (outside zoom wrapper) */}
+      <TekkenFightTransition durationInFrames={durationInFrames} />
+
+      {/* 5. Film grain & vignette (always on top) */}
+      <FilmGrainOverlay />
     </AbsoluteFill>
   );
 };

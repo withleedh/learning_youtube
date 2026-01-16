@@ -56,7 +56,14 @@ let dynamicComparisonScript: ComparisonScript | null = null;
 
 try {
   // These will be loaded at build time if files exist in public/
-  dynamicScript = require('../public/script.json') as Script;
+  const rawScript = require('../public/script.json');
+  // Check if it's a regular Script (has metadata.title) vs ComparisonScript
+  if (rawScript.metadata?.title) {
+    dynamicScript = rawScript as Script;
+    console.log('✅ Loaded Script from public/ folder');
+  } else {
+    console.log('ℹ️ public/script.json is not a regular Script (might be ComparisonScript)');
+  }
   dynamicConfig = require('../public/config.json') as ChannelConfig;
   const rawAudioFiles = require('../public/audio/manifest.json') as AudioFile[];
   // Convert paths to relative paths for staticFile()
@@ -64,7 +71,6 @@ try {
     ...af,
     path: `audio/${af.path.split('/').pop()}`,
   }));
-  console.log('✅ Loaded dynamic data from public/ folder');
 } catch {
   console.log('ℹ️ Using sample data (no dynamic data in public/)');
 }
@@ -607,11 +613,9 @@ export const RemotionRoot: React.FC = () => {
           };
         }}
       />
-
       {/* ================================================================== */}
       {/* Comparison Longform Compositions (Korean vs Native) */}
       {/* ================================================================== */}
-
       {/* ComparisonLongform - Full comparison video */}
       <Composition
         id="ComparisonLongform"
@@ -634,7 +638,6 @@ export const RemotionRoot: React.FC = () => {
           ),
         })}
       />
-
       {/* ComparisonView - Single segment preview */}
       <Composition
         id="ComparisonView"
@@ -650,7 +653,6 @@ export const RemotionRoot: React.FC = () => {
           isBurst: false,
         }}
       />
-
       {/* HookIntro - Hook intro preview */}
       <Composition
         id="HookIntro"
@@ -667,7 +669,6 @@ export const RemotionRoot: React.FC = () => {
           backgroundImage: 'background.png',
         }}
       />
-
       {/* CTAEnding - CTA ending preview */}
       <Composition
         id="CTAEnding"

@@ -6,16 +6,36 @@ import {
   type AudioFile,
   type AudioGenerationResult,
   type SpeedVariant,
-  selectVoice,
   generateAudioFilename,
   speedVariants,
 } from './types';
 import { generateAllSpeedsWithEdge, type EdgeVoice } from './edge';
-import { generateAllSpeedsWithGoogle } from './google';
+import { generateAllSpeedsWithGoogle, selectRandomVoice, getPitchForGender } from './google';
 
 // Maximum retry attempts for TTS generation
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 1000;
+
+// Episode voice selection (fixed for entire episode)
+export interface EpisodeVoices {
+  maleVoice: string;
+  femaleVoice: string;
+  malePitch: number;
+  femalePitch: number;
+}
+
+/**
+ * Select random voices for an episode (Google TTS)
+ * Call this once at the start of episode generation
+ */
+export function selectEpisodeVoices(): EpisodeVoices {
+  return {
+    maleVoice: selectRandomVoice('MALE'),
+    femaleVoice: selectRandomVoice('FEMALE'),
+    malePitch: getPitchForGender('MALE'),
+    femalePitch: getPitchForGender('FEMALE'),
+  };
+}
 
 /**
  * Generate TTS audio for a single sentence with all speed variants
@@ -23,14 +43,28 @@ const RETRY_DELAY_MS = 1000;
 export async function generateSentenceAudio(
   sentence: Sentence,
   config: ChannelConfig,
-  outputDir: string
+  outputDir: string,
+  episodeVoices?: EpisodeVoices
 ): Promise<AudioGenerationResult[]> {
-  const voice = selectVoice(sentence.speaker, config.tts.maleVoice, config.tts.femaleVoice);
   const gender = sentence.speaker === 'M' ? 'MALE' : 'FEMALE';
 
   // Switch based on provider
   switch (config.tts.provider) {
-    case 'google':
+    case 'google': {
+      // Use episode voices if provided (random selection), otherwise use config
+      const voice = episodeVoices
+        ? sentence.speaker === 'M'
+          ? episodeVoices.maleVoice
+          : episodeVoices.femaleVoice
+        : sentence.speaker === 'M'
+          ? config.tts.maleVoice
+          : config.tts.femaleVoice;
+      const pitch = episodeVoices
+        ? sentence.speaker === 'M'
+          ? episodeVoices.malePitch
+          : episodeVoices.femalePitch
+        : undefined;
+
       return generateAllSpeedsWithGoogle(
         sentence.target,
         config.tts.targetLanguageCode,
@@ -38,12 +72,15 @@ export async function generateSentenceAudio(
         gender as 'MALE' | 'FEMALE',
         outputDir,
         sentence.id,
-        sentence.speaker
+        sentence.speaker,
+        pitch
       );
+    }
 
     case 'edge':
-    default:
-      // Use Edge TTS (free, high quality)
+    default: {
+      // Use config voices for Edge TTS
+      const voice = sentence.speaker === 'M' ? config.tts.maleVoice : config.tts.femaleVoice;
       return generateAllSpeedsWithEdge(
         sentence.target,
         voice as EdgeVoice,
@@ -51,6 +88,7 @@ export async function generateSentenceAudio(
         sentence.id,
         sentence.speaker
       );
+    }
   }
 }
 
@@ -66,6 +104,15 @@ export async function generateAllAudio(
   const audioFiles: AudioFile[] = [];
   const totalSentences = script.sentences.length;
 
+  // Select random voices for this episode (Google TTS only)
+  let episodeVoices: EpisodeVoices | undefined;
+  if (config.tts.provider === 'google') {
+    episodeVoices = selectEpisodeVoices();
+    console.log(`   🎤 Selected voices for episode:`);
+    console.log(`      Male: ${episodeVoices.maleVoice} (pitch: ${episodeVoices.malePitch})`);
+    console.log(`      Female: ${episodeVoices.femaleVoice} (pitch: ${episodeVoices.femalePitch})`);
+  }
+
   for (let i = 0; i < script.sentences.length; i++) {
     const sentence = script.sentences[i];
 
@@ -80,7 +127,7 @@ export async function generateAllAudio(
 
     while (attempts < MAX_RETRIES) {
       try {
-        results = await generateSentenceAudio(sentence, config, outputDir);
+        results = await generateSentenceAudio(sentence, config, outputDir, episodeVoices);
 
         // Check if all succeeded
         const allSucceeded = results.every((r) => r.success);

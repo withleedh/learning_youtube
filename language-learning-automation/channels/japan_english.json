@@ -15,7 +15,7 @@
     "backgroundStyle": "illustration",
     "primaryColor": "#E60012",
     "secondaryColor": "#FFFFFF",
-    "preferredArtStyle": "clay_animation",
+    "preferredArtStyle": "anime_modern",
     "introOverlay": "linear-gradient(180deg, rgba(139,0,0,0.88) 0%, rgba(80,0,0,0.92) 100%)",
     "stepColors": [
       { "primary": "#E60012", "complementary": "#8B0000" },

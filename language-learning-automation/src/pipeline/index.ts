@@ -752,11 +752,11 @@ export function getTimelineLabels(nativeLanguage: string = 'Korean') {
 function generateThumbnailSubtitle(_targetLanguage: string, nativeLanguage: string): string {
   // 언어별 후킹 문구 (간단하게)
   if (nativeLanguage === 'Korean') {
-    return `인생이 바뀌는 15분`;
+    return `인생이 바뀌는 10분`;
   } else if (nativeLanguage === 'Japanese') {
-    return `毎日15分リスニング`;
+    return `毎日10分リスニング`;
   } else {
-    return `15 Mins Daily Listening`;
+    return `10 Mins Daily Listening`;
   }
 }
 

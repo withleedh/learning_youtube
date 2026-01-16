@@ -116,7 +116,7 @@ async function main() {
   const script = JSON.parse(scriptContent);
 
   const titleText = script.metadata.title.native;
-  const subtitleText = '인생이 바뀌는 15분';
+  const subtitleText = '인생이 바뀌는 10분';
   const backgroundPath = path.join(outputDir, 'background.png');
   const thumbnailPath = path.join(outputDir, 'thumbnail.png');
 

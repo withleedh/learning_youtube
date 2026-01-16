@@ -16,7 +16,7 @@ import {
   type SurvivalRound,
   type SurvivalCharacter,
 } from './types';
-import { HPSystem, DEFAULT_HP_CONFIG } from './hp-system';
+import { HPSystem, DEFAULT_HP_CONFIG, HPSystemConfig } from './hp-system';
 import {
   generateRoundWinners,
   assignExpressionsToCharacters,
@@ -250,7 +250,11 @@ export class SurvivalGenerator {
     console.log(`   ✓ Built ${rounds.length} complete rounds`);
 
     // Step 4: Calculate HP progression and final results
-    this.hpSystem = new HPSystem(DEFAULT_HP_CONFIG); // Reset HP system
+    const hpConfig: HPSystemConfig = {
+      ...DEFAULT_HP_CONFIG,
+      totalRounds: fullConfig.roundCount, // Use actual round count for dynamic damage
+    };
+    this.hpSystem = new HPSystem(hpConfig); // Reset HP system with correct round count
     for (const round of rounds) {
       const loser: SurvivalCharacter = round.winner === 'cat' ? 'dog' : 'cat';
       this.hpSystem.applyRoundResult(loser, round.id);
