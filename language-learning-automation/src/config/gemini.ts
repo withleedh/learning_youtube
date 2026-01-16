@@ -163,14 +163,21 @@ class VeoApiKeyManager {
   }
 }
 
-// 싱글톤 인스턴스
-export const veoApiKeyManager = new VeoApiKeyManager();
+// 싱글톤 인스턴스 (lazy initialization)
+let _veoApiKeyManager: VeoApiKeyManager | null = null;
+
+export function getVeoApiKeyManager(): VeoApiKeyManager {
+  if (!_veoApiKeyManager) {
+    _veoApiKeyManager = new VeoApiKeyManager();
+  }
+  return _veoApiKeyManager;
+}
 
 /**
  * Veo용 API 키 가져오기 (로테이션 지원)
  */
 export function getVeoApiKey(): string {
-  return veoApiKeyManager.getCurrentKey();
+  return getVeoApiKeyManager().getCurrentKey();
 }
 
 /**

@@ -1,0 +1,17 @@
+{
+  "id": "survival",
+  "name": "Survival Quiz",
+  "description": "Cat vs Dog English Survival Quiz",
+  "rounds": 1,
+  "categories": ["daily", "business", "emotion", "request_reject", "apology_thanks"],
+  "voice": {
+    "cat": {
+      "gender": "FEMALE",
+      "pitch": 6
+    },
+    "dog": {
+      "gender": "MALE",
+      "pitch": -3
+    }
+  }
+}

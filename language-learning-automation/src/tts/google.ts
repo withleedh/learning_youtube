@@ -58,7 +58,8 @@ export async function synthesizeWithGoogle(
   languageCode: string,
   voiceName: string,
   gender: 'MALE' | 'FEMALE',
-  speakingRate: number = 1.0
+  speakingRate: number = 1.0,
+  pitch: number = 0.0 // -20.0 to 20.0 semitones
 ): Promise<Buffer> {
   const accessToken = await getAccessToken();
 
@@ -75,6 +76,7 @@ export async function synthesizeWithGoogle(
     audioConfig: {
       audioEncoding: 'MP3',
       speakingRate,
+      pitch, // Add pitch control
     },
   };
 

@@ -1,7 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { GoogleGenAI, type GenerateVideosOperation } from '@google/genai';
-import { getVeoApiKey, veoApiKeyManager } from '../config/gemini';
+import { getVeoApiKey, getVeoApiKeyManager } from '../config/gemini';
 import type { VeoConfig, VeoRequest, VeoResult, VeoOperationStatus, ReferenceImage } from './types';
 import { veoConfigSchema } from './types';
 
@@ -165,7 +165,7 @@ export class VeoGenerator {
           errorMsg.includes('RESOURCE_EXHAUSTED') ||
           errorMsg.includes('quota')
         ) {
-          const hasMoreKeys = veoApiKeyManager.markCurrentKeyExhausted();
+          const hasMoreKeys = getVeoApiKeyManager().markCurrentKeyExhausted();
           if (hasMoreKeys) {
             this.refreshClient();
             // 키 전환 후 즉시 재시도 (attempt 카운트 리셋하지 않음)

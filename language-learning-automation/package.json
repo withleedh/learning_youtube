@@ -5,8 +5,10 @@
   "scripts": {
     "start": "remotion studio",
     "start:comparison": "remotion studio src/ComparisonRoot.tsx",
+    "start:survival": "remotion studio src/SurvivalRoot.tsx",
     "build": "remotion render Main out/video.mp4",
     "build:comparison": "remotion render src/ComparisonRoot.tsx ComparisonLongform out/comparison.mp4",
+    "build:survival": "remotion render src/SurvivalRoot.tsx SurvivalLongform out/survival.mp4",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
@@ -23,6 +25,7 @@
     "@remotion/cli": "^4.0.0",
     "@remotion/player": "^4.0.0",
     "canvas": "^3.2.0",
+    "dotenv": "^17.2.3",
     "edge-tts": "^1.0.1",
     "edge-tts-node": "^1.5.7",
     "googleapis": "^170.0.0",
