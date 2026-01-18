@@ -4,7 +4,11 @@ import { loadConfig, listChannels } from '../config/loader';
 import { generateScript, saveScript, createSampleScript } from '../script/generator';
 import { generateAllAudio, createMockAudioFiles } from '../tts/generator';
 import { IntroGenerator } from '../intro/generator';
-import { generateBackgroundImage, generateThumbnail } from '../image/generator';
+import {
+  generateBackgroundImage,
+  generateThumbnail,
+  generateSceneImages,
+} from '../image/generator';
 import { getGeminiApiKey, GEMINI_MODELS } from '../config/gemini';
 import type { IntroAssetConfig } from '../intro/types';
 import type { ChannelConfig } from '../config/types';
@@ -40,8 +44,10 @@ export interface PipelineResult {
   script: Script;
   audioFiles: AudioFile[];
   outputDir: string;
-  /** Generated background image path */
+  /** Generated background image path (legacy single image) */
   backgroundImagePath?: string;
+  /** Generated scene image paths (new multi-scene) */
+  sceneImagePaths?: string[];
   error?: string;
 }
 
@@ -102,22 +108,52 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     const scriptPath = await saveScript(script, outputDir);
     console.log(`   ✓ Saved script to: ${scriptPath}`);
 
-    // Step 5: Generate background image
+    // Step 5: Generate background image(s)
     let backgroundImagePath: string | undefined;
+    let sceneImagePaths: string[] | undefined;
+
     if (!skipImage) {
-      console.log('🎨 Generating background image...');
-      try {
-        backgroundImagePath = await generateBackgroundImage(
-          script.metadata.topic,
-          script.metadata.title.target,
-          outputDir,
-          script.metadata.imagePrompt,
-          config.theme.preferredArtStyle // 채널 설정의 아트 스타일 사용
-        );
-        console.log(`   ✓ Generated background image: ${backgroundImagePath}`);
-      } catch (imageError) {
-        console.warn(`   ⚠️ Failed to generate background image: ${imageError}`);
-        // Continue without image - not a fatal error
+      // Check if script has scenePrompts (new format)
+      if (script.metadata.scenePrompts && script.metadata.scenePrompts.length > 0) {
+        console.log('🎨 Generating multi-scene images with character consistency...');
+        try {
+          sceneImagePaths = await generateSceneImages(script, outputDir);
+          // Use first scene as background for legacy compatibility
+          if (sceneImagePaths.length > 0) {
+            backgroundImagePath = sceneImagePaths[0];
+          }
+          console.log(`   ✓ Generated ${sceneImagePaths.length} scene images`);
+        } catch (imageError) {
+          console.warn(`   ⚠️ Failed to generate scene images: ${imageError}`);
+          // Fallback to single image
+          console.log('   🔄 Falling back to single background image...');
+          try {
+            backgroundImagePath = await generateBackgroundImage(
+              script.metadata.topic,
+              script.metadata.title.target,
+              outputDir,
+              script.metadata.imagePrompt,
+              config.theme.preferredArtStyle
+            );
+          } catch (fallbackError) {
+            console.warn(`   ⚠️ Fallback also failed: ${fallbackError}`);
+          }
+        }
+      } else {
+        // Legacy: single background image
+        console.log('🎨 Generating background image...');
+        try {
+          backgroundImagePath = await generateBackgroundImage(
+            script.metadata.topic,
+            script.metadata.title.target,
+            outputDir,
+            script.metadata.imagePrompt,
+            config.theme.preferredArtStyle
+          );
+          console.log(`   ✓ Generated background image: ${backgroundImagePath}`);
+        } catch (imageError) {
+          console.warn(`   ⚠️ Failed to generate background image: ${imageError}`);
+        }
       }
     }
 
@@ -167,6 +203,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       audioFiles,
       outputDir,
       backgroundImagePath,
+      sceneImagePaths,
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -497,8 +534,45 @@ async function renderVideo(
     path: `${folderName}/audio/${path.basename(af.path)}`,
   }));
 
-  // Dynamic files use folderName prefix, shared assets use assets/ prefix
-  const backgroundImage = `${folderName}/background.png`;
+  // Check for multi-scene images first
+  let sceneImages: string[] | undefined;
+  if (script.metadata.scenePrompts && script.metadata.scenePrompts.length > 0) {
+    const sceneCount = script.metadata.scenePrompts.length;
+    sceneImages = [];
+    for (let i = 1; i <= sceneCount; i++) {
+      const scenePath = path.join(outputDir, `scene_${i}.png`);
+      try {
+        await fs.access(scenePath);
+        sceneImages.push(`${folderName}/scene_${i}.png`);
+      } catch {
+        // Scene image doesn't exist, skip
+      }
+    }
+    if (sceneImages.length > 0) {
+      console.log(`📸 Found ${sceneImages.length} scene images for multi-scene rendering`);
+    } else {
+      sceneImages = undefined;
+    }
+  }
+
+  // Background image - use scene_1 if available, otherwise background.png
+  let backgroundImage = `${folderName}/background.png`;
+  if (sceneImages && sceneImages.length > 0) {
+    backgroundImage = sceneImages[0]; // Use first scene as fallback background
+  } else {
+    // Check if legacy background.png exists
+    try {
+      await fs.access(path.join(outputDir, 'background.png'));
+    } catch {
+      // No background.png, check for scene_1.png
+      try {
+        await fs.access(path.join(outputDir, 'scene_1.png'));
+        backgroundImage = `${folderName}/scene_1.png`;
+      } catch {
+        console.warn('⚠️ No background image found!');
+      }
+    }
+  }
 
   // Bundle - use channel output folder as publicDir (contains both shared assets and run folders)
   console.log('📦 Bundling Remotion project...');
@@ -517,6 +591,7 @@ async function renderVideo(
     script,
     audioFiles,
     backgroundImage,
+    sceneImages, // 🆕 Multi-scene images for character consistency
     // Shared asset paths
     thumbnailPath: 'assets/thumbnail.png',
     viralNarrationPath: 'assets/intro-viral.mp3',
@@ -545,7 +620,17 @@ async function renderVideo(
   // Generate thumbnail with title text
   console.log('\n🖼️ Generating thumbnail...');
   const thumbnailPath = path.join(outputDir, 'episode_thumbnail.png');
-  const backgroundPath = path.join(outputDir, 'background.png');
+
+  // Use scene_1.png if available, otherwise background.png
+  let thumbnailSourcePath = path.join(outputDir, 'background.png');
+  const scene1Path = path.join(outputDir, 'scene_1.png');
+  try {
+    await fs.access(scene1Path);
+    thumbnailSourcePath = scene1Path;
+    console.log('   Using scene_1.png as thumbnail source');
+  } catch {
+    console.log('   Using background.png as thumbnail source');
+  }
 
   // Generate subtitle based on target language and native language
   const subtitleText = generateThumbnailSubtitle(
@@ -553,7 +638,7 @@ async function renderVideo(
     config.meta.nativeLanguage
   );
   await generateVideoThumbnail(
-    backgroundPath,
+    thumbnailSourcePath,
     script.metadata.title.native,
     subtitleText,
     thumbnailPath
@@ -921,11 +1006,47 @@ async function renderShortsBatch(
     path: `${folderName}/audio/${path.basename(af.path)}`,
   }));
 
-  // Background image path
-  const backgroundImage = `${folderName}/background.png`;
+  // Build scene image mapping from scenePrompts
+  const scenePrompts = script.metadata.scenePrompts || [];
+  const sceneImages: string[] = [];
+
+  // Check which scene images exist
+  for (let i = 1; i <= 10; i++) {
+    const scenePath = path.join(outputDir, `scene_${i}.png`);
+    try {
+      await fs.access(scenePath);
+      sceneImages.push(`${folderName}/scene_${i}.png`);
+    } catch {
+      break; // No more scene images
+    }
+  }
+
+  console.log(`   🖼️ Found ${sceneImages.length} scene images`);
+
+  // Helper function to get background image for a sentence
+  const getBackgroundForSentence = (sentenceId: number): string => {
+    // If we have scenePrompts and scene images, find the matching scene
+    if (scenePrompts.length > 0 && sceneImages.length > 0) {
+      for (let i = 0; i < scenePrompts.length; i++) {
+        const [start, end] = scenePrompts[i].sentenceRange;
+        if (sentenceId >= start && sentenceId <= end) {
+          // Return corresponding scene image (1-indexed)
+          if (i < sceneImages.length) {
+            return sceneImages[i];
+          }
+        }
+      }
+    }
+
+    // Fallback: use scene_1 or legacy background
+    if (sceneImages.length > 0) {
+      return sceneImages[0];
+    }
+    return `${folderName}/background.png`;
+  };
 
   // Bundle Remotion project
-  console.log('� Bundling Remotion project for Shorts...');
+  console.log('📦 Bundling Remotion project for Shorts...');
   const channelOutputDir = path.join(DEFAULT_OUTPUT_DIR, channelId);
   const bundleLocation = await bundle({
     entryPoint: path.join(process.cwd(), 'src/index.ts'),
@@ -948,6 +1069,9 @@ async function renderShortsBatch(
       console.warn(`   ⚠️ No audio for sentence ${sentence.id}, skipping`);
       continue;
     }
+
+    // Get the appropriate background image for this sentence
+    const backgroundImage = getBackgroundForSentence(sentence.id);
 
     // Generate quiz choices from wrongWordChoices or fallback
     const quizSentence = {
@@ -975,7 +1099,12 @@ async function renderShortsBatch(
       episodeTitle: script.metadata.title.native,
     };
 
-    console.log(`   [${i + 1}/${totalSentences}] "${sentence.target.substring(0, 35)}..."`);
+    // Extract scene number from background path for logging
+    const sceneMatch = backgroundImage.match(/scene_(\d+)/);
+    const sceneInfo = sceneMatch ? ` [Scene ${sceneMatch[1]}]` : '';
+    console.log(
+      `   [${i + 1}/${totalSentences}]${sceneInfo} "${sentence.target.substring(0, 30)}..."`
+    );
 
     try {
       const composition = await selectComposition({

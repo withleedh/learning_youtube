@@ -16,6 +16,8 @@ export interface MainProps {
   script: Script;
   audioFiles: AudioFile[];
   backgroundImage?: string;
+  /** 🆕 Multi-scene images for character consistency */
+  sceneImages?: string[];
   /** 썸네일 이미지 경로 (인트로에서 사용) */
   thumbnailPath?: string;
   /** 바이럴 문구 나레이션 TTS 경로 */
@@ -49,6 +51,7 @@ export const Main: React.FC<MainProps> = ({
   script,
   audioFiles,
   backgroundImage,
+  sceneImages,
   thumbnailPath,
   viralNarrationPath,
   viralNarrationDuration,
@@ -157,6 +160,8 @@ export const Main: React.FC<MainProps> = ({
       <Sequence from={step1Start} durationInFrames={step1Duration}>
         <Step1
           backgroundImage={backgroundImage}
+          sceneImages={sceneImages}
+          scenePrompts={script.metadata.scenePrompts}
           audioFiles={audioFiles}
           title={script.metadata.title.target}
           stepLabel={config.uiLabels?.step1Title}
@@ -177,6 +182,8 @@ export const Main: React.FC<MainProps> = ({
       <Sequence from={step2Start} durationInFrames={step2Duration}>
         <Step2
           backgroundImage={backgroundImage}
+          sceneImages={sceneImages}
+          scenePrompts={script.metadata.scenePrompts}
           sentences={sentences}
           audioFiles={audioFiles}
           colors={{
@@ -202,6 +209,8 @@ export const Main: React.FC<MainProps> = ({
       <Sequence from={step3Start} durationInFrames={step3Duration}>
         <Step3
           backgroundImage={backgroundImage}
+          sceneImages={sceneImages}
+          scenePrompts={script.metadata.scenePrompts}
           sentences={sentences}
           audioFiles={audioFiles}
           colors={colors}
@@ -225,6 +234,8 @@ export const Main: React.FC<MainProps> = ({
       <Sequence from={step4Start} durationInFrames={step4Duration}>
         <Step4
           backgroundImage={backgroundImage}
+          sceneImages={sceneImages}
+          scenePrompts={script.metadata.scenePrompts}
           audioFiles={audioFiles}
           title={script.metadata.title.target}
           stepLabel={config.uiLabels?.step4Title}

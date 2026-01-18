@@ -4,6 +4,8 @@ import path from 'path';
 import type { Category } from './types';
 import { GEMINI_MODELS, getGeminiApiKey } from '../config/gemini';
 import { buildCulturalContextPrompt, getRandomCulturalCategory } from './cultural-interests';
+import { buildHighPerformancePatternsPrompt } from './topic-patterns';
+import { buildTodayEventsPrompt, getTodayTopicSuggestions } from './calendar-events';
 
 interface TopicHistory {
   date: string;
@@ -120,6 +122,11 @@ async function generateTopicCandidates(
   const culturalContext = buildCulturalContextPrompt(targetLanguage, nativeLangName);
   const culturalCategory = getRandomCulturalCategory(targetLanguage);
 
+  // 고성과 패턴 및 오늘 이벤트 컨텍스트
+  const highPerformancePatterns = buildHighPerformancePatternsPrompt(category, month);
+  const todayEventsContext = buildTodayEventsPrompt();
+  const todaySuggestions = getTodayTopicSuggestions(category);
+
   const prompt = `# Role
 너는 유튜브 ${targetLangName} 학습 채널의 '스토리텔러'야.
 
@@ -137,6 +144,14 @@ ${culturalCategory ? `오늘은 "${culturalCategory.category}" 관련 주제를 
 
 # Category: ${category}
 ${getCategoryGuidance(category, targetLangName)}
+
+${highPerformancePatterns}
+
+${todayEventsContext}
+${todaySuggestions.length > 0 ? `
+## 💡 오늘 이벤트 관련 추천 주제
+${todaySuggestions.map(s => `- ${s}`).join('\n')}
+` : ''}
 
 # 🎯 주제 선정 핵심 원칙
 

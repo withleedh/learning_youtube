@@ -598,3 +598,352 @@ export async function generateShortsBackground(script: Script, outputDir: string
 
   throw new Error('No shorts background image generated');
 }
+
+// =============================================================================
+// Multi-Scene Image Generation with Character Consistency
+// =============================================================================
+
+/**
+ * 🎬 Mood를 구체적인 조명/시각 용어로 변환
+ */
+const MOOD_TO_LIGHTING: Record<string, string> = {
+  // Positive moods
+  happy: 'bright high-key lighting, warm golden tones, soft fill light',
+  joyful: 'vibrant warm lighting, sun flares, cheerful color palette',
+  cheerful: 'bright natural daylight, soft shadows, warm color temperature',
+  excited: 'dynamic lighting with highlights, energetic warm tones',
+  hopeful: 'soft golden hour light, gentle lens flare, optimistic atmosphere',
+  romantic: 'soft pink and golden hues, dreamy bokeh, warm backlight',
+  peaceful: 'soft diffused light, pastel tones, gentle ambient glow',
+  cozy: 'warm interior lighting, soft shadows, amber tones from practical lights',
+  friendly: 'bright even lighting, warm skin tones, inviting atmosphere',
+  welcoming: 'warm entrance lighting, soft highlights, comfortable ambiance',
+
+  // Neutral moods
+  calm: 'soft natural light, muted tones, balanced exposure',
+  quiet: 'soft moonlight, cool blue tones, gentle volumetric fog',
+  contemplative: 'soft side lighting, thoughtful shadows, muted palette',
+  curious: 'bright key light with soft fill, clear visibility, neutral tones',
+  focused: 'sharp directional light, clear contrast, professional lighting',
+  neutral: 'balanced three-point lighting, natural color temperature',
+
+  // Tense/Dramatic moods
+  tense: 'harsh shadows, high contrast, cool desaturated tones',
+  anxious: 'flickering light effect, unstable shadows, slightly desaturated',
+  mysterious: 'low-key lighting, deep shadows, rim light silhouettes',
+  dramatic: 'chiaroscuro lighting, strong contrast, theatrical shadows',
+  suspenseful: 'underlit faces, long shadows, cool color grading',
+  intense: 'hard directional light, stark shadows, saturated colors',
+
+  // Sad/Melancholic moods
+  sad: 'overcast diffused light, desaturated cool tones, soft shadows',
+  melancholic: 'blue hour lighting, muted colors, gentle rain atmosphere',
+  lonely: 'single isolated light source, vast dark negative space',
+  nostalgic: 'warm sepia tones, soft focus edges, vintage color grading',
+  bittersweet: 'golden hour fading to blue, mixed warm and cool tones',
+
+  // Magical/Fantasy moods
+  magical: 'ethereal glow, sparkle particles, iridescent highlights',
+  whimsical: 'soft fairy-tale lighting, pastel colors, magical dust particles',
+  dreamy: 'soft focus, hazy atmosphere, gentle bloom effect',
+  enchanted: 'bioluminescent glow, mystical fog, fantasy color palette',
+  wonder: 'dramatic god rays, awe-inspiring scale lighting',
+
+  // Default fallback
+  default: 'cinematic three-point lighting, natural color temperature, soft shadows',
+};
+
+/**
+ * Mood 문자열에서 조명 설명 추출
+ */
+function moodToLighting(mood: string): string {
+  const moodLower = mood.toLowerCase();
+
+  // 직접 매칭 시도
+  for (const [key, value] of Object.entries(MOOD_TO_LIGHTING)) {
+    if (moodLower.includes(key)) {
+      return value;
+    }
+  }
+
+  // 매칭 실패시 기본값
+  return MOOD_TO_LIGHTING.default;
+}
+
+/**
+ * 캐릭터 외모를 이미지 프롬프트용 문자열로 변환 (전체 버전)
+ */
+function buildCharacterDescriptionFull(character: Character): string {
+  const { name, gender, ethnicity, role, appearance } = character;
+
+  if (!appearance) {
+    return `${name}, a ${ethnicity} ${gender} (${role})`;
+  }
+
+  const parts = [
+    `${name}`,
+    `a ${appearance.age} ${ethnicity} ${gender}`,
+    `${appearance.hair}`,
+    `${appearance.eyes}`,
+    `${appearance.skin}`,
+    `${appearance.build}`,
+    `wearing ${appearance.clothing}`,
+  ];
+
+  if (appearance.distinctiveFeatures) {
+    parts.push(appearance.distinctiveFeatures);
+  }
+
+  return parts.join(', ');
+}
+
+/**
+ * 캐릭터 외모를 경량화된 프롬프트로 변환 (후속 씬용)
+ * 핵심 식별 특징만 포함하여 AI가 스타일을 무시하지 않도록 함
+ */
+function buildCharacterDescriptionLight(character: Character): string {
+  const { name, gender, appearance } = character;
+
+  if (!appearance) {
+    return `${name} (${gender})`;
+  }
+
+  // 핵심 식별 특징만: 이름, 성별, 머리, 옷
+  const parts = [
+    name,
+    gender,
+    appearance.hair.split(',')[0],
+    `wearing ${appearance.clothing.split(',')[0]}`,
+  ];
+
+  if (appearance.distinctiveFeatures) {
+    parts.push(appearance.distinctiveFeatures);
+  }
+
+  return parts.join(', ');
+}
+
+/**
+ * 스크립트의 모든 캐릭터를 하나의 프롬프트 문자열로 조합
+ * @param isFirstScene - 첫 번째 씬이면 전체 설명, 아니면 경량화
+ */
+function buildAllCharactersDescription(
+  characters: Character[],
+  isFirstScene: boolean = true
+): string {
+  const visibleCharacters = characters.filter((c) => c.role !== 'narrator');
+
+  if (visibleCharacters.length === 0) {
+    return '';
+  }
+
+  const buildFn = isFirstScene ? buildCharacterDescriptionFull : buildCharacterDescriptionLight;
+  return visibleCharacters.map(buildFn).join('. ');
+}
+
+/**
+ * 🎬 시네마틱 프롬프트 생성 (구조화된 순서)
+ * [Quality] + [Camera] + [Subject] + [Setting] + [Lighting] + [Style] + [Negative]
+ */
+function buildCinematicPrompt(
+  scene: {
+    setting: string;
+    mood: string;
+    characterActions: string;
+    cameraDirection?: string;
+    lighting?: string;
+  },
+  charactersDescription: string,
+  isFirstScene: boolean
+): string {
+  // 1. Quality tags (가장 먼저 - 가중치 높음)
+  const qualityTags = '(Masterpiece:1.2), (Best Quality:1.2), (High Detail:1.1)';
+
+  // 2. Camera & Composition
+  const cameraDirection = scene.cameraDirection || 'Medium shot, eye-level';
+  const camera = `${cameraDirection}, cinematic composition, depth of field, 8K resolution`;
+
+  // 3. Subject (캐릭터 액션)
+  const subject = scene.characterActions;
+
+  // 4. Setting (배경/환경)
+  const setting = scene.setting;
+
+  // 5. Lighting (mood에서 변환하거나 직접 지정된 값 사용)
+  const lightingFromMood = moodToLighting(scene.mood);
+  const lighting = scene.lighting || lightingFromMood;
+  const atmosphericLighting = `${lighting}, atmospheric perspective, volumetric lighting`;
+
+  // 6. Style
+  const style = 'Pixar-style 3D animation, Unreal Engine 5 render quality, hyper-detailed textures';
+
+  // 7. Negative prompt hints (Gemini는 직접 negative prompt를 지원하지 않으므로 긍정적으로 표현)
+  const avoidance = 'clean composition, no text, no watermarks, no artifacts, sharp focus';
+
+  // 프롬프트 조합 (순서 중요!)
+  if (charactersDescription) {
+    // 첫 번째 씬은 캐릭터 설명 전체, 이후는 경량화
+    const charSection = isFirstScene
+      ? `Characters (maintain exact appearance): ${charactersDescription}`
+      : `Same characters as reference: ${charactersDescription}`;
+
+    return `${qualityTags},
+[Camera] ${camera},
+[Subject] ${subject},
+[Setting] ${setting},
+[Characters] ${charSection},
+[Lighting] ${atmosphericLighting},
+[Style] ${style},
+[Quality] ${avoidance}`;
+  } else {
+    // 캐릭터 없는 씬 (narrator만 있는 경우)
+    return `${qualityTags},
+[Camera] ${camera},
+[Subject] ${subject},
+[Setting] ${setting},
+[Lighting] ${atmosphericLighting},
+[Style] ${style},
+[Quality] ${avoidance}`;
+  }
+}
+
+/**
+ * 다중 장면 이미지 생성 (캐릭터 일관성 유지)
+ * 개선된 시네마틱 프롬프트 구조 사용
+ */
+export async function generateSceneImages(script: Script, outputDir: string): Promise<string[]> {
+  const apiKey = getGeminiApiKey();
+  const scenePrompts = script.metadata.scenePrompts;
+
+  // scenePrompts가 없으면 레거시 방식으로 단일 이미지 생성
+  if (!scenePrompts || scenePrompts.length === 0) {
+    console.log('⚠️ No scenePrompts found, falling back to single image generation');
+    const singleImage = await generateBackgroundImage(
+      script.metadata.topic,
+      script.metadata.title.target,
+      outputDir,
+      script.metadata.imagePrompt
+    );
+    return [singleImage];
+  }
+
+  console.log(`🎨 Generating ${scenePrompts.length} cinematic scene images...`);
+
+  const generatedImages: string[] = [];
+  let referenceImageBase64: string | null = null;
+
+  for (let i = 0; i < scenePrompts.length; i++) {
+    const scene = scenePrompts[i];
+    const outputPath = path.join(outputDir, `scene_${i + 1}.png`);
+    const isFirstScene = i === 0;
+
+    console.log(
+      `   🖼️ Scene ${i + 1}/${scenePrompts.length}: sentences ${scene.sentenceRange[0]}-${scene.sentenceRange[1]}`
+    );
+
+    // 캐릭터 설명 빌드 (첫 씬은 전체, 이후는 경량화)
+    const charactersDescription = buildAllCharactersDescription(
+      script.metadata.characters,
+      isFirstScene
+    );
+
+    // 🎬 시네마틱 프롬프트 생성
+    const scenePrompt = buildCinematicPrompt(scene, charactersDescription, isFirstScene);
+
+    if (isFirstScene) {
+      console.log(`   📝 Prompt preview: ${scenePrompt.substring(0, 150)}...`);
+    }
+
+    // API 요청 구성
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+
+    // 첫 번째 이미지 이후에는 reference image 추가
+    if (referenceImageBase64 && !isFirstScene) {
+      parts.push({
+        inlineData: {
+          mimeType: 'image/png',
+          data: referenceImageBase64,
+        },
+      });
+
+      const referenceInstruction = charactersDescription
+        ? `REFERENCE IMAGE ABOVE - Maintain IDENTICAL character appearance (face, hair, clothing, body type).
+
+`
+        : `REFERENCE IMAGE ABOVE - Maintain consistent art style and color palette.
+
+`;
+
+      parts.push({
+        text: `${referenceInstruction}${scenePrompt}`,
+      });
+    } else {
+      parts.push({ text: scenePrompt });
+    }
+
+    const requestBody = {
+      contents: [{ parts }],
+      generationConfig: {
+        responseModalities: ['image', 'text'],
+        responseMimeType: 'text/plain',
+      },
+    };
+
+    try {
+      const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.warn(`   ⚠️ Scene ${i + 1} failed: ${response.status} - ${errorText}`);
+        continue;
+      }
+
+      const data = (await response.json()) as GeminiImageResponse;
+
+      // 이미지 추출 및 저장
+      for (const candidate of data.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+          if (part.inlineData?.data) {
+            const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
+            await fs.mkdir(path.dirname(outputPath), { recursive: true });
+            await fs.writeFile(outputPath, imageBuffer);
+
+            // 첫 번째 이미지를 reference로 저장
+            if (isFirstScene) {
+              referenceImageBase64 = part.inlineData.data;
+            }
+
+            generatedImages.push(outputPath);
+            console.log(`   ✅ Scene ${i + 1} saved: ${outputPath}`);
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`   ⚠️ Scene ${i + 1} error: ${error}`);
+    }
+
+    // API 레이트 리밋 방지를 위한 딜레이
+    if (i < scenePrompts.length - 1) {
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
+  }
+
+  if (generatedImages.length === 0) {
+    throw new Error('Failed to generate any scene images');
+  }
+
+  console.log(`   ✅ Generated ${generatedImages.length}/${scenePrompts.length} scene images`);
+  return generatedImages;
+}
+
+/**
+ * 장면 이미지 경로 목록 반환 (이미 생성된 경우)
+ */
+export function getSceneImagePaths(outputDir: string, sceneCount: number): string[] {
+  return Array.from({ length: sceneCount }, (_, i) => path.join(outputDir, `scene_${i + 1}.png`));
+}

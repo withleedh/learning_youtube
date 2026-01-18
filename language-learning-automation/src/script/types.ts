@@ -33,6 +33,17 @@ export const categorySchema = z.enum([
   'fairytale', // 일요일 - 영어 동화
 ]);
 
+// Character appearance schema for consistent image generation
+export const appearanceSchema = z.object({
+  age: z.string(), // "mid-20s", "early-30s"
+  hair: z.string(), // "short black hair, slightly wavy"
+  eyes: z.string(), // "warm brown eyes"
+  skin: z.string(), // "light tan complexion"
+  build: z.string(), // "average height, slim build"
+  clothing: z.string(), // "navy blazer, white t-shirt, jeans"
+  distinctiveFeatures: z.string().optional(), // "small mole near left eye"
+});
+
 // Character schema for image generation
 export const characterSchema = z.object({
   id: z.enum(['M', 'F']), // speaker ID와 매칭
@@ -40,11 +51,24 @@ export const characterSchema = z.object({
   gender: z.enum(['male', 'female']),
   ethnicity: z.string().min(1, 'Ethnicity is required'), // e.g., "Korean", "American", "British"
   role: z.string().min(1, 'Role is required'), // e.g., "customer", "barista", "teacher"
+  appearance: appearanceSchema.optional(), // 🆕 상세 외모 정보
+});
+
+// Scene prompt schema for multi-image generation with cinematic direction
+export const scenePromptSchema = z.object({
+  sentenceRange: z.tuple([z.number(), z.number()]), // [1, 4] - 이 장면이 커버하는 문장 범위
+  setting: z.string(), // "grocery store checkout counter"
+  mood: z.string(), // "warm, friendly, casual"
+  characterActions: z.string(), // "cashier scanning items while chatting, customer smiling"
+  // 🎬 Cinematic direction fields
+  cameraDirection: z.string(), // "Medium close-up, eye-level, slight Dutch angle for tension"
+  lighting: z.string().optional(), // "Warm golden hour light from window, soft shadows"
+  transition: z.string().optional(), // "Slow fade in", "Quick cut", "Match cut to next scene"
 });
 
 // Script metadata schema
 export const metadataSchema = z.object({
-  imagePrompt: z.string().optional(), // GPT가 생성한 배경 이미지 프롬프트
+  imagePrompt: z.string().optional(), // GPT가 생성한 배경 이미지 프롬프트 (레거시, 단일 이미지용)
   topic: z.string().min(1, 'Topic is required'),
   style: z.string().optional().default('casual'),
   title: z.object({
@@ -52,6 +76,7 @@ export const metadataSchema = z.object({
     native: z.string().min(1, 'Native title is required'),
   }),
   characters: z.array(characterSchema).min(1).max(2), // 나레이션은 1명, 대화는 2명
+  scenePrompts: z.array(scenePromptSchema).optional(), // 🆕 장면별 이미지 프롬프트 (3-5개)
 });
 
 // Full Script schema
@@ -67,7 +92,9 @@ export const scriptSchema = z.object({
 export type Word = z.infer<typeof wordSchema>;
 export type Sentence = z.infer<typeof sentenceSchema>;
 export type Category = z.infer<typeof categorySchema>;
+export type Appearance = z.infer<typeof appearanceSchema>;
 export type Character = z.infer<typeof characterSchema>;
+export type ScenePrompt = z.infer<typeof scenePromptSchema>;
 export type Metadata = z.infer<typeof metadataSchema>;
 export type Script = z.infer<typeof scriptSchema>;
 

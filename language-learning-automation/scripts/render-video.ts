@@ -145,8 +145,45 @@ async function renderVideo() {
   console.log(`📊 Sentences: ${script.sentences.length}`);
   console.log(`🔊 Sample audio path: ${audioFiles[0].path}`);
 
-  // Background image path (simple path, relative to public/)
-  const backgroundImage = 'background.png';
+  // Check for multi-scene images first
+  let sceneImages: string[] | undefined;
+  if (script.metadata.scenePrompts && script.metadata.scenePrompts.length > 0) {
+    const sceneCount = script.metadata.scenePrompts.length;
+    sceneImages = [];
+    for (let i = 1; i <= sceneCount; i++) {
+      const scenePath = path.join(baseDir, `scene_${i}.png`);
+      try {
+        await fs.access(scenePath);
+        sceneImages.push(`scene_${i}.png`);
+      } catch {
+        // Scene image doesn't exist, skip
+      }
+    }
+    if (sceneImages.length > 0) {
+      console.log(`📸 Found ${sceneImages.length} scene images for multi-scene rendering`);
+    } else {
+      sceneImages = undefined;
+    }
+  }
+
+  // Background image path - use scene_1.png if available, otherwise background.png
+  let backgroundImage = 'background.png';
+  if (sceneImages && sceneImages.length > 0) {
+    backgroundImage = sceneImages[0]; // Use first scene as fallback background
+  } else {
+    // Check if legacy background.png exists
+    try {
+      await fs.access(path.join(baseDir, 'background.png'));
+    } catch {
+      // No background.png, check for scene_1.png
+      try {
+        await fs.access(path.join(baseDir, 'scene_1.png'));
+        backgroundImage = 'scene_1.png';
+      } catch {
+        console.warn('⚠️ No background image found!');
+      }
+    }
+  }
   console.log(`🖼️ Background image: ${backgroundImage}`);
 
   // Bundle the Remotion project - use public/ as publicDir
@@ -167,6 +204,7 @@ async function renderVideo() {
     script,
     audioFiles,
     backgroundImage,
+    sceneImages, // 🆕 Multi-scene images for character consistency
     // Shared asset paths (in public/assets/)
     thumbnailPath: 'assets/thumbnail.png',
     viralNarrationPath: 'assets/intro-viral.mp3',

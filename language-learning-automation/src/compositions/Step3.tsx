@@ -1,10 +1,14 @@
 import React from 'react';
 import { AbsoluteFill, Audio, Sequence, Img, staticFile } from 'remotion';
-import type { Sentence } from '../script/types';
+import type { Sentence, ScenePrompt } from '../script/types';
 import type { AudioFile, SpeedVariant } from '../tts/types';
 
 export interface Step3Props {
   backgroundImage?: string;
+  /** 🆕 Multi-scene images for character consistency */
+  sceneImages?: string[];
+  /** 🆕 Scene prompts with sentence ranges */
+  scenePrompts?: ScenePrompt[];
   sentences: Sentence[];
   audioFiles: AudioFile[];
   colors: {
@@ -23,6 +27,29 @@ export interface Step3Props {
     phaseChallenge?: string;
     phaseReview?: string;
   };
+}
+
+/**
+ * Get the appropriate scene image for a given sentence ID
+ */
+function getSceneImageForSentence(
+  sentenceId: number,
+  sceneImages?: string[],
+  scenePrompts?: ScenePrompt[]
+): string | undefined {
+  if (!sceneImages || sceneImages.length === 0) return undefined;
+  if (!scenePrompts || scenePrompts.length === 0) return sceneImages[0];
+
+  // Find which scene this sentence belongs to
+  for (let i = 0; i < scenePrompts.length; i++) {
+    const [start, end] = scenePrompts[i].sentenceRange;
+    if (sentenceId >= start && sentenceId <= end) {
+      return sceneImages[i] || sceneImages[0];
+    }
+  }
+
+  // Default to last scene if sentence is beyond all ranges
+  return sceneImages[sceneImages.length - 1];
 }
 
 // Phase configuration for 5 repetitions
@@ -51,6 +78,8 @@ const REPETITION_SEQUENCE: RepetitionConfig[] = [
 
 export const Step3: React.FC<Step3Props> = ({
   backgroundImage,
+  sceneImages,
+  scenePrompts,
   sentences,
   audioFiles,
   colors,
@@ -65,6 +94,9 @@ export const Step3: React.FC<Step3Props> = ({
     phaseReview: uiLabels?.phaseReview ?? '✨ 마무리',
   };
 
+  // Check if we have scene images
+  const hasSceneImages = sceneImages && sceneImages.length > 0;
+
   // Build sequences for all sentences with all repetitions
   let cumulativeFrame = 0;
   const allSequences: Array<{
@@ -74,9 +106,13 @@ export const Step3: React.FC<Step3Props> = ({
     startFrame: number;
     durationFrames: number;
     repetition: number;
+    sceneImage?: string;
   }> = [];
 
   sentences.forEach((sentence) => {
+    // 🆕 Get scene image for this sentence
+    const sceneImage = getSceneImageForSentence(sentence.id, sceneImages, scenePrompts);
+
     REPETITION_SEQUENCE.forEach((config, repIndex) => {
       const audio = audioFiles.find(
         (af) => af.sentenceId === sentence.id && af.speed === config.speed
@@ -94,14 +130,15 @@ export const Step3: React.FC<Step3Props> = ({
         startFrame,
         durationFrames,
         repetition: repIndex + 1,
+        sceneImage,
       });
     });
   });
 
   return (
     <AbsoluteFill style={{ backgroundColor: colors.background }}>
-      {/* Background Image - Full screen with dim overlay */}
-      {backgroundImage && (
+      {/* Background Image - only show if no scene images */}
+      {!hasSceneImages && backgroundImage && (
         <AbsoluteFill>
           <Img
             src={staticFile(backgroundImage)}
@@ -155,6 +192,7 @@ export const Step3: React.FC<Step3Props> = ({
             repetition={seq.repetition}
             totalRepetitions={REPETITION_SEQUENCE.length}
             labels={labels}
+            sceneImage={seq.sceneImage}
           />
         </Sequence>
       ))}
@@ -181,7 +219,8 @@ const SentenceDisplay: React.FC<{
     phaseChallenge: string;
     phaseReview: string;
   };
-}> = ({ sentence, config, audio, colors, repetition, totalRepetitions, labels }) => {
+  sceneImage?: string;
+}> = ({ sentence, config, audio, colors, repetition, totalRepetitions, labels, sceneImage }) => {
   const textColor = sentence.speaker === 'M' ? colors.maleText : colors.femaleText;
   const { phase, showBlank, showAnswer } = config;
 
@@ -208,7 +247,33 @@ const SentenceDisplay: React.FC<{
   };
 
   return (
-    <AbsoluteFill>
+    <AbsoluteFill style={{ backgroundColor: '#000000' }}>
+      {/* 🆕 Scene-specific background image */}
+      {sceneImage && (
+        <AbsoluteFill>
+          <Img
+            src={staticFile(sceneImage)}
+            style={{
+              width: '100%',
+              height: '100%',
+              objectFit: 'cover',
+              objectPosition: 'top',
+            }}
+          />
+          {/* Dark overlay for text readability */}
+          <div
+            style={{
+              position: 'absolute',
+              top: 0,
+              left: 0,
+              right: 0,
+              bottom: 0,
+              backgroundColor: 'rgba(0, 0, 0, 0.65)',
+            }}
+          />
+        </AbsoluteFill>
+      )}
+
       {/* Audio */}
       {audio && audio.path ? (
         <Audio src={staticFile(audio.path)} volume={1} />

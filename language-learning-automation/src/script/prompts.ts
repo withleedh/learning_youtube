@@ -63,6 +63,12 @@ ${blankWordGuide}
 
 ${imagePromptGuide}
 
+# CRITICAL: Character ID Rules
+- The "characters" array must contain EXACTLY ONE character: the narrator
+- The narrator's "id" MUST be "${speaker}" (not "Boy", "Girl", "Snowman", etc.)
+- Story characters (like a boy, snowman, animal) are described in scenePrompts, NOT in the characters array
+- The narrator is the voice reading the story, not a character IN the story
+
 # Output Format (JSON)
 {
   "metadata": {
@@ -78,10 +84,56 @@ ${imagePromptGuide}
         "name": "${speaker === 'M' ? 'James' : 'Sarah'}",
         "gender": "${speakerGender}",
         "ethnicity": "American",
-        "role": "narrator"
+        "role": "narrator",
+        "appearance": {
+          "age": "early-30s",
+          "hair": "specific hair color, length, style",
+          "eyes": "eye color and shape",
+          "skin": "skin tone",
+          "build": "height and body type",
+          "clothing": "specific outfit with colors",
+          "distinctiveFeatures": "optional unique features"
+        }
       }
     ],
-    "imagePrompt": ""
+    "scenePrompts": [
+      {
+        "sentenceRange": [1, 4],
+        "setting": "scene location and environment details",
+        "mood": "emotional tone",
+        "characterActions": "what is happening in the scene (describe story characters here)",
+        "cameraDirection": "Wide establishing shot, eye-level, slowly pushing in",
+        "lighting": "lighting setup matching mood",
+        "transition": "Fade in from black"
+      },
+      {
+        "sentenceRange": [5, 8],
+        "setting": "scene progression",
+        "mood": "emotional tone",
+        "characterActions": "what is happening",
+        "cameraDirection": "Medium shot, slight low angle for engagement",
+        "lighting": "consistent with scene 1",
+        "transition": "Soft cut"
+      },
+      {
+        "sentenceRange": [9, 12],
+        "setting": "climax scene",
+        "mood": "emotional tone",
+        "characterActions": "key moment",
+        "cameraDirection": "Close-up, eye-level, shallow depth of field",
+        "lighting": "dramatic lighting for emotional peak",
+        "transition": "Match cut"
+      },
+      {
+        "sentenceRange": [13, 15],
+        "setting": "resolution scene",
+        "mood": "emotional tone",
+        "characterActions": "ending moment",
+        "cameraDirection": "Medium wide shot pulling back, uplifting angle",
+        "lighting": "warm, optimistic lighting",
+        "transition": "Slow fade out"
+      }
+    ]
   },
   "sentences": [
     {
@@ -101,6 +153,8 @@ ${imagePromptGuide}
 }
 
 # Critical Rules
+- **CHARACTERS ARRAY: Must contain EXACTLY 1 character with id="${speaker}" (the narrator)**
+- **DO NOT add story characters (boy, snowman, animal, etc.) to the characters array**
 - **ALL sentences must have speaker: "${speaker}"**
 - Native translation must sound natural and conversational, not textbook-style.
 - blankAnswer MUST appear exactly in the target sentence.
@@ -176,17 +230,72 @@ ${imagePromptGuide}
         "name": "Name",
         "gender": "male",
         "ethnicity": "specific ethnicity",
-        "role": "role in situation"
+        "role": "role in situation",
+        "appearance": {
+          "age": "mid-20s to early-30s",
+          "hair": "specific hair color, length, style",
+          "eyes": "eye color and shape",
+          "skin": "skin tone and features",
+          "build": "height and body type",
+          "clothing": "specific outfit with colors",
+          "distinctiveFeatures": "optional unique features"
+        }
       },
       {
         "id": "F",
         "name": "Name",
         "gender": "female",
         "ethnicity": "specific ethnicity",
-        "role": "role in situation"
+        "role": "role in situation",
+        "appearance": {
+          "age": "mid-20s to early-30s",
+          "hair": "specific hair color, length, style",
+          "eyes": "eye color and shape",
+          "skin": "skin tone and features",
+          "build": "height and body type",
+          "clothing": "specific outfit with colors",
+          "distinctiveFeatures": "optional unique features"
+        }
       }
     ],
-    "imagePrompt": "Pixar/Disney style 3D animation scene description..."
+    "scenePrompts": [
+      {
+        "sentenceRange": [1, 4],
+        "setting": "location description with environment details",
+        "mood": "emotional tone",
+        "characterActions": "what characters are doing",
+        "cameraDirection": "Wide establishing shot, eye-level, slowly pushing in to medium",
+        "lighting": "lighting setup matching mood and location",
+        "transition": "Fade in from black"
+      },
+      {
+        "sentenceRange": [5, 8],
+        "setting": "same location, different perspective",
+        "mood": "emotional tone",
+        "characterActions": "what characters are doing",
+        "cameraDirection": "Over-the-shoulder shot, focusing on listener's reactions",
+        "lighting": "consistent with scene 1",
+        "transition": "Soft cut"
+      },
+      {
+        "sentenceRange": [9, 12],
+        "setting": "same location, intimate framing",
+        "mood": "emotional tone",
+        "characterActions": "what characters are doing",
+        "cameraDirection": "Close-up two-shot, shallow depth of field, eye-level",
+        "lighting": "warm key light for emotional connection",
+        "transition": "Match cut on gesture"
+      },
+      {
+        "sentenceRange": [13, 15],
+        "setting": "same location, resolution framing",
+        "mood": "emotional tone",
+        "characterActions": "what characters are doing",
+        "cameraDirection": "Medium shot pulling back, slight low angle for uplifting feel",
+        "lighting": "bright, optimistic lighting",
+        "transition": "Slow fade out"
+      }
+    ]
   },
   "sentences": [
     {
@@ -448,24 +557,105 @@ These will be used in A/B/C word-choice quizzes in 5-second Shorts.
  * imagePrompt 가이드
  */
 function getImagePromptGuide(): string {
-  return `# ImagePrompt Guide
-Create a Pixar/Disney style 2D animation scene description.
+  return `# Character Appearance Guide (CRITICAL for consistency)
+Each character MUST have detailed, specific appearance description.
+This will be used to generate consistent character images across multiple scenes.
 
-**Structure:**
-1. **Scene:** What is happening in the image
-2. **Characters:** Who is in the scene (if any), their expressions
-3. **Setting:** Where it takes place, time of day
-4. **Mood:** Warm, cozy, exciting, peaceful, etc.
-5. **Colors:** Soft pastels, warm tones, vibrant colors, etc.
+**Appearance fields (required for each character):**
+- age: "mid-20s", "early-30s", "late-40s"
+- hair: "short black hair, slightly wavy" (color + length + style)
+- eyes: "warm brown almond-shaped eyes" (color + shape)
+- skin: "light tan complexion with freckles" (tone + features)
+- build: "average height, slim build" or "tall, athletic build"
+- clothing: "navy blazer over white t-shirt, dark jeans" (specific items + colors)
+- distinctiveFeatures: "small mole near left eye" (optional but helps consistency)
 
-**Example:**
-"A cozy Korean restaurant interior with warm lighting. A young couple sits at a wooden table, enjoying samgyupsal. Steam rises from the grill between them. The woman laughs while the man flips the meat. Soft orange and yellow tones create a warm, inviting atmosphere. Pixar-style 3D animation with detailed textures."
+**Good Example:**
+{
+  "id": "F",
+  "name": "Ji-min",
+  "gender": "female",
+  "ethnicity": "Korean",
+  "role": "tourist",
+  "appearance": {
+    "age": "mid-20s",
+    "hair": "long straight black hair with subtle brown highlights, worn down",
+    "eyes": "dark brown almond-shaped eyes",
+    "skin": "fair complexion with rosy cheeks",
+    "build": "petite, 5'4, slim build",
+    "clothing": "cream-colored cardigan over white blouse, light blue jeans, white sneakers",
+    "distinctiveFeatures": "small silver hoop earrings"
+  }
+}
+
+# Scene Prompts Guide (for multi-image generation)
+Generate 4 scene prompts that divide the 15 sentences into visual segments.
+Each scene should show the same characters in different moments of the conversation.
+
+**Scene structure:**
+- Scene 1 (sentences 1-4): Opening/Introduction
+- Scene 2 (sentences 5-8): Development
+- Scene 3 (sentences 9-12): Climax/Key moment
+- Scene 4 (sentences 13-15): Resolution/Ending
+
+**Scene prompt fields:**
+- sentenceRange: [startId, endId] - which sentences this scene covers
+- setting: specific location details (same location, different camera angle/focus)
+- mood: emotional tone of this moment
+- characterActions: what characters are doing in this specific moment
+- cameraDirection: REQUIRED - cinematic camera instruction (see guide below)
+- lighting: optional - lighting setup for mood
+- transition: optional - how to transition to next scene
+
+${getCinematicGuide()}
+
+**Example scenePrompts with cinematic direction:**
+[
+  {
+    "sentenceRange": [1, 4],
+    "setting": "cozy grocery store checkout counter",
+    "mood": "friendly, welcoming",
+    "characterActions": "cashier greeting customer warmly, customer placing items on counter",
+    "cameraDirection": "Wide establishing shot, eye-level, slowly pushing in to medium shot",
+    "lighting": "Warm fluorescent store lighting with soft window light from entrance",
+    "transition": "Fade in from black"
+  },
+  {
+    "sentenceRange": [5, 8],
+    "setting": "same checkout counter",
+    "mood": "curious, engaged",
+    "characterActions": "cashier leaning in with interest, customer looking thoughtful",
+    "cameraDirection": "Over-the-shoulder shot from behind customer, focusing on cashier's expressive face",
+    "lighting": "Same warm lighting, slight rim light on cashier's hair",
+    "transition": "Soft cut"
+  },
+  {
+    "sentenceRange": [9, 12],
+    "setting": "same checkout counter",
+    "mood": "warm, helpful",
+    "characterActions": "cashier giving advice with a smile, customer nodding appreciatively",
+    "cameraDirection": "Close-up two-shot, both faces in frame, shallow depth of field",
+    "lighting": "Warm key light, gentle fill, creating intimate atmosphere",
+    "transition": "Match cut on gesture"
+  },
+  {
+    "sentenceRange": [13, 15],
+    "setting": "checkout counter",
+    "mood": "cheerful, satisfied",
+    "characterActions": "customer handing card, both smiling warmly",
+    "cameraDirection": "Medium shot pulling back slightly, showing completed transaction, slight low angle to feel uplifting",
+    "lighting": "Bright, optimistic lighting with subtle lens flare from window",
+    "transition": "Slow fade to white"
+  }
+]
 
 **Rules:**
+- Characters must wear the SAME clothing in all scenes
+- Setting should be the SAME location (just different angles/focus)
 - NO text or words in the image
-- NO logos or brand names
-- Focus on emotion and atmosphere
-- Keep it family-friendly`;
+- Keep it family-friendly
+- VARY camera angles between scenes to create visual interest
+- Use camera direction to emphasize emotional beats`;
 }
 
 /**
@@ -516,6 +706,98 @@ function getStyleForCategory(category: Category): string {
     fairytale: 'Warm/Whimsical/Moral',
   };
   return styles[category];
+}
+
+/**
+ * 🎬 시네마틱 연출 가이드 (카메라, 조명, 전환)
+ */
+function getCinematicGuide(): string {
+  return `# 🎬 Cinematic Direction Guide (CRITICAL for visual storytelling)
+
+## Camera Shot Types (샷 사이즈)
+Use these to control how much of the scene/character is visible:
+- **Extreme Wide Shot (EWS)**: Shows vast environment, character is tiny - for establishing scale
+- **Wide Shot (WS)**: Full body visible with environment - for establishing location
+- **Medium Wide Shot (MWS)**: Knees up - shows body language + environment
+- **Medium Shot (MS)**: Waist up - standard conversational shot
+- **Medium Close-up (MCU)**: Chest up - shows emotion while maintaining context
+- **Close-up (CU)**: Face fills frame - for emotional intensity, reactions
+- **Extreme Close-up (ECU)**: Single feature (eyes, hands) - for dramatic emphasis
+
+## Camera Angles (카메라 앵글)
+Use these to create psychological effects:
+- **Eye-level**: Neutral, relatable - default for conversations
+- **Low angle (looking up)**: Makes subject powerful, heroic, intimidating
+- **High angle (looking down)**: Makes subject vulnerable, small, weak
+- **Dutch angle (tilted)**: Creates unease, tension, disorientation
+- **Bird's eye**: God-like perspective, shows patterns, isolation
+- **Worm's eye**: Extreme low, dramatic, surreal
+
+## Camera Movement (카메라 움직임)
+- **Static**: No movement - calm, stable
+- **Push in / Dolly in**: Moving closer - increasing tension or intimacy
+- **Pull back / Dolly out**: Moving away - revealing context or isolation
+- **Pan**: Horizontal rotation - following action or revealing space
+- **Tilt**: Vertical rotation - showing height or revealing
+- **Tracking / Following**: Moving with subject - engagement, journey
+- **Crane up/down**: Vertical movement - dramatic reveals
+
+## Composition Techniques (구도)
+- **Rule of thirds**: Subject off-center for dynamic composition
+- **Center frame**: Subject centered for power, confrontation
+- **Leading lines**: Use environment to guide eye to subject
+- **Frame within frame**: Doorways, windows to create depth
+- **Negative space**: Empty space for isolation, contemplation
+- **Shallow depth of field**: Blurred background for focus on subject
+- **Deep focus**: Everything sharp for environmental storytelling
+
+## Lighting Styles (조명)
+- **High-key**: Bright, even lighting - happy, optimistic, safe
+- **Low-key**: Dark with strong shadows - dramatic, mysterious, tense
+- **Golden hour**: Warm, soft, romantic - nostalgia, warmth
+- **Blue hour**: Cool, melancholic - sadness, reflection
+- **Rim/Back light**: Silhouette effect - mystery, drama
+- **Practical lighting**: Using in-scene lights (lamps, windows) - naturalistic
+- **Chiaroscuro**: Strong contrast - dramatic, artistic
+
+## Mood to Lighting Mapping (IMPORTANT - be specific!)
+Instead of abstract moods, use concrete lighting descriptions:
+- "happy" → "bright high-key lighting, warm golden tones, soft fill light"
+- "quiet" → "soft moonlight, cool blue tones, gentle volumetric fog"
+- "tense" → "harsh shadows, high contrast, cool desaturated tones"
+- "magical" → "ethereal glow, sparkle particles, iridescent highlights"
+- "sad" → "overcast diffused light, desaturated cool tones, soft shadows"
+- "cozy" → "warm interior lighting, soft shadows, amber tones from practical lights"
+- "dramatic" → "chiaroscuro lighting, strong contrast, theatrical shadows"
+- "peaceful" → "soft diffused light, pastel tones, gentle ambient glow"
+
+## Transition Types (전환)
+- **Cut**: Instant change - standard, energetic
+- **Fade in/out**: Gradual from/to black - beginning/ending, time passage
+- **Dissolve/Cross-fade**: Overlapping images - connection, memory
+- **Match cut**: Similar shapes/actions connect scenes - clever storytelling
+- **Wipe**: One image pushes another - stylized, retro
+- **Jump cut**: Same subject, time skip - urgency, disorientation
+
+## Emotional Beat Mapping (감정별 연출)
+Match camera work to emotional content:
+- **Joy/Excitement**: Bright lighting, dynamic movement, medium shots
+- **Sadness/Loss**: Low-key lighting, static or slow push-in, close-ups
+- **Tension/Conflict**: Dutch angles, tight framing, quick cuts
+- **Revelation/Surprise**: Push-in to close-up, dramatic lighting change
+- **Intimacy/Connection**: Shallow DOF, warm lighting, two-shots
+- **Isolation/Loneliness**: Wide shots with negative space, cold lighting
+- **Power/Authority**: Low angle, center frame, strong lighting
+- **Vulnerability**: High angle, off-center, soft lighting
+
+## Scene-by-Scene Progression (장면별 진행)
+Vary your shots to maintain visual interest:
+1. **Opening**: Wide establishing shot → sets the stage
+2. **Development**: Medium shots, over-shoulder → conversation flow
+3. **Climax**: Close-ups, dynamic angles → emotional peak
+4. **Resolution**: Pull back to medium/wide → closure, breathing room
+
+**IMPORTANT**: Each scene MUST have a different camera setup to avoid visual monotony!`;
 }
 
 /**

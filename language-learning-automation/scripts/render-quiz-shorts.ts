@@ -91,17 +91,44 @@ Examples:
   console.log(`   Script: ${script.metadata.title.target}`);
   console.log(`   Sentences: ${script.sentences.length}`);
 
-  // Check for background image
-  const shortsBackgroundPath = path.join(outputDir, 'episode-shorts-background.png');
-  let backgroundImage: string;
-  try {
-    await fs.access(shortsBackgroundPath);
-    backgroundImage = `${folderName}/episode-shorts-background.png`;
-    console.log(`   Background: episode-shorts-background.png (9:16)`);
-  } catch {
-    backgroundImage = `${folderName}/background.png`;
-    console.log(`   Background: background.png (16:9 fallback)`);
+  // Build scene image mapping from scenePrompts
+  const scenePrompts = script.metadata.scenePrompts || [];
+  const sceneImages: string[] = [];
+
+  // Check which scene images exist
+  for (let i = 1; i <= 10; i++) {
+    const scenePath = path.join(outputDir, `scene_${i}.png`);
+    try {
+      await fs.access(scenePath);
+      sceneImages.push(`${folderName}/scene_${i}.png`);
+    } catch {
+      break; // No more scene images
+    }
   }
+
+  console.log(`   🖼️ Found ${sceneImages.length} scene images`);
+
+  // Helper function to get background image for a sentence
+  const getBackgroundForSentence = (sentenceId: number): string => {
+    // If we have scenePrompts and scene images, find the matching scene
+    if (scenePrompts.length > 0 && sceneImages.length > 0) {
+      for (let i = 0; i < scenePrompts.length; i++) {
+        const [start, end] = scenePrompts[i].sentenceRange;
+        if (sentenceId >= start && sentenceId <= end) {
+          // Return corresponding scene image (1-indexed)
+          if (i < sceneImages.length) {
+            return sceneImages[i];
+          }
+        }
+      }
+    }
+
+    // Fallback: use scene_1 or legacy background
+    if (sceneImages.length > 0) {
+      return sceneImages[0];
+    }
+    return `${folderName}/background.png`;
+  };
 
   // Copy common assets (ensure directory exists)
   const commonAssetsDest = path.join(channelOutputDir, 'assets', 'common');
@@ -131,6 +158,9 @@ Examples:
       continue;
     }
 
+    // Get the appropriate background image for this sentence
+    const backgroundImage = getBackgroundForSentence(sentence.id);
+
     // Generate quiz choices
     const quizSentence = {
       ...sentence,
@@ -149,7 +179,12 @@ Examples:
       episodeTitle: script.metadata.title.native,
     };
 
-    console.log(`[${i + 1}/${totalSentences}] "${sentence.target.substring(0, 40)}..."`);
+    // Extract scene number from background path for logging
+    const sceneMatch = backgroundImage.match(/scene_(\d+)/);
+    const sceneInfo = sceneMatch ? ` [Scene ${sceneMatch[1]}]` : '';
+    console.log(
+      `[${i + 1}/${totalSentences}]${sceneInfo} "${sentence.target.substring(0, 35)}..."`
+    );
     console.log(
       `   Choices: ${quizSentence.choices.map((c) => (c.isCorrect ? `✓${c.text}` : c.text)).join(' | ')}`
     );
