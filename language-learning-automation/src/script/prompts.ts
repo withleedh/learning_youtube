@@ -1,11 +1,50 @@
 import type { Category } from './types';
 import type { ChannelConfig } from '../config/types';
 import { CATEGORY_SCRIPT_FORMAT, isNarrationCategory, getDefaultSpeaker } from './category-tones';
+import {
+  buildStylePatternPrompt,
+  buildEmotionalArcPrompt,
+  buildMicroDramaPrompt,
+  buildEngagementHooksPrompt,
+  getRecommendedArc,
+} from './reference-patterns';
+import { getCurrentSeasonalContext } from './topic-combination';
+import { getCompetitorExamplePrompt } from './competitor-examples';
+import { buildTopicExamplesPrompt } from './high-perf-topics';
 
 /**
  * Generate the main prompt for script generation
+ * Enhanced with reference patterns, emotional arcs, and differentiation strategies
  */
 export function generateScriptPrompt(
+  config: ChannelConfig,
+  category: Category,
+  topic?: string,
+  options?: {
+    enableEmotionalArc?: boolean;
+    enableMicroDrama?: boolean;
+    enableEngagementHooks?: boolean;
+    enableCulturalDepth?: boolean;
+  }
+): string {
+  const opts = {
+    enableEmotionalArc: true,
+    enableMicroDrama: true,
+    enableEngagementHooks: true,
+    enableCulturalDepth: true,
+    ...options,
+  };
+
+  if (isNarrationCategory(category)) {
+    return generateEnhancedNarrationPrompt(config, category, topic, opts);
+  }
+  return generateEnhancedDialoguePrompt(config, category, topic, opts);
+}
+
+/**
+ * Legacy function for backward compatibility
+ */
+export function generateScriptPromptLegacy(
   config: ChannelConfig,
   category: Category,
   topic?: string
@@ -18,6 +57,7 @@ export function generateScriptPrompt(
 
 /**
  * 나레이션 형식 프롬프트 (story, news, announcement, lesson, fairytale)
+ * Legacy version - kept for backward compatibility
  */
 function generateNarrationPrompt(
   config: ChannelConfig,
@@ -63,6 +103,29 @@ ${blankWordGuide}
 
 ${imagePromptGuide}
 
+# CRITICAL: scenePrompts Rules for Narration Categories
+**scenePrompts must describe the STORY SCENES, NOT the narrator!**
+
+## Dynamic Scene Count (3-6 scenes)
+- Generate **3-6 scenes** based on story flow - NOT fixed 4!
+- Each scene should represent a meaningful story beat or emotional shift
+- sentenceRange should cover ALL ${content.sentenceCount} sentences without gaps or overlaps
+
+## Scene Planning Guidelines
+- **Opening scene**: Establish setting, introduce characters (sentences 1-3)
+- **Development scenes**: Build tension, show progression (variable count)
+- **Climax scene**: Key emotional moment or turning point
+- **Resolution scene**: Conclusion, lesson learned (last 2-3 sentences)
+
+## Content Rules
+For fairytale/story categories:
+- ❌ WRONG: "Sarah opens a book", "Narrator looks at camera", "Sarah reads by fireplace"
+- ✅ CORRECT: "A lonely boy builds a snowman in snowy backyard", "The snowman slowly melts under spring sun"
+
+The images should show the STORY being told, not the person telling it.
+- setting: Where the STORY takes place (snowy garden, forest, castle - NOT narrator's room)
+- characterActions: What STORY CHARACTERS do (boy, snowman, animals - NOT narrator)
+
 # CRITICAL: Character ID Rules
 - The "characters" array must contain EXACTLY ONE character: the narrator
 - The narrator's "id" MUST be "${speaker}" (not "Boy", "Girl", "Snowman", etc.)
@@ -97,42 +160,18 @@ ${imagePromptGuide}
       }
     ],
     "scenePrompts": [
+      // Generate 3-6 scenes based on story flow. Each scene should cover a meaningful story beat.
+      // Example structure (adjust based on your story):
       {
-        "sentenceRange": [1, 4],
-        "setting": "scene location and environment details",
+        "sentenceRange": [1, 3],  // Adjust ranges based on story beats
+        "setting": "STORY SCENE location - where the story takes place",
         "mood": "emotional tone",
-        "characterActions": "what is happening in the scene (describe story characters here)",
-        "cameraDirection": "Wide establishing shot, eye-level, slowly pushing in",
-        "lighting": "lighting setup matching mood",
-        "transition": "Fade in from black"
-      },
-      {
-        "sentenceRange": [5, 8],
-        "setting": "scene progression",
-        "mood": "emotional tone",
-        "characterActions": "what is happening",
-        "cameraDirection": "Medium shot, slight low angle for engagement",
-        "lighting": "consistent with scene 1",
-        "transition": "Soft cut"
-      },
-      {
-        "sentenceRange": [9, 12],
-        "setting": "climax scene",
-        "mood": "emotional tone",
-        "characterActions": "key moment",
-        "cameraDirection": "Close-up, eye-level, shallow depth of field",
-        "lighting": "dramatic lighting for emotional peak",
-        "transition": "Match cut"
-      },
-      {
-        "sentenceRange": [13, 15],
-        "setting": "resolution scene",
-        "mood": "emotional tone",
-        "characterActions": "ending moment",
-        "cameraDirection": "Medium wide shot pulling back, uplifting angle",
-        "lighting": "warm, optimistic lighting",
-        "transition": "Slow fade out"
+        "characterActions": "STORY CHARACTERS' actions (NOT narrator)",
+        "cameraDirection": "camera direction",
+        "lighting": "lighting setup",
+        "transition": "transition type"
       }
+      // Add more scenes as needed (3-6 total) to match story flow
     ]
   },
   "sentences": [
@@ -167,6 +206,7 @@ Generate ONLY the JSON output. No additional text.`;
 
 /**
  * 대화 형식 프롬프트 (conversation, travel_business)
+ * Legacy version - kept for backward compatibility
  */
 function generateDialoguePrompt(config: ChannelConfig, category: Category, topic?: string): string {
   const { meta, content } = config;
@@ -215,6 +255,11 @@ ${blankWordGuide}
 
 ${imagePromptGuide}
 
+# Dynamic Scene Count (3-6 scenes)
+- Generate **3-6 scenes** based on conversation flow - NOT fixed 4!
+- Each scene should represent a meaningful moment or emotional shift in the dialogue
+- sentenceRange should cover ALL ${content.sentenceCount} sentences without gaps or overlaps
+
 # Output Format (JSON)
 {
   "metadata": {
@@ -259,42 +304,18 @@ ${imagePromptGuide}
       }
     ],
     "scenePrompts": [
+      // Generate 3-6 scenes based on conversation flow. Each scene = meaningful moment.
+      // Example (adjust count and ranges based on YOUR dialogue):
       {
-        "sentenceRange": [1, 4],
+        "sentenceRange": [1, 3],  // Adjust based on conversation beats
         "setting": "location description with environment details",
         "mood": "emotional tone",
         "characterActions": "what characters are doing",
-        "cameraDirection": "Wide establishing shot, eye-level, slowly pushing in to medium",
-        "lighting": "lighting setup matching mood and location",
-        "transition": "Fade in from black"
-      },
-      {
-        "sentenceRange": [5, 8],
-        "setting": "same location, different perspective",
-        "mood": "emotional tone",
-        "characterActions": "what characters are doing",
-        "cameraDirection": "Over-the-shoulder shot, focusing on listener's reactions",
-        "lighting": "consistent with scene 1",
-        "transition": "Soft cut"
-      },
-      {
-        "sentenceRange": [9, 12],
-        "setting": "same location, intimate framing",
-        "mood": "emotional tone",
-        "characterActions": "what characters are doing",
-        "cameraDirection": "Close-up two-shot, shallow depth of field, eye-level",
-        "lighting": "warm key light for emotional connection",
-        "transition": "Match cut on gesture"
-      },
-      {
-        "sentenceRange": [13, 15],
-        "setting": "same location, resolution framing",
-        "mood": "emotional tone",
-        "characterActions": "what characters are doing",
-        "cameraDirection": "Medium shot pulling back, slight low angle for uplifting feel",
-        "lighting": "bright, optimistic lighting",
-        "transition": "Slow fade out"
+        "cameraDirection": "camera direction",
+        "lighting": "lighting setup",
+        "transition": "transition type"
       }
+      // Add more scenes as needed (3-6 total) to match conversation flow
     ]
   },
   "sentences": [
@@ -858,4 +879,609 @@ export function getCategoryForDay(date: Date): Category {
     6: 'lesson', // Saturday
   };
   return categoryMap[dayOfWeek];
+}
+
+// ============================================
+// ENHANCED PROMPT SYSTEM
+// 타겟 채널을 뛰어넘는 차별화 요소 포함
+// ============================================
+
+interface EnhancedPromptOptions {
+  enableEmotionalArc: boolean;
+  enableMicroDrama: boolean;
+  enableEngagementHooks: boolean;
+  enableCulturalDepth: boolean;
+}
+
+/**
+ * 향상된 나레이션 프롬프트
+ * - 감정 아크 설계
+ * - 마이크로 드라마 구조
+ * - 참여 유도 훅
+ * - 문화적 깊이
+ */
+function generateEnhancedNarrationPrompt(
+  config: ChannelConfig,
+  category: Category,
+  topic?: string,
+  options?: EnhancedPromptOptions
+): string {
+  const { meta, content } = config;
+  const formatConfig = CATEGORY_SCRIPT_FORMAT[category];
+  const speaker = getDefaultSpeaker(category);
+  const speakerGender = speaker === 'M' ? 'male' : 'female';
+
+  // 패턴 기반 가이드 생성
+  const stylePattern = buildStylePatternPrompt(category);
+  const recommendedArc = getRecommendedArc(category);
+  const emotionalArcGuide = options?.enableEmotionalArc
+    ? buildEmotionalArcPrompt(recommendedArc)
+    : '';
+  const microDramaGuide = options?.enableMicroDrama ? buildMicroDramaPrompt() : '';
+  const engagementHooksGuide = options?.enableEngagementHooks ? buildEngagementHooksPrompt() : '';
+  const culturalDepthGuide = options?.enableCulturalDepth
+    ? getCulturalDepthGuide(meta.targetLanguage)
+    : '';
+
+  // 계절 컨텍스트
+  const seasonalContext = getCurrentSeasonalContext();
+  const seasonalGuide = `
+## 계절 컨텍스트 (${seasonalContext.month}월 - ${seasonalContext.seasonKo})
+- 시즌 이벤트: ${seasonalContext.events.join(', ')}
+- 분위기: ${seasonalContext.moods.join(', ')}
+- 시각 요소: ${seasonalContext.visualElements.join(', ')}
+(자연스럽게 녹여내되, 억지로 넣지 마세요)`;
+
+  const fewShotExample = getEnhancedNarrationFewShot(category);
+  const blankWordGuide = getBlankWordGuide();
+  const imagePromptGuide = getImagePromptGuide();
+
+  // 경쟁 채널 고성과 예시 추가
+  const competitorExample = getCompetitorExamplePrompt(category);
+
+  // 고성과 토픽 예시 추가
+  const highPerfTopicsGuide = buildTopicExamplesPrompt(category, 5);
+
+  return `# Role
+You are an elite content creator for ${meta.targetLanguage} language learning videos.
+Your goal is to create content that SURPASSES top channels like "귀가 뚫리는 영어".
+
+# Task
+Create a ${meta.targetLanguage} **narration script** that is:
+- Emotionally engaging (not just informative)
+- Structurally compelling (with micro-drama elements)
+- Culturally rich (language + culture together)
+- Retention-optimized (hooks that keep viewers watching)
+
+Format: ${formatConfig.description}
+
+## Category: ${category}
+${getNarrationCategoryGuide(category)}
+
+## Topic: ${topic || 'Choose a specific, emotionally resonant topic'}
+
+${highPerfTopicsGuide}
+
+${seasonalGuide}
+
+# 🎯 DIFFERENTIATION STRATEGY (What makes us BETTER)
+
+## 1. Emotional Arc Design
+Every script must have a clear emotional journey:
+${emotionalArcGuide}
+
+## 2. Micro-Drama Structure
+Include small conflict-resolution within 15 sentences:
+${microDramaGuide}
+
+## 3. Engagement Hooks
+Strategic hooks to maintain viewer attention:
+${engagementHooksGuide}
+
+## 4. Cultural Depth
+${culturalDepthGuide}
+
+# Reference Style Patterns
+${stylePattern}
+
+# 🏆 HIGH-PERFORMANCE COMPETITOR REFERENCE (CRITICAL - 경쟁 채널 고성과 예시)
+${competitorExample}
+
+# Few-Shot Example (Pattern Reference - DO NOT COPY)
+${fewShotExample}
+
+# Constraints
+1. **Level:** CEFR A1~A2 (Pre-Intermediate). Natural but accessible.
+2. **Speaker:** Single narrator (${speaker} = ${speakerGender})
+3. **Length:** Exactly ${content.sentenceCount} sentences total.
+4. **Sentence Length:** 5-12 words per sentence. Short and clear.
+5. **Difficulty:** ${content.difficulty}
+
+# Structure with Emotional Tags
+${getEnhancedNarrationStructure(category)}
+
+${blankWordGuide}
+
+${imagePromptGuide}
+
+# CRITICAL: scenePrompts Rules for Narration Categories
+**scenePrompts must describe the STORY SCENES, NOT the narrator!**
+
+## Dynamic Scene Count (3-6 scenes)
+- Generate **3-6 scenes** based on story flow - NOT fixed 4!
+- Each scene should represent a meaningful story beat or emotional shift
+- sentenceRange should cover ALL ${content.sentenceCount} sentences without gaps or overlaps
+
+## Scene Planning Guidelines
+- **Opening scene**: Establish setting, introduce characters (sentences 1-3)
+- **Development scenes**: Build tension, show progression (variable count)
+- **Climax scene**: Key emotional moment or turning point
+- **Resolution scene**: Conclusion, lesson learned (last 2-3 sentences)
+
+## Content Rules
+For fairytale/story categories:
+- ❌ WRONG: "Sarah opens a book", "Narrator looks at camera", "Sarah reads by fireplace"
+- ✅ CORRECT: "A lonely boy builds a snowman in snowy backyard", "The snowman slowly melts under spring sun"
+
+The images should show the STORY being told, not the person telling it.
+- setting: Where the STORY takes place (snowy garden, forest, castle - NOT narrator's room)
+- characterActions: What STORY CHARACTERS do (boy, snowman, animals - NOT narrator)
+
+# CRITICAL: Character ID Rules
+- The "characters" array must contain EXACTLY ONE character: the narrator
+- The narrator's "id" MUST be "${speaker}" (not "Boy", "Girl", "Snowman", etc.)
+- Story characters (like a boy, snowman, animal) are described in scenePrompts, NOT in the characters array
+- The narrator is the voice reading the story, not a character IN the story
+
+# Output Format (JSON)
+{
+  "metadata": {
+    "topic": "Specific topic",
+    "style": "${getStyleForCategory(category)}",
+    "emotionalArc": "${recommendedArc}",
+    "title": {
+      "target": "Title in ${meta.targetLanguage}",
+      "native": "Title in ${meta.nativeLanguage}"
+    },
+    "characters": [
+      {
+        "id": "${speaker}",
+        "name": "${speaker === 'M' ? 'James' : 'Sarah'}",
+        "gender": "${speakerGender}",
+        "ethnicity": "American",
+        "role": "narrator",
+        "appearance": {
+          "age": "early-30s",
+          "hair": "specific hair color, length, style",
+          "eyes": "eye color and shape",
+          "skin": "skin tone",
+          "build": "height and body type",
+          "clothing": "specific outfit with colors",
+          "distinctiveFeatures": "optional unique features"
+        }
+      }
+    ],
+    "scenePrompts": [
+      // Generate 3-6 scenes based on story flow. Each scene = meaningful story beat.
+      // Example (adjust count and ranges based on YOUR story):
+      {
+        "sentenceRange": [1, 3],  // Adjust based on story beats
+        "setting": "STORY SCENE location - where the story takes place",
+        "mood": "emotional tone",
+        "emotionalPhase": "hook/setup/rising/climax/resolution",
+        "characterActions": "STORY CHARACTERS' actions (NOT narrator)",
+        "cameraDirection": "camera direction",
+        "lighting": "lighting setup",
+        "transition": "transition type"
+      }
+      // Add more scenes as needed (3-6 total)
+    ]
+  },
+  "sentences": [
+    {
+      "id": 1,
+      "speaker": "${speaker}",
+      "target": "Full sentence in ${meta.targetLanguage}",
+      "targetPronunciation": "Pronunciation in ${meta.nativeLanguage} script",
+      "targetBlank": "Sentence with _______",
+      "blankAnswer": "key word",
+      "native": "Natural ${meta.nativeLanguage} translation",
+      "emotionalTag": "curiosity|empathy|tension|revelation|lingering",
+      "engagementHook": "optional - type of hook used",
+      "words": [
+        { "word": "vocabulary", "meaning": "meaning" }
+      ],
+      "wrongWordChoices": ["similar_word_1", "similar_word_2"]
+    }
+  ]
+}
+
+# Critical Rules
+- **EMOTIONAL ARC**: Each sentence should contribute to the overall emotional journey
+- **MICRO-DRAMA**: Include at least one small conflict-resolution moment
+- **ENGAGEMENT**: Use at least 2-3 engagement hooks throughout
+- **CHARACTERS ARRAY: Must contain EXACTLY 1 character with id="${speaker}" (the narrator)**
+- Native translation must sound natural and conversational
+- blankAnswer MUST appear exactly in the target sentence
+- targetBlank MUST contain exactly "_______" (7 underscores)
+- wrongWordChoices: Include 2 phonetically similar SINGLE WORDS
+
+Generate ONLY the JSON output. No additional text.`;
+}
+
+/**
+ * 향상된 대화 프롬프트
+ */
+function generateEnhancedDialoguePrompt(
+  config: ChannelConfig,
+  category: Category,
+  topic?: string,
+  options?: EnhancedPromptOptions
+): string {
+  const { meta, content } = config;
+  const formatConfig = CATEGORY_SCRIPT_FORMAT[category];
+
+  // 패턴 기반 가이드 생성
+  const stylePattern = buildStylePatternPrompt(category);
+  const recommendedArc = getRecommendedArc(category);
+  const emotionalArcGuide = options?.enableEmotionalArc
+    ? buildEmotionalArcPrompt(recommendedArc)
+    : '';
+  const engagementHooksGuide = options?.enableEngagementHooks ? buildEngagementHooksPrompt() : '';
+  const culturalDepthGuide = options?.enableCulturalDepth
+    ? getCulturalDepthGuide(meta.targetLanguage)
+    : '';
+
+  // 계절 컨텍스트
+  const seasonalContext = getCurrentSeasonalContext();
+  const seasonalGuide = `
+## 계절 컨텍스트 (${seasonalContext.month}월 - ${seasonalContext.seasonKo})
+- 시즌 이벤트: ${seasonalContext.events.join(', ')}
+- 분위기: ${seasonalContext.moods.join(', ')}
+(자연스럽게 녹여내되, 억지로 넣지 마세요)`;
+
+  const fewShotExample = getEnhancedDialogueFewShot(category);
+  const blankWordGuide = getBlankWordGuide();
+  const imagePromptGuide = getImagePromptGuide();
+
+  // 경쟁 채널 고성과 예시 추가
+  const competitorExample = getCompetitorExamplePrompt(category);
+
+  // 고성과 토픽 예시 추가
+  const highPerfTopicsGuide = buildTopicExamplesPrompt(category, 5);
+
+  return `# Role
+You are an elite screenwriter creating natural ${meta.targetLanguage} dialogue for language learning videos.
+Your goal is to create conversations that feel REAL and EMOTIONALLY ENGAGING.
+
+# Task
+Create a ${meta.targetLanguage} **conversation script** that is:
+- Naturally flowing (not textbook-style)
+- Emotionally resonant (viewers should feel connected)
+- Culturally authentic (real expressions, real situations)
+- Retention-optimized (keeps viewers engaged)
+
+Format: ${formatConfig.description}
+
+## Category: ${category}
+${getDialogueCategoryGuide(category)}
+
+## Topic: ${topic || 'Choose a specific, relatable everyday situation'}
+
+${highPerfTopicsGuide}
+
+${seasonalGuide}
+
+# 🎯 DIFFERENTIATION STRATEGY
+
+## 1. Emotional Flow
+${emotionalArcGuide}
+
+## 2. Natural Dialogue Techniques
+- **Reactions**: "Oh!", "Really?", "That's great!", "I see.", "Wow!"
+- **Softeners**: "Actually,", "Well,", "I think...", "Maybe..."
+- **Hesitation**: "Um...", "Let me see...", "Hmm..."
+- **Contractions**: Use "I'm", "don't", "can't", "it's" for natural speech
+- **Interruptions**: Occasional natural interruptions
+- **Callbacks**: Reference earlier parts of conversation
+
+## 3. Engagement Hooks
+${engagementHooksGuide}
+
+## 4. Cultural Authenticity
+${culturalDepthGuide}
+
+# Reference Style Patterns
+${stylePattern}
+
+# 🏆 HIGH-PERFORMANCE COMPETITOR REFERENCE (CRITICAL - 경쟁 채널 고성과 예시)
+${competitorExample}
+
+# Few-Shot Example (Pattern Reference - DO NOT COPY)
+${fewShotExample}
+
+# Constraints
+1. **Level:** CEFR A1-A2 (Pre-Intermediate). Natural but accessible.
+2. **Characters:** Two characters (M = Male, F = Female)
+3. **Length:** Exactly ${content.sentenceCount} sentences total.
+4. **Sentence Length:** 5-12 words per sentence. Short and punchy.
+5. **Difficulty:** ${content.difficulty}
+
+# Dialogue Guidelines
+- **Hook:** Start with a specific situation (NOT generic greetings)
+- **Flow:** Characters must RESPOND to each other naturally
+- **Reactions:** Include natural reactions throughout
+- **Ending:** Satisfying conclusion (agreement, gratitude, or encouragement)
+
+${blankWordGuide}
+
+${imagePromptGuide}
+
+# Output Format (JSON)
+{
+  "metadata": {
+    "topic": "Specific situation",
+    "style": "Relatable/Natural",
+    "emotionalArc": "${recommendedArc}",
+    "title": {
+      "target": "Title in ${meta.targetLanguage}",
+      "native": "Title in ${meta.nativeLanguage}"
+    },
+    "characters": [
+      {
+        "id": "M",
+        "name": "Name",
+        "gender": "male",
+        "ethnicity": "specific ethnicity",
+        "role": "role in situation",
+        "appearance": {
+          "age": "mid-20s to early-30s",
+          "hair": "specific hair color, length, style",
+          "eyes": "eye color and shape",
+          "skin": "skin tone and features",
+          "build": "height and body type",
+          "clothing": "specific outfit with colors",
+          "distinctiveFeatures": "optional unique features"
+        }
+      },
+      {
+        "id": "F",
+        "name": "Name",
+        "gender": "female",
+        "ethnicity": "specific ethnicity",
+        "role": "role in situation",
+        "appearance": {
+          "age": "mid-20s to early-30s",
+          "hair": "specific hair color, length, style",
+          "eyes": "eye color and shape",
+          "skin": "skin tone and features",
+          "build": "height and body type",
+          "clothing": "specific outfit with colors",
+          "distinctiveFeatures": "optional unique features"
+        }
+      }
+    ],
+    "scenePrompts": [
+      {
+        "sentenceRange": [1, 4],
+        "setting": "location description",
+        "mood": "emotional tone",
+        "emotionalPhase": "opening/sharing/deepening/encouraging/closing",
+        "characterActions": "what characters are doing",
+        "cameraDirection": "camera instruction",
+        "lighting": "lighting setup",
+        "transition": "transition type"
+      }
+    ]
+  },
+  "sentences": [
+    {
+      "id": 1,
+      "speaker": "M or F",
+      "target": "Full sentence in ${meta.targetLanguage}",
+      "targetPronunciation": "Pronunciation in ${meta.nativeLanguage} script",
+      "targetBlank": "Sentence with _______",
+      "blankAnswer": "key word",
+      "native": "Natural ${meta.nativeLanguage} translation",
+      "emotionalTag": "curious|engaged|connected|supportive|hopeful",
+      "words": [
+        { "word": "vocabulary", "meaning": "meaning" }
+      ],
+      "wrongWordChoices": ["similar_word_1", "similar_word_2"]
+    }
+  ]
+}
+
+# Critical Rules
+- **Alternate speakers naturally** (not strictly M-F-M-F, but balanced)
+- **EMOTIONAL FLOW**: Each exchange should build emotional connection
+- Native translation must sound natural and conversational
+- blankAnswer MUST appear exactly in the target sentence
+- wrongWordChoices: Include 2 phonetically similar SINGLE WORDS
+
+Generate ONLY the JSON output. No additional text.`;
+}
+
+/**
+ * 문화적 깊이 가이드
+ */
+function getCulturalDepthGuide(targetLanguage: string): string {
+  if (targetLanguage === 'English') {
+    return `## Cultural Depth (English)
+Include subtle cultural elements that enrich learning:
+- **Idioms**: Use 1-2 common idioms naturally (e.g., "break the ice", "piece of cake")
+- **Cultural references**: American/British daily life, holidays, customs
+- **Politeness levels**: Formal vs casual register awareness
+- **Body language hints**: Describe gestures/expressions in scene prompts
+
+Example: Instead of just "Thank you", use "Thanks a million!" or "I really appreciate it."`;
+  }
+
+  return `## Cultural Depth
+Include cultural elements that make the language come alive:
+- Common expressions and idioms
+- Cultural context and customs
+- Appropriate politeness levels
+- Non-verbal communication hints`;
+}
+
+/**
+ * 향상된 나레이션 Few-Shot 예시
+ */
+function getEnhancedNarrationFewShot(category: Category): string {
+  const examples: Partial<Record<Category, string>> = {
+    story: `**Topic: 어릴 때 살던 집에 방문하게 됐어요**
+
+**Emotional Arc: curiosity → empathy → tension → revelation → lingering**
+
+Sentence flow with emotional tags:
+1. [HOOK/curiosity] "I work as an electronics repairman." - 평범한 시작, 호기심 유발
+2. [HOOK/curiosity] "One day, I got a call to fix a TV." - 사건의 시작
+3. [SETUP/curiosity] "The address seemed familiar." - 호기심 갭 생성
+4. [SETUP/empathy] "When I arrived, I stopped in front of the house." - 감정 연결
+5. [RISING/empathy] "It was the house where I lived as a child." - 반전 공개
+6. [RISING/tension] "I stood there for a moment." - 감정 고조
+7. [RISING/tension] "Many old memories came flooding back." - 감정 심화
+...
+14. [RESOLUTION/revelation] "In that quiet room, I felt my father's love clearly."
+15. [RESOLUTION/lingering] "That day, the love he saved for me finally reached my heart."
+
+**Key techniques used:**
+- Curiosity gap in sentence 3
+- Unexpected connection (repair visit → childhood home)
+- Hidden truth (father's journal)
+- Emotional reversal (work task → emotional journey)
+- Lingering thought in final sentence`,
+
+    fairytale: `**Topic: 정원에서 가장 늦게 피어난 꽃**
+
+**Emotional Arc: curiosity → empathy → tension → revelation → lingering**
+
+Sentence flow with emotional tags:
+1. [HOOK/curiosity] "There was a quiet and beautiful garden."
+2. [SETUP/empathy] "Many kinds of flowers grew together in the garden."
+3. [SETUP/empathy] "Spring came and warm sunlight touched the soil."
+4. [RISING/tension] "Soon the season of blooming began."
+5. [RISING/tension] "Some flowers bloomed very quickly."
+6. [RISING/tension] "They opened wide and showed their bright colors."
+7. [CLIMAX/tension] "But one small flower did not bloom."
+...
+15. [RESOLUTION/lingering] "The garden learned that every flower has its own time."
+
+**Key techniques used:**
+- Nature metaphor for life lesson
+- Underdog character (late-blooming flower)
+- Patience and self-acceptance theme
+- Universal moral that resonates`,
+
+    lesson: `**Topic: 돈이 줄줄 새는 사람들의 5가지 습관**
+
+**Emotional Arc: problem → analysis → solution → growth**
+
+Sentence flow:
+1. [HOOK/curiosity] "Some people work hard every day."
+2. [HOOK/empathy] "But they still cannot save much money."
+3. [SETUP/curiosity] "This is not about luck or talent at all."
+4. [SETUP/engagement] "Today I will explain common habits of people who fail to save."
+5. [CONTENT/learning] "The first habit is spending money first and checking later."
+...
+15. [RESOLUTION/motivation] "Small changes today lead to big results tomorrow."
+
+**Key techniques used:**
+- Relatable problem opening
+- Numbered structure for clarity
+- Specific, actionable advice
+- Motivational closing`,
+  };
+
+  return examples[category] || examples.story || '';
+}
+
+/**
+ * 향상된 대화 Few-Shot 예시
+ */
+function getEnhancedDialogueFewShot(category: Category): string {
+  const examples: Partial<Record<Category, string>> = {
+    conversation: `**Topic: 당신의 새해 목표는 무엇인가요?**
+
+**Emotional Arc: curious → engaged → connected → supportive → hopeful**
+
+Sentence flow with emotional tags:
+1. M [OPENING/curious]: "What are you doing right now?" - 자연스러운 시작
+2. F [OPENING/engaged]: "I'm writing my goals for the new year." - 상황 설정
+3. M [OPENING/curious]: "Your goals for 2026? That sounds interesting." - 관심 표현
+4. F [SHARING/engaged]: "Yes, I heard writing down goals helps me reach them." - 정보 공유
+5. M [SHARING/supportive]: "That's nice. What goals do you have?" - 후속 질문
+6. F [SHARING/engaged]: "First, I want to read one book every month." - 구체적 목표
+7. M [DEEPENING/supportive]: "That's a strong goal. I like how simple it is." - 긍정적 피드백
+...
+15. F [CLOSING/hopeful]: "I agree. Let's make this year bright and meaningful." - 따뜻한 마무리
+
+**Key techniques used:**
+- Natural question-answer flow
+- Supportive reactions ("That's nice", "That sounds great")
+- Specific details (one book every month, cooking certificate)
+- Shared commitment at the end
+- No generic greetings (starts with situation)`,
+
+    travel_business: `**Topic: 호텔에서 체크인을 해요**
+
+**Emotional Arc: professional → helpful → satisfied**
+
+Sentence flow:
+1. M [OPENING]: "Hello, I have a reservation under the name Kim."
+2. F [PROFESSIONAL]: "Let me check that for you."
+3. F [HELPFUL]: "Yes, I found your reservation."
+4. M [CURIOUS]: "Great. Is my room ready?"
+5. F [INFORMATIVE]: "Yes, your room is on the 5th floor."
+6. M [ENGAGED]: "Does the room have a nice view?"
+7. F [HELPFUL]: "Yes, you can see the ocean from your window."
+...
+15. M [SATISFIED]: "Perfect. I'm looking forward to my stay."
+
+**Key techniques used:**
+- Practical, usable expressions
+- Polite but natural tone
+- Information exchange flow
+- Positive resolution`,
+  };
+
+  return examples[category] || examples.conversation || '';
+}
+
+/**
+ * 향상된 나레이션 구조 가이드
+ */
+function getEnhancedNarrationStructure(category: Category): string {
+  const structures: Partial<Record<Category, string>> = {
+    story: `**Story Structure with Emotional Tags:**
+- **HOOK (1-2문장):** [curiosity] 호기심 유발, 예상치 못한 상황 암시
+- **SETUP (3-5문장):** [empathy] 배경 설정, 캐릭터 연결, 공감 형성
+- **RISING (6-9문장):** [tension] 갈등/발견, 감정 고조, 스테이크 상승
+- **CLIMAX (10-12문장):** [revelation] 반전/깨달음, 감정적 정점
+- **RESOLUTION (13-15문장):** [lingering] 여운, 교훈, 열린 생각`,
+
+    news: `**News Structure with Emotional Tags:**
+- **HOOK (1-2문장):** [curiosity] 놀라운 사실로 시작
+- **CONTEXT (3-5문장):** [informative] 배경 설명, 왜 중요한지
+- **DETAILS (6-10문장):** [engaging] 구체적 사례, 숫자, 인용
+- **IMPACT (11-13문장):** [empathy] 우리에게 미치는 영향
+- **OUTLOOK (14-15문장):** [hopeful/cautious] 전망, 의미`,
+
+    fairytale: `**Fairytale Structure with Emotional Tags:**
+- **ONCE UPON (1-2문장):** [wonder] 마법 같은 세계 소개
+- **CHARACTERS (3-5문장):** [empathy] 주인공 소개, 공감 형성
+- **CHALLENGE (6-9문장):** [tension] 갈등/도전 발생
+- **JOURNEY (10-12문장):** [growth] 성장/변화 과정
+- **MORAL (13-15문장):** [wisdom] 교훈, 따뜻한 마무리`,
+
+    lesson: `**Lesson Structure with Emotional Tags:**
+- **PROBLEM (1-3문장):** [empathy] 공감되는 문제 제기
+- **PROMISE (4문장):** [curiosity] 해결책 예고
+- **CONTENT (5-12문장):** [learning] 단계별 설명 (First, Second...)
+- **EXAMPLE (13-14문장):** [practical] 실제 적용 예시
+- **MOTIVATION (15문장):** [hopeful] 격려, 실천 권유`,
+  };
+
+  return structures[category] || structures.story || '';
 }

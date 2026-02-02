@@ -117,7 +117,11 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       if (script.metadata.scenePrompts && script.metadata.scenePrompts.length > 0) {
         console.log('🎨 Generating multi-scene images with character consistency...');
         try {
-          sceneImagePaths = await generateSceneImages(script, outputDir);
+          sceneImagePaths = await generateSceneImages(
+            script,
+            outputDir,
+            config.theme.preferredArtStyle
+          );
           // Use first scene as background for legacy compatibility
           if (sceneImagePaths.length > 0) {
             backgroundImagePath = sceneImagePaths[0];
@@ -837,7 +841,7 @@ export function getTimelineLabels(nativeLanguage: string = 'Korean') {
 function generateThumbnailSubtitle(_targetLanguage: string, nativeLanguage: string): string {
   // 언어별 후킹 문구 (간단하게)
   if (nativeLanguage === 'Korean') {
-    return `인생이 바뀌는 10분`;
+    return `인생이 바뀌는 10분 영어`;
   } else if (nativeLanguage === 'Japanese') {
     return `毎日10分リスニング`;
   } else {

@@ -54,6 +54,37 @@ async function generateEmojisForTitle(title: string): Promise<string> {
   }
 }
 
+/**
+ * 카테고리에 맞는 콘텐츠 타입 라벨 반환
+ * 경쟁 채널 "귀가 뚫리는 영어" 스타일 참고
+ */
+function getContentTypeLabel(category: string): string {
+  const labels: Record<string, string> = {
+    story: '영어 듣기',
+    fairytale: '영어 동화',
+    news: '영어 뉴스',
+    conversation: '영어 회화',
+    travel_business: '여행 영어',
+    announcement: '영어 안내',
+    lesson: '영어 레슨',
+  };
+  return labels[category] || '영어 듣기';
+}
+
+/**
+ * 경쟁 채널 스타일의 제목 생성
+ * 형식: [콘텐츠 타입] - [한국어 주제] [이모지 3개]
+ * 예: 영어 듣기 - 어릴 때 살던 집에 방문하게 됐어요 🏠💕✨
+ */
+async function generateCompetitorStyleTitle(
+  nativeTitle: string,
+  category: string
+): Promise<string> {
+  const contentType = getContentTypeLabel(category);
+  const emojis = await generateEmojisForTitle(nativeTitle);
+  return `${contentType} - ${nativeTitle} ${emojis}`;
+}
+
 async function generateUploadInfo() {
   // Parse command line arguments
   const args = process.argv.slice(2);
@@ -174,11 +205,11 @@ async function generateUploadInfo() {
   const uploadInfoPath = path.join(baseDir, 'upload_info.txt');
   const timelineText = timeline.map((t) => `${t.time} ${t.label}`).join('\n');
 
-  // 네이티브 제목 + LLM이 생성한 이모지 3개
+  // 경쟁 채널 스타일 제목 생성
+  // 형식: [콘텐츠 타입] - [한국어 주제] [이모지 3개]
   const nativeTitle = script.metadata.title.native;
-  console.log('🎨 Generating emojis for title...');
-  const titleEmojis = await generateEmojisForTitle(nativeTitle);
-  const titleWithEmojis = `${titleEmojis} ${nativeTitle}`;
+  console.log('🎨 Generating competitor-style title...');
+  const titleWithEmojis = await generateCompetitorStyleTitle(nativeTitle, script.category);
   console.log(`   ✓ Title: ${titleWithEmojis}`);
 
   const uploadInfo = `제목: ${titleWithEmojis}

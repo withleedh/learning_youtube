@@ -1,7 +1,18 @@
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, Img, staticFile } from 'remotion';
+import {
+  AbsoluteFill,
+  Audio,
+  Sequence,
+  Img,
+  staticFile,
+  useCurrentFrame,
+  interpolate,
+} from 'remotion';
 import type { Sentence, ScenePrompt } from '../script/types';
 import type { AudioFile } from '../tts/types';
+
+// Ken Burns 효과 타입
+type KenBurnsDirection = 'zoomIn' | 'zoomOut' | 'panLeft' | 'panRight';
 
 export interface Step2Props {
   backgroundImage?: string;
@@ -59,14 +70,32 @@ export const Step2: React.FC<Step2Props> = ({
 
   // Calculate sequences for each sentence
   let cumulativeFrame = 0;
-  const sentenceSequences = sentences.map((sentence) => {
+  const sentenceSequences = sentences.map((sentence, index) => {
     const audio = normalSpeedAudios.find((af) => af.sentenceId === sentence.id);
     const startFrame = cumulativeFrame;
     const durationFrames = audio ? Math.ceil(audio.duration * 30) + 90 : 150; // Add 3 second buffer
+    const audioDurationFrames = audio ? Math.ceil(audio.duration * 30) : 90;
     // 🆕 Get scene image for this sentence
     const sceneImage = getSceneImageForSentence(sentence.id, sceneImages, scenePrompts);
+    // Ken Burns 방향: 문장마다 번갈아가며 적용
+    const kenBurnsDirection: KenBurnsDirection =
+      index % 4 === 0
+        ? 'panRight'
+        : index % 4 === 1
+          ? 'zoomIn'
+          : index % 4 === 2
+            ? 'panLeft'
+            : 'zoomOut';
     cumulativeFrame += durationFrames;
-    return { sentence, audio, startFrame, durationFrames, sceneImage };
+    return {
+      sentence,
+      audio,
+      startFrame,
+      durationFrames,
+      audioDurationFrames,
+      sceneImage,
+      kenBurnsDirection,
+    };
   });
 
   // Use sceneImages if available, otherwise fall back to backgroundImage
@@ -120,7 +149,18 @@ export const Step2: React.FC<Step2Props> = ({
 
       {/* Sentence Sequences */}
       {sentenceSequences.map(
-        ({ sentence, audio, startFrame, durationFrames, sceneImage }, index) => (
+        (
+          {
+            sentence,
+            audio,
+            startFrame,
+            durationFrames,
+            audioDurationFrames,
+            sceneImage,
+            kenBurnsDirection,
+          },
+          index
+        ) => (
           <Sequence key={index} from={startFrame} durationInFrames={durationFrames}>
             <SentenceDisplay
               sentence={sentence}
@@ -128,6 +168,9 @@ export const Step2: React.FC<Step2Props> = ({
               colors={colors}
               sceneImage={sceneImage}
               dimOpacity={dimOpacity}
+              durationFrames={durationFrames}
+              audioDurationFrames={audioDurationFrames}
+              kenBurnsDirection={kenBurnsDirection}
             />
           </Sequence>
         )
@@ -147,20 +190,58 @@ const SentenceDisplay: React.FC<{
   };
   sceneImage?: string;
   dimOpacity?: number;
-}> = ({ sentence, audio, colors, sceneImage, dimOpacity = 0.6 }) => {
+  durationFrames: number;
+  audioDurationFrames: number;
+  kenBurnsDirection: KenBurnsDirection;
+}> = ({
+  sentence,
+  audio,
+  colors,
+  sceneImage,
+  dimOpacity = 0.6,
+  durationFrames: _durationFrames,
+  audioDurationFrames,
+  kenBurnsDirection,
+}) => {
+  const frame = useCurrentFrame();
   const textColor = sentence.speaker === 'M' ? colors.maleText : colors.femaleText;
+
+  // Ken Burns 효과 계산 (Step2: 1.0 → 1.06, 중간 강도)
+  const getKenBurnsTransform = () => {
+    const progress = Math.min(frame / audioDurationFrames, 1);
+
+    if (kenBurnsDirection === 'zoomIn') {
+      const scaleIn = interpolate(progress, [0, 1], [1, 1.06], { extrapolateRight: 'clamp' });
+      return `scale(${scaleIn})`;
+    }
+    if (kenBurnsDirection === 'zoomOut') {
+      const scaleOut = interpolate(progress, [0, 1], [1.06, 1], { extrapolateRight: 'clamp' });
+      return `scale(${scaleOut})`;
+    }
+    if (kenBurnsDirection === 'panLeft') {
+      const panLeftX = interpolate(progress, [0, 1], [2.5, -2.5], { extrapolateRight: 'clamp' });
+      return `scale(1.04) translateX(${panLeftX}%)`;
+    }
+    if (kenBurnsDirection === 'panRight') {
+      const panRightX = interpolate(progress, [0, 1], [-2.5, 2.5], { extrapolateRight: 'clamp' });
+      return `scale(1.04) translateX(${panRightX}%)`;
+    }
+    return 'scale(1)';
+  };
 
   return (
     <AbsoluteFill style={{ backgroundColor: '#000000' }}>
       {/* 🆕 Scene-specific background image - rendered first (behind text) */}
       {sceneImage && (
-        <AbsoluteFill>
+        <AbsoluteFill style={{ overflow: 'hidden' }}>
           <Img
             src={staticFile(sceneImage)}
             style={{
               width: '100%',
               height: '100%',
               objectFit: 'cover',
+              transform: getKenBurnsTransform(),
+              transformOrigin: 'center center',
             }}
           />
           {/* Dim overlay */}

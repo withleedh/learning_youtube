@@ -8,10 +8,10 @@ import time
 from youtube_transcript_api import YouTubeTranscriptApi
 
 # 영상 목록 로드
-with open('reference/ear_opening_english_list.json', 'r', encoding='utf-8') as f:
+with open('reference copy/ear_opening_english_list.json', 'r', encoding='utf-8') as f:
     videos = json.load(f)
 
-output_dir = 'reference/subtitles'
+output_dir = 'reference copy/subtitles'
 os.makedirs(output_dir, exist_ok=True)
 
 success_count = 0
@@ -87,6 +87,6 @@ print(f"\n📊 완료: {success_count} 성공, {fail_count} 실패")
 
 # 실패 목록 저장
 if failed_videos:
-    with open('reference/failed_subtitles.json', 'w', encoding='utf-8') as f:
+    with open('reference copy/failed_subtitles.json', 'w', encoding='utf-8') as f:
         json.dump(failed_videos, f, ensure_ascii=False, indent=2)
     print(f"❌ 실패 목록: reference/failed_subtitles.json")

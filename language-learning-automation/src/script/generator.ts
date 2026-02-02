@@ -6,6 +6,7 @@ import type { ChannelConfig } from '../config/types';
 import { generateScriptPrompt, getCategoryForDay } from './prompts';
 import { selectTimlyTopic } from './topic-selector';
 import { GEMINI_MODELS, getGeminiApiKey } from '../config/gemini';
+import { runScriptPipeline, type PipelineConfig } from './pipeline';
 
 // Initialize Gemini client
 function getGeminiClient() {
@@ -14,16 +15,76 @@ function getGeminiClient() {
 }
 
 /**
- * Generate a script using Gemini API with candidate selection
+ * Options for script generation.
+ *
+ * **Validates: Requirements 5.1, 5.2, 5.3**
+ */
+export interface GenerateScriptOptions {
+  /**
+   * When true, uses the multi-step pipeline for script generation.
+   * When false (default), uses the existing single-shot generation.
+   *
+   * **Validates: Requirement 5.3**
+   */
+  usePipeline?: boolean;
+
+  /**
+   * Number of script candidates to generate (for single-shot mode).
+   * Default: 3
+   */
+  candidateCount?: number;
+
+  /**
+   * Pipeline-specific configuration options.
+   * Only used when usePipeline is true.
+   */
+  pipelineConfig?: Partial<PipelineConfig>;
+}
+
+/**
+ * Generate a script using Gemini API with candidate selection.
+ *
+ * This function supports two modes:
+ * 1. **Pipeline mode** (usePipeline: true): Uses the multi-step pipeline that separates
+ *    creative writing, structural conversion, and visual generation into distinct phases.
+ *    This produces higher quality scripts by reducing AI cognitive overload.
+ *
+ * 2. **Single-shot mode** (usePipeline: false, default): Uses the existing single-shot
+ *    generation with candidate selection. This is the legacy behavior maintained for
+ *    backward compatibility.
+ *
+ * @param config - Channel configuration
+ * @param category - Script category (optional, defaults to day-based selection)
+ * @param topic - Topic for the script (optional, AI will select if not provided)
+ * @param candidateCountOrOptions - Either a number (legacy) or GenerateScriptOptions object
+ * @returns Generated Script object
+ *
+ * @example
+ * // Legacy usage (backward compatible)
+ * const script = await generateScript(config, 'story', 'A day at the beach', 3);
+ *
+ * @example
+ * // New usage with pipeline
+ * const script = await generateScript(config, 'story', 'A day at the beach', {
+ *   usePipeline: true,
+ *   pipelineConfig: { candidateCount: 1 }
+ * });
+ *
+ * **Validates: Requirements 5.1, 5.2, 5.3**
  */
 export async function generateScript(
   config: ChannelConfig,
   category?: Category,
   topic?: string,
-  candidateCount: number = 3
+  candidateCountOrOptions: number | GenerateScriptOptions = 3
 ): Promise<Script> {
-  const genAI = getGeminiClient();
-  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+  // Parse options - support both legacy (number) and new (object) signatures
+  const options: GenerateScriptOptions =
+    typeof candidateCountOrOptions === 'number'
+      ? { candidateCount: candidateCountOrOptions, usePipeline: false }
+      : candidateCountOrOptions;
+
+  const { usePipeline = false, candidateCount = 3, pipelineConfig } = options;
 
   // Use provided category or get from current day
   const scriptCategory = category || getCategoryForDay(new Date());
@@ -42,7 +103,57 @@ export async function generateScript(
   }
 
   // Debug: Show what we're generating
-  console.log(`   🔍 DEBUG: category=${scriptCategory}, topic="${selectedTopic}"`);
+  console.log(
+    `   🔍 DEBUG: category=${scriptCategory}, topic="${selectedTopic}", usePipeline=${usePipeline}`
+  );
+
+  // =========================================================================
+  // Pipeline Mode (Requirement 5.2)
+  // =========================================================================
+  if (usePipeline) {
+    console.log('   🔄 Using multi-step pipeline for script generation...');
+
+    const result = await runScriptPipeline(config, scriptCategory, selectedTopic, {
+      pipelineEnabled: true,
+      candidateCount: pipelineConfig?.candidateCount ?? 1,
+      ...pipelineConfig,
+    });
+
+    console.log(
+      `   ✓ Pipeline completed - Creative: ${result.phases.creative.duration}ms, Structural: ${result.phases.structural.duration}ms, Visual: ${result.phases.visual.duration}ms`
+    );
+
+    return result.script;
+  }
+
+  // =========================================================================
+  // Single-Shot Mode (Legacy - Requirement 5.3)
+  // =========================================================================
+  return generateScriptSingleShot(config, scriptCategory, selectedTopic, candidateCount);
+}
+
+/**
+ * Generate a script using the legacy single-shot approach with candidate selection.
+ *
+ * This is the original implementation that generates multiple candidates and
+ * uses LLM to select the best one. Maintained for backward compatibility.
+ *
+ * @param config - Channel configuration
+ * @param category - Script category
+ * @param topic - Topic for the script
+ * @param candidateCount - Number of candidates to generate
+ * @returns Generated Script object
+ *
+ * **Validates: Requirement 5.3**
+ */
+async function generateScriptSingleShot(
+  config: ChannelConfig,
+  category: Category,
+  topic: string,
+  candidateCount: number
+): Promise<Script> {
+  const genAI = getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
   // Generate multiple script candidates
   console.log(`   📝 스크립트 후보 ${candidateCount}개 생성 중...`);
@@ -50,7 +161,7 @@ export async function generateScript(
 
   for (let i = 0; i < candidateCount; i++) {
     try {
-      const script = await generateSingleScript(model, config, scriptCategory, selectedTopic);
+      const script = await generateSingleScript(model, config, category, topic);
       candidates.push(script);
       console.log(`   ✓ 후보 ${i + 1}/${candidateCount} 생성 완료`);
     } catch (error) {

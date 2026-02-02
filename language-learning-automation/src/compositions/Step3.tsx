@@ -1,7 +1,18 @@
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, Img, staticFile } from 'remotion';
+import {
+  AbsoluteFill,
+  Audio,
+  Sequence,
+  Img,
+  staticFile,
+  useCurrentFrame,
+  interpolate,
+} from 'remotion';
 import type { Sentence, ScenePrompt } from '../script/types';
 import type { AudioFile, SpeedVariant } from '../tts/types';
+
+// Ken Burns 효과 타입
+type KenBurnsDirection = 'zoomIn' | 'zoomOut' | 'panLeft' | 'panRight';
 
 export interface Step3Props {
   backgroundImage?: string;
@@ -99,14 +110,17 @@ export const Step3: React.FC<Step3Props> = ({
 
   // Build sequences for all sentences with all repetitions
   let cumulativeFrame = 0;
+  let sequenceIndex = 0;
   const allSequences: Array<{
     sentence: Sentence;
     config: RepetitionConfig;
     audio?: AudioFile;
     startFrame: number;
     durationFrames: number;
+    audioDurationFrames: number;
     repetition: number;
     sceneImage?: string;
+    kenBurnsDirection: KenBurnsDirection;
   }> = [];
 
   sentences.forEach((sentence) => {
@@ -121,7 +135,18 @@ export const Step3: React.FC<Step3Props> = ({
       const baseDuration = audio ? audio.duration : 3;
       // 오디오 길이 + 3초 여유 (읽고 생각할 시간)
       const durationFrames = Math.ceil((baseDuration + 3) * 30);
+      const audioDurationFrames = Math.ceil(baseDuration * 30);
+      // Ken Burns 방향: 시퀀스마다 번갈아가며 적용
+      const kenBurnsDirection: KenBurnsDirection =
+        sequenceIndex % 4 === 0
+          ? 'zoomOut'
+          : sequenceIndex % 4 === 1
+            ? 'panLeft'
+            : sequenceIndex % 4 === 2
+              ? 'zoomIn'
+              : 'panRight';
       cumulativeFrame += durationFrames;
+      sequenceIndex++;
 
       allSequences.push({
         sentence,
@@ -129,8 +154,10 @@ export const Step3: React.FC<Step3Props> = ({
         audio,
         startFrame,
         durationFrames,
+        audioDurationFrames,
         repetition: repIndex + 1,
         sceneImage,
+        kenBurnsDirection,
       });
     });
   });
@@ -193,6 +220,9 @@ export const Step3: React.FC<Step3Props> = ({
             totalRepetitions={REPETITION_SEQUENCE.length}
             labels={labels}
             sceneImage={seq.sceneImage}
+            durationFrames={seq.durationFrames}
+            audioDurationFrames={seq.audioDurationFrames}
+            kenBurnsDirection={seq.kenBurnsDirection}
           />
         </Sequence>
       ))}
@@ -220,9 +250,48 @@ const SentenceDisplay: React.FC<{
     phaseReview: string;
   };
   sceneImage?: string;
-}> = ({ sentence, config, audio, colors, repetition, totalRepetitions, labels, sceneImage }) => {
+  durationFrames: number;
+  audioDurationFrames: number;
+  kenBurnsDirection: KenBurnsDirection;
+}> = ({
+  sentence,
+  config,
+  audio,
+  colors,
+  repetition,
+  totalRepetitions,
+  labels,
+  sceneImage,
+  durationFrames: _durationFrames,
+  audioDurationFrames,
+  kenBurnsDirection,
+}) => {
+  const frame = useCurrentFrame();
   const textColor = sentence.speaker === 'M' ? colors.maleText : colors.femaleText;
   const { phase, showBlank, showAnswer } = config;
+
+  // Ken Burns 효과 계산 (Step3: 1.0 → 1.04, 은은하게)
+  const getKenBurnsTransform = () => {
+    const progress = Math.min(frame / audioDurationFrames, 1);
+
+    if (kenBurnsDirection === 'zoomIn') {
+      const scaleIn = interpolate(progress, [0, 1], [1, 1.04], { extrapolateRight: 'clamp' });
+      return `scale(${scaleIn})`;
+    }
+    if (kenBurnsDirection === 'zoomOut') {
+      const scaleOut = interpolate(progress, [0, 1], [1.04, 1], { extrapolateRight: 'clamp' });
+      return `scale(${scaleOut})`;
+    }
+    if (kenBurnsDirection === 'panLeft') {
+      const panLeftX = interpolate(progress, [0, 1], [2, -2], { extrapolateRight: 'clamp' });
+      return `scale(1.03) translateX(${panLeftX}%)`;
+    }
+    if (kenBurnsDirection === 'panRight') {
+      const panRightX = interpolate(progress, [0, 1], [-2, 2], { extrapolateRight: 'clamp' });
+      return `scale(1.03) translateX(${panRightX}%)`;
+    }
+    return 'scale(1)';
+  };
 
   // Highlight the answer word in challenge phase
   const renderTargetText = () => {
@@ -250,7 +319,7 @@ const SentenceDisplay: React.FC<{
     <AbsoluteFill style={{ backgroundColor: '#000000' }}>
       {/* 🆕 Scene-specific background image */}
       {sceneImage && (
-        <AbsoluteFill>
+        <AbsoluteFill style={{ overflow: 'hidden' }}>
           <Img
             src={staticFile(sceneImage)}
             style={{
@@ -258,6 +327,8 @@ const SentenceDisplay: React.FC<{
               height: '100%',
               objectFit: 'cover',
               objectPosition: 'top',
+              transform: getKenBurnsTransform(),
+              transformOrigin: 'center center',
             }}
           />
           {/* Dark overlay for text readability */}

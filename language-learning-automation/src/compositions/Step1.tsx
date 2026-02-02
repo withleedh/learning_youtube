@@ -1,7 +1,18 @@
 import React from 'react';
-import { AbsoluteFill, Audio, Sequence, Img, staticFile } from 'remotion';
+import {
+  AbsoluteFill,
+  Audio,
+  Sequence,
+  Img,
+  staticFile,
+  useCurrentFrame,
+  interpolate,
+} from 'remotion';
 import type { AudioFile } from '../tts/types';
 import type { ScenePrompt } from '../script/types';
+
+// Ken Burns 효과 타입
+type KenBurnsDirection = 'zoomIn' | 'zoomOut' | 'panLeft' | 'panRight';
 
 export interface Step1Props {
   backgroundImage?: string;
@@ -50,14 +61,34 @@ export const Step1: React.FC<Step1Props> = ({
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
 
   // Calculate cumulative start times for each audio with scene image
+  const GAP_FRAMES = 60; // 2 second gap between sentences
   let cumulativeFrame = 0;
-  const audioSequences = normalSpeedAudios.map((audio) => {
+  const audioSequences = normalSpeedAudios.map((audio, index) => {
     const startFrame = cumulativeFrame;
-    const durationFrames = Math.ceil(audio.duration * 30); // 30fps
+    const audioDurationFrames = Math.ceil(audio.duration * 30); // 30fps
+    const isLastSentence = index === normalSpeedAudios.length - 1;
+    // Include gap in sequence duration so image stays visible during gap
+    const durationFrames = isLastSentence ? audioDurationFrames : audioDurationFrames + GAP_FRAMES;
     // Get scene image for this sentence
     const sceneImage = getSceneImageForSentence(audio.sentenceId, sceneImages, scenePrompts);
-    cumulativeFrame += durationFrames + 60; // Add 2 second gap between sentences
-    return { audio, startFrame, durationFrames, sceneImage };
+    // Ken Burns 방향: 문장마다 번갈아가며 적용
+    const kenBurnsDirection: KenBurnsDirection =
+      index % 4 === 0
+        ? 'zoomIn'
+        : index % 4 === 1
+          ? 'panRight'
+          : index % 4 === 2
+            ? 'zoomOut'
+            : 'panLeft';
+    cumulativeFrame += audioDurationFrames + GAP_FRAMES; // Move to next sentence start
+    return {
+      audio,
+      startFrame,
+      durationFrames,
+      audioDurationFrames,
+      sceneImage,
+      kenBurnsDirection,
+    };
   });
 
   // Use sceneImages if available, otherwise fall back to backgroundImage
@@ -99,11 +130,23 @@ export const Step1: React.FC<Step1Props> = ({
       </div>
 
       {/* Audio Sequences with Scene Images */}
-      {audioSequences.map(({ audio, startFrame, durationFrames, sceneImage }, idx) => (
-        <Sequence key={idx} from={startFrame} durationInFrames={durationFrames}>
-          <SentenceDisplay audio={audio} sceneImage={sceneImage} title={title} />
-        </Sequence>
-      ))}
+      {audioSequences.map(
+        (
+          { audio, startFrame, durationFrames, audioDurationFrames, sceneImage, kenBurnsDirection },
+          idx
+        ) => (
+          <Sequence key={idx} from={startFrame} durationInFrames={durationFrames}>
+            <SentenceDisplay
+              audio={audio}
+              sceneImage={sceneImage}
+              title={title}
+              durationFrames={durationFrames}
+              audioDurationFrames={audioDurationFrames}
+              kenBurnsDirection={kenBurnsDirection}
+            />
+          </Sequence>
+        )
+      )}
     </AbsoluteFill>
   );
 };
@@ -113,18 +156,60 @@ const SentenceDisplay: React.FC<{
   audio: AudioFile;
   sceneImage?: string;
   title?: string;
-}> = ({ audio, sceneImage, title }) => {
+  durationFrames: number;
+  audioDurationFrames: number;
+  kenBurnsDirection: KenBurnsDirection;
+}> = ({
+  audio,
+  sceneImage,
+  title,
+  durationFrames: _durationFrames,
+  audioDurationFrames,
+  kenBurnsDirection,
+}) => {
+  const frame = useCurrentFrame();
+
+  // Ken Burns 효과 계산 - 오디오 길이 동안만 애니메이션, 이후 갭에서는 마지막 상태 유지
+  const getKenBurnsTransform = () => {
+    // Use audio duration for animation, clamp at end for gap period
+    const progress = Math.min(frame / audioDurationFrames, 1);
+
+    if (kenBurnsDirection === 'zoomIn') {
+      // 1.0 → 1.08 확대
+      const scaleIn = interpolate(progress, [0, 1], [1, 1.08], { extrapolateRight: 'clamp' });
+      return `scale(${scaleIn})`;
+    }
+    if (kenBurnsDirection === 'zoomOut') {
+      // 1.08 → 1.0 축소
+      const scaleOut = interpolate(progress, [0, 1], [1.08, 1], { extrapolateRight: 'clamp' });
+      return `scale(${scaleOut})`;
+    }
+    if (kenBurnsDirection === 'panLeft') {
+      // 오른쪽에서 왼쪽으로 패닝 + 약간 확대
+      const panLeftX = interpolate(progress, [0, 1], [3, -3], { extrapolateRight: 'clamp' });
+      return `scale(1.05) translateX(${panLeftX}%)`;
+    }
+    if (kenBurnsDirection === 'panRight') {
+      // 왼쪽에서 오른쪽으로 패닝 + 약간 확대
+      const panRightX = interpolate(progress, [0, 1], [-3, 3], { extrapolateRight: 'clamp' });
+      return `scale(1.05) translateX(${panRightX}%)`;
+    }
+    return 'scale(1)';
+  };
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#000000' }}>
-      {/* Scene-specific background image */}
+      {/* Scene-specific background image with Ken Burns effect */}
       {sceneImage && (
-        <AbsoluteFill>
+        <AbsoluteFill style={{ overflow: 'hidden' }}>
           <Img
             src={staticFile(sceneImage)}
             style={{
               width: '100%',
               height: '100%',
               objectFit: 'cover',
+              transform: getKenBurnsTransform(),
+              transformOrigin: 'center center',
             }}
           />
         </AbsoluteFill>

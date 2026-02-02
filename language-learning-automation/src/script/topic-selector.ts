@@ -6,14 +6,23 @@ import { GEMINI_MODELS, getGeminiApiKey } from '../config/gemini';
 import { buildCulturalContextPrompt, getRandomCulturalCategory } from './cultural-interests';
 import { buildHighPerformancePatternsPrompt } from './topic-patterns';
 import { buildTodayEventsPrompt, getTodayTopicSuggestions } from './calendar-events';
+import { generateTopicCombination, type TopicCombination } from './topic-combination';
+import {
+  selectPatternByWeight,
+  inferPatternFromTopic,
+  type PatternSelectionResult,
+  type PatternHistory,
+} from './performance-patterns';
 
 interface TopicHistory {
   date: string;
   topic: string;
   category: Category;
+  patternId?: string; // 사용된 패턴 ID
 }
 
 const HISTORY_FILE = path.join(process.cwd(), 'output', 'topic-history.json');
+const PATTERN_HISTORY_FILE = path.join(process.cwd(), 'output', 'pattern-history.json');
 
 /**
  * Load topic history to avoid duplicates
@@ -30,11 +39,15 @@ async function loadTopicHistory(): Promise<TopicHistory[]> {
 /**
  * Save topic to history
  */
-async function saveTopicToHistory(topic: string, category: Category): Promise<void> {
+async function saveTopicToHistory(
+  topic: string,
+  category: Category,
+  patternId?: string
+): Promise<void> {
   const history = await loadTopicHistory();
   const today = new Date().toISOString().split('T')[0];
 
-  history.push({ date: today, topic, category });
+  history.push({ date: today, topic, category, patternId });
 
   // Keep only last 100 entries
   const recentHistory = history.slice(-100);
@@ -44,7 +57,36 @@ async function saveTopicToHistory(topic: string, category: Category): Promise<vo
 }
 
 /**
+ * Load pattern history for weighted selection
+ */
+async function loadPatternHistory(): Promise<PatternHistory[]> {
+  try {
+    const content = await fs.readFile(PATTERN_HISTORY_FILE, 'utf-8');
+    return JSON.parse(content);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Save pattern to history
+ */
+async function savePatternToHistory(patternId: string, topic: string): Promise<void> {
+  const history = await loadPatternHistory();
+  const today = new Date().toISOString().split('T')[0];
+
+  history.push({ date: today, patternId, topic });
+
+  // Keep only last 50 entries
+  const recentHistory = history.slice(-50);
+
+  await fs.mkdir(path.dirname(PATTERN_HISTORY_FILE), { recursive: true });
+  await fs.writeFile(PATTERN_HISTORY_FILE, JSON.stringify(recentHistory, null, 2), 'utf-8');
+}
+
+/**
  * Generate multiple topic candidates and select the best one
+ * Enhanced with PERFORMANCE-BASED pattern selection for better results
  */
 export async function selectTimlyTopic(
   category: Category,
@@ -60,7 +102,68 @@ export async function selectTimlyTopic(
   const history = await loadTopicHistory();
   const recentTopics = history.slice(-30).map((h) => h.topic);
 
-  // Step 1: Generate multiple candidates
+  // Get pattern history for weighted selection
+  const patternHistory = await loadPatternHistory();
+  const recentPatternIds = patternHistory.slice(-14).map((h) => h.patternId);
+
+  // 🎯 성과 기반 패턴 선택 (핵심 변경!)
+  const patternSelection = selectPatternByWeight(category, recentPatternIds);
+  console.log(
+    `   🎯 선택된 패턴: ${patternSelection.pattern.id} (평균 ${patternSelection.pattern.avgViews.toLocaleString()} 조회수)`
+  );
+  console.log(`   📊 변형 방향: ${patternSelection.variationGuide}`);
+
+  // Generate topic combination for additional guidance (fairytale only)
+  const combination =
+    category === 'fairytale' ? generateTopicCombination(category, recentTopics) : null;
+  if (combination) {
+    console.log(
+      `   🎲 추가 조합: ${combination.theme.nameKo} × ${combination.situation.nameKo} × ${combination.emotion.nameKo}`
+    );
+  }
+
+  // Step 1: Generate multiple candidates with pattern-based guidance
+  console.log(`   📝 주제 후보 ${candidateCount}개 생성 중...`);
+  const candidates = await generateTopicCandidatesWithPattern(
+    model,
+    category,
+    targetLanguage,
+    nativeLanguage,
+    recentTopics,
+    candidateCount,
+    patternSelection,
+    combination
+  );
+  console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
+
+  // Step 2: LLM selects the best one
+  console.log(`   🤖 최적 주제 선정 중...`);
+  const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
+
+  // Save to history with pattern info
+  const inferredPatternId = inferPatternFromTopic(bestTopic) || patternSelection.pattern.id;
+  await saveTopicToHistory(bestTopic, category, inferredPatternId);
+  await savePatternToHistory(inferredPatternId, bestTopic);
+
+  return bestTopic;
+}
+
+/**
+ * Legacy function for backward compatibility
+ */
+export async function selectTimlyTopicLegacy(
+  category: Category,
+  targetLanguage: string = 'English',
+  nativeLanguage: string = 'Korean',
+  candidateCount: number = 3
+): Promise<string> {
+  const apiKey = getGeminiApiKey();
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+
+  const history = await loadTopicHistory();
+  const recentTopics = history.slice(-30).map((h) => h.topic);
+
   console.log(`   📝 주제 후보 ${candidateCount}개 생성 중...`);
   const candidates = await generateTopicCandidates(
     model,
@@ -72,11 +175,9 @@ export async function selectTimlyTopic(
   );
   console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
 
-  // Step 2: LLM selects the best one
   console.log(`   🤖 최적 주제 선정 중...`);
   const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
 
-  // Save to history
   await saveTopicToHistory(bestTopic, category);
 
   return bestTopic;
@@ -148,10 +249,14 @@ ${getCategoryGuidance(category, targetLangName)}
 ${highPerformancePatterns}
 
 ${todayEventsContext}
-${todaySuggestions.length > 0 ? `
+${
+  todaySuggestions.length > 0
+    ? `
 ## 💡 오늘 이벤트 관련 추천 주제
-${todaySuggestions.map(s => `- ${s}`).join('\n')}
-` : ''}
+${todaySuggestions.map((s) => `- ${s}`).join('\n')}
+`
+    : ''
+}
 
 # 🎯 주제 선정 핵심 원칙
 
@@ -167,50 +272,38 @@ ${todaySuggestions.map(s => `- ${s}`).join('\n')}
 ✅ 좋음: "지긋지긋한 회사에서 송년회를 했어요", "건강 검진 결과가 나왔어요"
 ❌ 나쁨: "회사 생활", "병원 가기" (감정이 없음)
 
-# ✨ 좋은 주제 예시 (참고)
+# ✨ 좋은 주제 예시 (10-15자 참고)
 **스토리/에피소드:**
-- 어릴 때 살던 집에 방문하게 됐어요
-- 작년의 나에게서 온 새해 메시지
-- 새해 직전, 엘리베이터에 갇혔어요
-- 이번 크리스마스에는 제가 산타예요
-- 추운 겨울날, 눈사람을 만들었어요
+- 어릴 때 살던 집에 갔어요 (12자)
+- 길고양이를 집에 데려왔어요 (12자)
+- 서울에 한파가 시작됐어요 (11자)
+- 늦잠 자서 지각했어요 (9자)
 
 **회화/대화:**
-- 건강 검진 결과가 나왔어요
-- 당신의 새해 목표는 무엇인가요?
-- 크리스마스에 약속 있으세요?
-- 겨울을 좋아하세요, 싫어하세요?
-- 어떤 음악을 좋아하세요?
+- 건강 검진 결과가 나왔어요 (12자)
+- 새해 목표가 뭐예요? (9자)
+- 크리스마스에 약속 있어요? (12자)
+- 어떤 음악 좋아하세요? (10자)
 
 **뉴스/시사:**
-- 한국 음식이 해외에서 큰 인기예요
-- 오늘은 2025년 마지막 날이에요
-- 서울에 크리스마스가 찾아왔어요
-- 세계 곳곳에서 산타가 목격됐어요
+- 한국 음식이 해외서 인기예요 (13자)
+- 서울에 폭염이 시작됐어요 (11자)
+- 서울에 크리스마스가 왔어요 (12자)
 
 **여행/비즈니스:**
-- 2026년 새해 일출을 보러 갔어요
-- 스테이크 굽기 단계, 어떻게 주문해야 할까요?
-- 아이슬란드 오로라 투어를 갔어요
-- 버스를 탈까요, 지하철을 탈까요?
-- 스키장에서 스키 장비를 렌탈해요
-- 시드니 오페라하우스에서 티켓을 사요
+- 호텔에서 체크인을 해요 (10자)
+- 공항에서 입국 심사 받았어요 (13자)
+- 버스 탈까요, 지하철 탈까요? (13자)
 
 **수업/정보:**
-- 돈이 줄줄 새는 사람들의 5가지 습관
-- 작심삼일을 극복하는 5가지 방법
-- 사람들이 죽기 전에 후회하는 5가지
-- 산타클로스는 왜 빨간 옷을 입을까?
-- 겨울에 눈이 내리는 이유
-- 남들에게 만만해 보이지 않는 법
+- 돈이 새는 5가지 습관 (10자)
+- 작심삼일 극복하는 법 (10자)
+- 겨울에 눈이 내리는 이유 (11자)
 
 **동화/힐링:**
-- 정원에서 가장 늦게 피어난 꽃
-- 행복하게 만들어주는 자판기
-- 크리스마스 트리가 되고 싶었던 작은 나무
-- 세상에서 가장 값진 선물
-- 적과 타협하면 안 되는 이유
-- 타인의 말에 휘둘리면 생기는 일
+- 욕심 많은 개의 최후 (9자)
+- 시골 쥐와 도시 쥐 (8자)
+- 가장 늦게 피어난 꽃 (9자)
 
 # 시의성 (${month}월)
 - 1-2월: 새해 다짐, 겨울 감성, 설날, 발렌타인
@@ -230,8 +323,23 @@ ${
     : '(없음)'
 }
 
-# Output Format
-${nativeLangName === 'Korean' ? '한글' : nativeLangName}로 **10-25자** 이내.
+# Output Format (CRITICAL - 반드시 준수!)
+${nativeLangName === 'Korean' ? '한글' : nativeLangName}로 **10-15자** 이내.
+
+## ⚠️ 글자수 제한 (MUST FOLLOW)
+- 공백 포함 **최대 15자**
+- 15자 초과 시 ❌ 실패로 간주
+- 경쟁 채널 평균: 12자
+
+## 글자수 예시
+✅ 좋음 (15자 이하):
+- "서울에 한파가 시작됐어요" (12자)
+- "길고양이를 집에 데려왔어요" (13자)
+- "늦잠 자서 지각했어요" (10자)
+
+❌ 나쁨 (15자 초과):
+- "비 오는 날, 주인을 잃은 강아지가 저를 따라왔어요" (24자)
+
 ${getOutputStyleGuidance(category)}
 
 **정확히 ${count}개**의 주제를 줄바꿈으로 구분해서 출력.
@@ -317,26 +425,28 @@ Output only the selected topic (no number or explanation)`;
 
 function getCategoryGuidance(category: Category, targetLangName: string): string {
   const guidance: Record<Category, string> = {
-    story: `감성적인 에피소드. 공감되는 일상 이야기.
-예: "어릴 때 살던 집에 방문하게 됐어요", "작년의 나에게서 온 새해 메시지", "새해 직전, 엘리베이터에 갇혔어요"`,
+    story: `감성적인 에피소드. 공감되는 일상 이야기. (10-15자)
+예: "길고양이를 집에 데려왔어요", "서울에 한파가 시작됐어요", "늦잠 자서 지각했어요"`,
 
-    conversation: `공감되는 주제로 나누는 ${targetLangName} 대화.
-예: "건강 검진 결과가 나왔어요", "당신의 새해 목표는 무엇인가요?", "겨울을 좋아하세요, 싫어하세요?"`,
+    conversation: `공감되는 주제로 나누는 ${targetLangName} 대화. (10-15자)
+예: "건강 검진 결과가 나왔어요", "새해 목표가 뭐예요?", "어떤 음악 좋아하세요?"`,
 
-    news: `흥미로운 소식을 전하는 뉴스 스타일.
-예: "한국 음식이 해외에서 큰 인기예요", "서울에 크리스마스가 찾아왔어요", "세계 곳곳에서 산타가 목격됐어요"`,
+    news: `흥미로운 소식을 전하는 뉴스 스타일. (10-15자)
+예: "한국 음식이 해외서 인기예요", "서울에 폭염이 시작됐어요", "서울에 한파가 왔어요"`,
 
-    announcement: `일상에서 듣는 안내와 그에 대한 반응.
-예: "비행기가 2시간 지연됐대요", "오늘 백화점 세일 마지막 날이래요"`,
+    announcement: `일상에서 듣는 안내와 그에 대한 반응. (10-15자)
+예: "비행기가 2시간 지연됐대요", "세일 마지막 날이래요"`,
 
-    travel_business: `여행/비즈니스에서 겪는 감성적 순간.
-예: "첫 해외여행에서 길을 잃었어요", "면접 결과가 드디어 나왔어요", "출장지에서 고향 음식을 발견했어요"`,
+    travel_business: `여행/비즈니스에서 겪는 감성적 순간. (10-15자)
+예: "호텔에서 체크인을 해요", "공항에서 입국 심사 받았어요", "짐을 찾지 못했어요"`,
 
-    lesson: `삶에 도움이 되는 따뜻한 조언.
-예: "스트레스 받을 때 이렇게 해보세요", "좋은 습관을 만드는 작은 방법들"`,
+    lesson: `삶에 도움이 되는 따뜻한 조언. (10-15자)
+예: "돈이 새는 5가지 습관", "작심삼일 극복하는 법"`,
 
-    fairytale: `교훈이 있는 따뜻한 이야기.
-예: "욕심 많은 왕과 현명한 농부", "숲속 동물들의 크리스마스"`,
+    fairytale: `이솝우화 스타일의 간결한 동화 제목. (10-15자)
+**핵심**: 시의성 없이 보편적 교훈, 호기심 유발
+예: "욕심 많은 개의 최후", "시골 쥐와 도시 쥐", "한입 거리 생쥐의 반전"
+❌ 금지: 졸업식, 크리스마스 등 특정 시즌/이벤트 언급`,
   };
 
   return guidance[category];
@@ -360,10 +470,12 @@ function getOutputStyleGuidance(category: Category): string {
 여행/비즈니스 현장감 있게.`,
 
     lesson: `**명사형** 또는 **"~하는 법", "~하는 이유", "~가지 방법"** 스타일.
-예: "돈이 줄줄 새는 사람들의 5가지 습관", "산타클로스는 왜 빨간 옷을 입을까?"`,
+예: "돈이 새는 5가지 습관" (10자), "눈이 내리는 이유" (8자)`,
 
-    fairytale: `**명사형** 또는 **"~하는 이유", "~생기는 일"** 스타일.
-예: "정원에서 가장 늦게 피어난 꽃", "타인의 말에 휘둘리면 생기는 일"`,
+    fairytale: `**간결한 명사형** 또는 **"~의 최후", "누가 더 ~할까?", "~의 반전"** 스타일.
+**10-15자 이내**로 간결하게.
+예: "욕심 많은 개의 최후" (9자), "시골 쥐와 도시 쥐" (8자)
+❌ 금지: 시즌 언급(졸업식, 크리스마스 등), 15자 초과 제목`,
   };
 
   return styles[category];
@@ -388,4 +500,98 @@ export async function showTopicHistory(): Promise<void> {
   });
 
   console.log(`\n총 ${history.length}개의 주제가 기록되어 있습니다.`);
+}
+
+/**
+ * 월별 시즌 키워드
+ */
+function getSeasonKeywords(month: number): string {
+  const keywords: Record<number, string> = {
+    1: '새해, 겨울, 한파, 눈, 설날',
+    2: '발렌타인, 겨울, 졸업, 입시',
+    3: '봄, 벚꽃, 새학기, 입학',
+    4: '봄, 벚꽃, 여행, 나들이',
+    5: '가정의달, 어버이날, 봄',
+    6: '여름, 장마, 휴가계획',
+    7: '여름휴가, 바다, 더위',
+    8: '휴가, 바다, 폭염',
+    9: '가을, 추석, 단풍',
+    10: '가을, 단풍, 할로윈',
+    11: '가을, 수능, 연말준비',
+    12: '크리스마스, 연말, 송년회',
+  };
+  return keywords[month] || '일상';
+}
+
+/**
+ * 단순화된 카테고리 가이드
+ */
+function getSimpleCategoryGuide(category: Category): string {
+  const guides: Record<Category, string> = {
+    story: '일상 에피소드, 감정이 담긴 경험담',
+    conversation: '두 사람의 일상 대화, 질문과 답변',
+    news: '흥미로운 소식, 트렌드, 시사',
+    announcement: '안내방송, 공지사항',
+    travel_business: '여행/출장 상황, 호텔/공항/식당',
+    lesson: '팁, 습관, 방법론 (숫자 활용)',
+    fairytale: '동물 우화, 교훈 있는 짧은 이야기',
+  };
+  return guides[category];
+}
+
+/**
+ * 🎯 단순화된 주제 후보 생성
+ * 핵심: 경쟁 채널 고성과 제목을 직접 참고하여 비슷한 느낌의 새 제목 생성
+ */
+async function generateTopicCandidatesWithPattern(
+  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  category: Category,
+  _targetLanguage: string,
+  _nativeLanguage: string,
+  recentTopics: string[],
+  count: number,
+  _patternSelection: PatternSelectionResult,
+  _combination: TopicCombination | null
+): Promise<string[]> {
+  const now = new Date();
+  const month = now.getMonth() + 1;
+
+  // 고성과 제목 DB에서 카테고리별 샘플 가져오기
+  const { sampleHighPerfTopics } = await import('./high-perf-topics');
+  const topExamples = sampleHighPerfTopics(category, 8);
+
+  // 시즌 키워드
+  const seasonKeywords = getSeasonKeywords(month);
+
+  const prompt = `유튜브 영어 학습 채널 제목을 ${count}개 만들어줘.
+
+## 참고할 고성과 제목 (이런 느낌으로!)
+${topExamples.map((t) => `- ${t.topic} (${Math.round(t.viewCount / 1000)}K)`).join('\n')}
+
+## 이번 달 키워드: ${seasonKeywords}
+
+## 카테고리: ${category}
+${getSimpleCategoryGuide(category)}
+
+## 규칙 (필수!)
+1. **10~15자** (공백 포함, 절대 초과 금지)
+2. **"~했어요", "~예요", "~할까요?"** 종결
+3. 위 예시를 복사하지 말고, 비슷한 느낌의 새 제목
+4. ${category === 'fairytale' ? '동물 우화 스타일, 시즌 언급 금지' : '현실적인 일상 상황'}
+
+## 피할 주제 (최근 사용)
+${recentTopics.slice(-10).join(', ') || '없음'}
+
+${count}개만 출력. 번호/설명 없이 제목만.`;
+
+  const result = await model.generateContent(prompt);
+  const text = result.response.text().trim();
+
+  const topics = text
+    .split('\n')
+    .map((line) => line.replace(/^\d+[.)]\s*/, '').trim())
+    .filter((line) => line.length > 0 && line.length <= 20) // 20자 초과는 필터링
+    .slice(0, count);
+
+  return topics.length > 0 ? topics : [text.split('\n')[0]];
 }

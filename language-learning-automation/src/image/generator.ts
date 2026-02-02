@@ -754,7 +754,8 @@ function buildCinematicPrompt(
     lighting?: string;
   },
   charactersDescription: string,
-  isFirstScene: boolean
+  isFirstScene: boolean,
+  stylePrompt?: string
 ): string {
   // 1. Quality tags (가장 먼저 - 가중치 높음)
   const qualityTags = '(Masterpiece:1.2), (Best Quality:1.2), (High Detail:1.1)';
@@ -774,8 +775,10 @@ function buildCinematicPrompt(
   const lighting = scene.lighting || lightingFromMood;
   const atmosphericLighting = `${lighting}, atmospheric perspective, volumetric lighting`;
 
-  // 6. Style
-  const style = 'Pixar-style 3D animation, Unreal Engine 5 render quality, hyper-detailed textures';
+  // 6. Style (채널 설정 또는 기본값)
+  const style =
+    stylePrompt ||
+    'Pixar-style 3D animation, Unreal Engine 5 render quality, hyper-detailed textures';
 
   // 7. Negative prompt hints (Gemini는 직접 negative prompt를 지원하지 않으므로 긍정적으로 표현)
   const avoidance = 'clean composition, no text, no watermarks, no artifacts, sharp focus';
@@ -810,10 +813,29 @@ function buildCinematicPrompt(
 /**
  * 다중 장면 이미지 생성 (캐릭터 일관성 유지)
  * 개선된 시네마틱 프롬프트 구조 사용
+ * @param script - 스크립트 데이터
+ * @param outputDir - 출력 디렉토리
+ * @param styleId - 아트 스타일 ID (없으면 기본 Pixar 스타일)
  */
-export async function generateSceneImages(script: Script, outputDir: string): Promise<string[]> {
+export async function generateSceneImages(
+  script: Script,
+  outputDir: string,
+  styleId?: string
+): Promise<string[]> {
   const apiKey = getGeminiApiKey();
   const scenePrompts = script.metadata.scenePrompts;
+
+  // 스타일 프롬프트 가져오기
+  let stylePrompt: string | undefined;
+  if (styleId) {
+    const style = getStyleById(styleId);
+    if (style) {
+      stylePrompt = style.prompt;
+      console.log(`🎨 Using art style: ${style.name}`);
+    } else {
+      console.log(`⚠️ Style "${styleId}" not found, using default Pixar style`);
+    }
+  }
 
   // scenePrompts가 없으면 레거시 방식으로 단일 이미지 생성
   if (!scenePrompts || scenePrompts.length === 0) {
@@ -822,7 +844,8 @@ export async function generateSceneImages(script: Script, outputDir: string): Pr
       script.metadata.topic,
       script.metadata.title.target,
       outputDir,
-      script.metadata.imagePrompt
+      script.metadata.imagePrompt,
+      styleId
     );
     return [singleImage];
   }
@@ -847,8 +870,13 @@ export async function generateSceneImages(script: Script, outputDir: string): Pr
       isFirstScene
     );
 
-    // 🎬 시네마틱 프롬프트 생성
-    const scenePrompt = buildCinematicPrompt(scene, charactersDescription, isFirstScene);
+    // 🎬 시네마틱 프롬프트 생성 (스타일 포함)
+    const scenePrompt = buildCinematicPrompt(
+      scene,
+      charactersDescription,
+      isFirstScene,
+      stylePrompt
+    );
 
     if (isFirstScene) {
       console.log(`   📝 Prompt preview: ${scenePrompt.substring(0, 150)}...`);

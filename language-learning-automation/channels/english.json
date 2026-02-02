@@ -15,7 +15,7 @@
     "backgroundStyle": "illustration",
     "primaryColor": "#87CEEB",
     "secondaryColor": "#FF69B4",
-    "preferredArtStyle": "clay_animation"
+    "preferredArtStyle": "pixar_3d"
   },
 
   "colors": {
@@ -67,7 +67,7 @@
   "shortsTheme": {
     "quizHookColor": "#FF9500",
     "ctaQuestion": "맞추셨나요? 🎉",
-    "ctaText": "💬 맞추셨다면 댓글 남겨주세요!"
+    "ctaText": "💬 맞추셨다면 다른 문제도 도전해 보세요!"
   },
 
   "thumbnail": {
