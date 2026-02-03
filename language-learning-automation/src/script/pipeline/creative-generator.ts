@@ -2,14 +2,9 @@
  * Creative Generator Module
  *
  * Phase 1 of the multi-step script pipeline.
- * Generates free-form screenplay scripts without JSON constraints.
- *
- * Role: "You are a Netflix screenwriter"
- * Focus: Story, emotion, engagement, natural dialogue
- * Output: Human-readable screenplay format
+ * Generates structured JSON screenplay with scenes and visual directions.
  *
  * @module creative-generator
- * **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6**
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -24,16 +19,7 @@ import { CATEGORY_SCRIPT_FORMAT, isNarrationCategory, getDefaultSpeaker } from '
 // ============================================================================
 
 /**
- * Generate a creative screenplay script without JSON constraints.
- *
- * This is Phase 1 of the pipeline, focusing purely on creative writing.
- * The AI is instructed to act as a Netflix screenwriter and produce
- * engaging, emotionally resonant content.
- *
- * @param input - Creative generator input containing topic, category, config
- * @returns ScreenplayOutput with title, characters, scenes, and raw text
- *
- * **Validates: Requirements 1.1, 1.2, 1.3, 1.4, 1.5, 1.6**
+ * Generate a creative screenplay script in JSON format.
  */
 export async function generateCreativeScript(
   input: CreativeGeneratorInput
@@ -49,8 +35,8 @@ export async function generateCreativeScript(
   const response = result.response;
   const rawText = response.text();
 
-  // Parse the screenplay from raw text
-  const screenplay = parseScreenplayFromRawText(rawText, category);
+  // Parse JSON from response
+  const screenplay = parseJsonScreenplay(rawText, category);
 
   return screenplay;
 }
@@ -59,21 +45,6 @@ export async function generateCreativeScript(
 // Prompt Building
 // ============================================================================
 
-/**
- * Build the creative prompt for screenplay generation.
- *
- * Key principles:
- * - No JSON constraints
- * - Focus on emotional arc and engagement
- * - Natural conversational patterns
- * - Category-specific tone adaptation
- *
- * @param topic - The topic for the script
- * @param category - The category (story, conversation, etc.)
- * @param config - Channel configuration
- * @param sentenceCount - Target number of sentences
- * @returns The prompt string
- */
 function buildCreativePrompt(
   topic: string,
   category: Category,
@@ -83,526 +54,346 @@ function buildCreativePrompt(
   const formatConfig = CATEGORY_SCRIPT_FORMAT[category];
   const isNarration = isNarrationCategory(category);
 
-  const roleDescription = isNarration
-    ? 'You are a Netflix screenwriter specializing in compelling first-person narratives.'
-    : 'You are a Netflix screenwriter specializing in natural, engaging dialogue.';
-
-  const categoryGuidance = getCategoryCreativeGuidance(category);
-  const dialogueTechniques = getDialogueTechniques(isNarration);
-  const emotionalArcGuidance = getEmotionalArcGuidance(category);
-
-  return `# Role
-${roleDescription}
-
-Your job is to write an emotionally engaging screenplay that will captivate viewers.
-Focus ONLY on storytelling - no JSON, no word counting, no educational formatting.
-
-# Task
-Write a ${config.meta.targetLanguage} screenplay for a language learning video.
-Format: ${formatConfig.description}
-
-## Topic: ${topic}
-
-## Category: ${category}
-${categoryGuidance}
-
-# Creative Guidelines
-
-## Emotional Arc
-${emotionalArcGuidance}
-
-## Dialogue Techniques
-${dialogueTechniques}
-
-## Natural Language Patterns
-- Use contractions naturally: "I'm", "don't", "can't", "it's", "we're", "they're"
-- Include reactions: "Oh!", "Really?", "Wow!", "That's great!", "I see."
-- Add hesitations where natural: "Well...", "Um...", "Let me think..."
-- Use softeners: "Actually,", "I think...", "Maybe...", "Kind of..."
-
-${
-  isNarration
-    ? ''
-    : `## ✅ Reference Example (High-Performing Competitor Script)
-Topic: "건강 검진 결과가 나왔어요" (Health checkup results)
-
-M: I got my checkup results yesterday.
-F: Oh, really? I got mine last week.
-M: How did your results look?
-F: Most things were fine, but my blood pressure was high.
-M: That sounds a bit serious.
-F: Yes, the doctor told me to be careful. What did the doctor suggest?
-M: He said I should exercise more and eat less salt.
-F: That makes sense for high blood pressure.
-M: Yes, and I need better sleep, too.
-F: I see. My results were not great either.
-M: Oh, what was the problem for you?
-F: The dentist said I have a cavity.
-M: That's too bad, but it's pretty common.
-F: Yes, it hurts whenever I eat something.
-M: Did you make an appointment yet?
-F: Yes, I will see the dentist tomorrow.
-M: That's good. Early treatment really helps.
-F: I agree. I should be more careful about brushing my teeth.
-
-**Notice the patterns:**
-- Reactions: "Oh, really?", "That sounds...", "I see.", "That's too bad"
-- Both share experiences: M talks about blood pressure, F talks about cavity
-- Q&A flow: Questions lead to more sharing
-- Empathy: "That makes sense", "I agree"
-- Short sentences: 5-10 words each
-`
-}
-
-# Output Format
-Write in SCREENPLAY FORMAT with clear structure:
-
-TITLE: [Your creative title]
-
-CHARACTERS:
-- M (Name): [Brief character description]
-- F (Name): [Brief character description] (if dialogue format)
-
----
-
-SCENE 1: [LOCATION] - [TIME OF DAY]
-[Stage direction in brackets]
-
-${isNarration ? 'M or F' : 'M/F'}: [Dialogue line]
-   (emotion or beat)
-   [Action description]
-
-${isNarration ? '' : 'F/M: [Response line]\n   (reaction)'}
-
----
-
-SCENE 2: [LOCATION] - [TIME OF DAY]
-...continue...
-
-# Constraints
-1. Write approximately ${sentenceCount} dialogue lines total
-2. ${isNarration ? 'Single narrator' : 'Two characters alternating naturally'}
-3. Each line should be 5-15 words (natural sentence length)
-4. Focus on emotional engagement, not educational structure
-5. Make it feel like a real Netflix script, not a textbook
-
-# Critical Rules
-- DO NOT output JSON
-- DO NOT count words or add educational annotations
-- DO NOT include blank words or quiz elements
-- FOCUS purely on compelling storytelling
-- Use speaker labels: ${isNarration ? getDefaultSpeaker(category) + ':' : 'M: and F:'}
-
-Write the screenplay now. Be creative, emotional, and engaging.`;
+  if (isNarration) {
+    return buildNarrationPrompt(topic, category, config, sentenceCount, formatConfig);
+  } else {
+    return buildConversationPrompt(topic, category, config, sentenceCount, formatConfig);
+  }
 }
 
 /**
- * Get category-specific creative guidance
+ * Build prompt for narration/story categories - JSON output
  */
+function buildNarrationPrompt(
+  topic: string,
+  category: Category,
+  config: ChannelConfig,
+  sentenceCount: number,
+  formatConfig: { description: string }
+): string {
+  const categoryGuidance = getCategoryCreativeGuidance(category);
+  const defaultSpeaker = getDefaultSpeaker(category);
+  const recommendedScenes = Math.max(3, Math.min(6, Math.ceil(sentenceCount / 4)));
+
+  return `# Role
+You are a warm storyteller creating a short film script for language learners.
+
+# Task
+Create a ${config.meta.targetLanguage} narration script in JSON format.
+Topic: ${topic}
+Category: ${category} - ${categoryGuidance}
+
+# Language Level: A1-A2 (Beginner)
+- Simple sentences (5-10 words)
+- Common vocabulary only
+- Use contractions naturally ("I'm", "don't", "can't")
+- NO idioms, NO complex grammar
+
+# Reference Style (match this tone):
+"I grew up in a small and quiet town.
+My childhood was not easy at all.
+I did not have a father at home.
+I lived only with my mother."
+
+# Output JSON Schema
+{
+  "title": "Simple English Title",
+  "characters": [
+    {
+      "id": "${defaultSpeaker}",
+      "name": "Character Name",
+      "description": "Brief description"
+    }
+  ],
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "setting": "INT. LOCATION - TIME",
+      "visual": {
+        "location": "Detailed location description",
+        "timeOfDay": "MORNING/DAY/EVENING/NIGHT",
+        "mood": "warm/nostalgic/hopeful/etc",
+        "lighting": "Lighting description",
+        "characterActions": "What we see happening"
+      },
+      "dialogue": [
+        {
+          "speaker": "${defaultSpeaker}",
+          "line": "Simple sentence here.",
+          "emotion": "reflective"
+        }
+      ]
+    }
+  ]
+}
+
+# Requirements
+1. Create ${recommendedScenes} scenes
+2. Total ${sentenceCount} dialogue lines across all scenes
+3. Each scene has 3-5 dialogue lines
+4. Single narrator (${defaultSpeaker})
+5. Each line: 5-10 words, simple vocabulary
+6. Include visual directions for each scene
+
+# Example Output
+{
+  "title": "A Summer Memory",
+  "characters": [
+    {"id": "${defaultSpeaker}", "name": "Sarah", "description": "A woman remembering her childhood"}
+  ],
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "setting": "EXT. COUNTRYSIDE - DAY",
+      "visual": {
+        "location": "A small village with green fields",
+        "timeOfDay": "DAY",
+        "mood": "nostalgic, warm",
+        "lighting": "Bright summer sunlight",
+        "characterActions": "A young girl runs through tall grass"
+      },
+      "dialogue": [
+        {"speaker": "${defaultSpeaker}", "line": "I remember that summer very well.", "emotion": "nostalgic"},
+        {"speaker": "${defaultSpeaker}", "line": "The sun was warm on my face.", "emotion": "warm"},
+        {"speaker": "${defaultSpeaker}", "line": "I was only seven years old.", "emotion": "reflective"}
+      ]
+    }
+  ]
+}
+
+Output ONLY valid JSON. No markdown, no explanation.`;
+}
+
+/**
+ * Build prompt for conversation categories - JSON output
+ */
+function buildConversationPrompt(
+  topic: string,
+  category: Category,
+  config: ChannelConfig,
+  sentenceCount: number,
+  formatConfig: { description: string }
+): string {
+  const categoryGuidance = getCategoryCreativeGuidance(category);
+  const recommendedScenes = Math.max(3, Math.min(6, Math.ceil(sentenceCount / 4)));
+
+  return `# Role
+You are a screenwriter creating a natural conversation for language learners.
+
+# Task
+Create a ${config.meta.targetLanguage} dialogue script in JSON format.
+Topic: ${topic}
+Category: ${category} - ${categoryGuidance}
+
+# Language Level: A1-A2 (Beginner)
+- Simple sentences (5-12 words)
+- Common vocabulary only
+- Use contractions naturally ("I'm", "don't", "Yeah", "Sure")
+- NO idioms, NO exaggerated expressions
+
+# Reference Style (match this natural tone):
+M: Hi. You look relaxed today. Did you sleep well?
+F: Yeah, I did. I had a quiet night at home.
+M: That sounds nice. Did you do anything fun?
+F: I watched a short video about photography.
+
+# Output JSON Schema
+{
+  "title": "Simple English Title",
+  "characters": [
+    {"id": "M", "name": "Name", "description": "Brief description"},
+    {"id": "F", "name": "Name", "description": "Brief description"}
+  ],
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "setting": "INT. LOCATION - TIME",
+      "visual": {
+        "location": "Detailed location description",
+        "timeOfDay": "MORNING/DAY/EVENING/NIGHT",
+        "mood": "warm/casual/excited/etc",
+        "lighting": "Lighting description",
+        "characterActions": "What we see the characters doing"
+      },
+      "dialogue": [
+        {"speaker": "M", "line": "Hey, how are you?", "emotion": "friendly"},
+        {"speaker": "F", "line": "I'm good, thanks!", "emotion": "cheerful"}
+      ]
+    }
+  ]
+}
+
+# Requirements
+1. Create ${recommendedScenes} scenes
+2. Total ${sentenceCount} dialogue lines across all scenes
+3. Each scene has 3-5 dialogue exchanges
+4. Two speakers: M and F
+5. Each line: 5-12 words, natural speech
+6. Include visual directions for each scene
+7. Natural turn-taking (not strict M-F-M-F)
+
+# Example Output
+{
+  "title": "Meeting an Old Friend",
+  "characters": [
+    {"id": "M", "name": "Daniel", "description": "A friendly young man"},
+    {"id": "F", "name": "Anna", "description": "His old friend from college"}
+  ],
+  "scenes": [
+    {
+      "sceneNumber": 1,
+      "setting": "INT. COZY CAFE - AFTERNOON",
+      "visual": {
+        "location": "A warm cafe with large windows",
+        "timeOfDay": "AFTERNOON",
+        "mood": "warm, friendly",
+        "lighting": "Soft afternoon sunlight",
+        "characterActions": "Daniel waves as Anna enters the cafe"
+      },
+      "dialogue": [
+        {"speaker": "M", "line": "Hey Anna! Long time no see.", "emotion": "happy"},
+        {"speaker": "F", "line": "Hi Daniel! It's been two years.", "emotion": "surprised"},
+        {"speaker": "M", "line": "You look great. Please sit down.", "emotion": "warm"},
+        {"speaker": "F", "line": "Thanks. I'm so happy to see you.", "emotion": "grateful"}
+      ]
+    }
+  ]
+}
+
+Output ONLY valid JSON. No markdown, no explanation.`;
+}
+
 function getCategoryCreativeGuidance(category: Category): string {
   const guidance: Record<Category, string> = {
-    story: `**Personal Story Style**
-- First-person narrative with emotional depth
-- Start with a hook that draws viewers in
-- Build to an emotional climax
-- End with reflection or realization
-- Make it feel like sharing with a close friend`,
-
-    conversation: `**Natural Conversation Style**
-- Two people having a genuine conversation
-- Start with a specific situation, not generic greetings
-- Characters should react to each other naturally
-- Include emotional beats and genuine responses
-- End with resolution or connection`,
-
-    news: `**Engaging News Story Style**
-- Hook viewers with surprising or interesting facts
-- Build curiosity throughout
-- Use storytelling techniques even for factual content
-- Make statistics feel personal and relatable
-- End with impact or call to reflection`,
-
-    announcement: `**Announcement with Personality**
-- Clear information delivery with warmth
-- Acknowledge the listener's situation
-- Provide helpful context
-- End with reassurance or next steps`,
-
-    travel_business: `**Immersive Experience Style**
-- Put viewers in the situation
-- Include sensory details
-- Natural problem-solving dialogue
-- Cultural nuances and authentic interactions
-- Satisfying resolution`,
-
-    lesson: `**Engaging Educational Style**
-- Hook with a relatable problem or question
-- Build understanding step by step
-- Use examples and analogies
-- Make information feel personally relevant
-- End with actionable insight`,
-
-    fairytale: `**Magical Storytelling Style**
-- Classic fairytale opening
-- Rich descriptive language
-- Clear character motivations
-- Building tension and resolution
-- Meaningful moral or lesson woven naturally`,
+    story: 'Warm first-person narrative about a personal experience',
+    conversation: 'Natural dialogue between two people',
+    news: 'Simple news report style',
+    announcement: 'Clear announcement with helpful information',
+    travel_business: 'Practical travel or service conversation',
+    lesson: 'Educational narrative with clear takeaway',
+    fairytale: 'Simple storytelling with clear characters',
   };
-
   return guidance[category];
 }
 
-/**
- * Get dialogue techniques based on format
- */
-function getDialogueTechniques(isNarration: boolean): string {
-  if (isNarration) {
-    return `**Narration Techniques**
-- Vary sentence rhythm (short punchy + longer flowing)
-- Use rhetorical questions to engage viewers
-- Include sensory details
-- Build emotional momentum
-- Use pauses and beats for emphasis`;
-  }
-
-  return `**Dialogue Techniques (CRITICAL - Follow These Patterns)**
-
-## 1. Reaction + Self-Experience Pattern (MUST USE)
-When A shares something, B must:
-1. React first ("Oh, really?", "That sounds...", "I see.")
-2. Share their own related experience
-3. Then ask a follow-up question
-
-❌ BAD (No reaction, no self-experience):
-M: I got my test results yesterday.
-F: What did the doctor say?
-
-✅ GOOD (Reaction + Self-experience + Question):
-M: I got my test results yesterday.
-F: Oh, really? I got mine last week. How did yours look?
-
-## 2. Q&A Chain Pattern
-Every 2-3 exchanges should have a question that invites more sharing:
-- "What about you?"
-- "How did that go?"
-- "What did they say?"
-- "Did you try...?"
-
-## 3. Empathy Responses (Use 3-4 times per script)
-- "That makes sense."
-- "I know how you feel."
-- "That's too bad, but..."
-- "I agree."
-- "That sounds nice."
-
-## 4. Both Characters Share (CRITICAL)
-Both M and F must share their own experiences/opinions, not just one person talking and the other reacting.
-
-## Example Flow:
-M: [Shares situation]
-F: [Reaction] + [Own experience] + [Question]
-M: [Answer] + [More detail]
-F: [Empathy] + [Advice or shared feeling]
-M: [Agreement] + [Future action]
-F: [Support] + [Positive ending]`;
-}
-
-/**
- * Get emotional arc guidance based on category
- */
-function getEmotionalArcGuidance(category: Category): string {
-  const arcs: Record<Category, string> = {
-    story: `Hook → Build curiosity → Emotional peak → Reflection → Warm resolution`,
-    conversation: `Situation setup → Exploration → Complication → Understanding → Connection`,
-    news: `Surprising hook → Context building → Key revelation → Impact → Reflection`,
-    announcement: `Attention → Information → Acknowledgment → Reassurance`,
-    travel_business: `Situation → Challenge → Navigation → Success → Satisfaction`,
-    lesson: `Problem/Question → Exploration → Insight → Application → Empowerment`,
-    fairytale: `Once upon a time → Challenge → Journey → Climax → Moral/Resolution`,
-  };
-
-  return arcs[category];
-}
-
 // ============================================================================
-// Screenplay Parsing (Basic)
+// JSON Parsing
 // ============================================================================
 
-/**
- * Parse screenplay from raw text output.
- *
- * This is a basic parser that extracts structure from the AI's screenplay output.
- * A more robust parser is in screenplay-parser.ts.
- *
- * @param rawText - The raw screenplay text from AI
- * @param category - The category for default speaker assignment
- * @returns Parsed ScreenplayOutput
- */
-function parseScreenplayFromRawText(rawText: string, category: Category): ScreenplayOutput {
-  // Extract title
-  let title = 'Untitled';
-  const titleMatch = rawText.match(/TITLE:\s*(.+)/i);
-  if (titleMatch) {
-    title = titleMatch[1].trim();
+function parseJsonScreenplay(rawText: string, category: Category): ScreenplayOutput {
+  // Extract JSON from response (handle markdown code blocks)
+  let jsonStr = rawText.trim();
+
+  // Remove markdown code blocks if present
+  const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (jsonMatch) {
+    jsonStr = jsonMatch[1].trim();
   }
 
-  // Extract characters
-  const characters = extractCharacters(rawText, category);
-
-  // Extract scenes
-  const scenes = extractScenes(rawText);
-
-  return {
-    title,
-    characters,
-    scenes,
-    rawText,
-  };
-}
-
-/**
- * Extract characters from screenplay text
- */
-function extractCharacters(
-  rawText: string,
-  category: Category
-): Array<{ id: 'M' | 'F'; name: string; description: string }> {
-  const characters: Array<{ id: 'M' | 'F'; name: string; description: string }> = [];
-
-  // Look for CHARACTERS section
-  const charactersMatch = rawText.match(/CHARACTERS:\s*([\s\S]*?)(?=---|\n\n\n|SCENE)/i);
-
-  if (charactersMatch) {
-    const characterSection = charactersMatch[1];
-
-    // Match patterns like "- M (James): description" or "- F (Sarah): description"
-    const mMatch = characterSection.match(/-\s*M\s*\(([^)]+)\):\s*(.+)/i);
-    const fMatch = characterSection.match(/-\s*F\s*\(([^)]+)\):\s*(.+)/i);
-
-    if (mMatch) {
-      characters.push({
-        id: 'M',
-        name: mMatch[1].trim(),
-        description: mMatch[2].trim(),
-      });
-    }
-
-    if (fMatch) {
-      characters.push({
-        id: 'F',
-        name: fMatch[1].trim(),
-        description: fMatch[2].trim(),
-      });
-    }
+  // Try to find JSON object
+  const jsonObjectMatch = jsonStr.match(/\{[\s\S]*\}/);
+  if (jsonObjectMatch) {
+    jsonStr = jsonObjectMatch[0];
   }
 
-  // If no characters found, create defaults based on category
-  if (characters.length === 0) {
-    const isNarration = isNarrationCategory(category);
+  try {
+    const parsed = JSON.parse(jsonStr);
+
+    // Validate and transform to ScreenplayOutput
+    return {
+      title: parsed.title || 'Untitled',
+      characters: (parsed.characters || []).map(
+        (c: { id?: string; name?: string; description?: string }) => ({
+          id: (c.id as 'M' | 'F') || 'M',
+          name: c.name || 'Character',
+          description: c.description || '',
+        })
+      ),
+      scenes: (parsed.scenes || []).map(
+        (
+          s: {
+            sceneNumber?: number;
+            setting?: string;
+            visual?: {
+              location?: string;
+              timeOfDay?: string;
+              mood?: string;
+              lighting?: string;
+              characterActions?: string;
+            };
+            dialogue?: Array<{
+              speaker?: string;
+              line?: string;
+              emotion?: string;
+            }>;
+          },
+          index: number
+        ) => ({
+          sceneNumber: s.sceneNumber || index + 1,
+          setting: s.setting || 'Unknown location',
+          visual: s.visual
+            ? {
+                location: s.visual.location || s.setting || 'Unknown',
+                timeOfDay: s.visual.timeOfDay || 'DAY',
+                mood: s.visual.mood || 'neutral',
+                lighting: s.visual.lighting,
+                characterActions: s.visual.characterActions,
+              }
+            : undefined,
+          dialogue: (s.dialogue || []).map(
+            (d: { speaker?: string; line?: string; emotion?: string }) => ({
+              speaker: (d.speaker as 'M' | 'F' | 'NARRATOR') || 'M',
+              line: d.line || '',
+              emotion: d.emotion,
+            })
+          ),
+        })
+      ),
+      rawText,
+    };
+  } catch (error) {
+    console.error('Failed to parse JSON screenplay:', error);
+    console.error('Raw text:', rawText.substring(0, 500));
+
+    // Return fallback
     const defaultSpeaker = getDefaultSpeaker(category);
-
-    if (isNarration) {
-      characters.push({
-        id: defaultSpeaker,
-        name: defaultSpeaker === 'M' ? 'James' : 'Sarah',
-        description: 'Narrator',
-      });
-    } else {
-      characters.push(
-        { id: 'M', name: 'James', description: 'Male speaker' },
-        { id: 'F', name: 'Sarah', description: 'Female speaker' }
-      );
-    }
+    return {
+      title: 'Untitled',
+      characters: [{ id: defaultSpeaker, name: 'Narrator', description: 'Default narrator' }],
+      scenes: [
+        {
+          sceneNumber: 1,
+          setting: 'Unknown location',
+          dialogue: [
+            { speaker: defaultSpeaker, line: 'Script generation failed.', emotion: undefined },
+          ],
+        },
+      ],
+      rawText,
+    };
   }
-
-  return characters;
-}
-
-/**
- * Extract scenes from screenplay text
- */
-function extractScenes(rawText: string): Array<{
-  sceneNumber: number;
-  setting: string;
-  dialogue: Array<{
-    speaker: 'M' | 'F' | 'NARRATOR';
-    line: string;
-    emotion?: string;
-    action?: string;
-  }>;
-}> {
-  const scenes: Array<{
-    sceneNumber: number;
-    setting: string;
-    dialogue: Array<{
-      speaker: 'M' | 'F' | 'NARRATOR';
-      line: string;
-      emotion?: string;
-      action?: string;
-    }>;
-  }> = [];
-
-  // Split by scene markers
-  const sceneBlocks = rawText.split(/---+/).filter((block) => block.trim());
-
-  let sceneNumber = 0;
-
-  for (const block of sceneBlocks) {
-    // Check if this block contains a scene header
-    const sceneHeaderMatch = block.match(/SCENE\s*(\d+):\s*(.+?)(?:\n|$)/i);
-
-    if (sceneHeaderMatch) {
-      sceneNumber = parseInt(sceneHeaderMatch[1], 10);
-      const setting = sceneHeaderMatch[2].trim();
-
-      // Extract dialogue from this scene
-      const dialogue = extractDialogueFromBlock(block);
-
-      if (dialogue.length > 0) {
-        scenes.push({
-          sceneNumber,
-          setting,
-          dialogue,
-        });
-      }
-    }
-  }
-
-  // If no scenes found, create a single scene with all dialogue
-  if (scenes.length === 0) {
-    const allDialogue = extractDialogueFromBlock(rawText);
-    if (allDialogue.length > 0) {
-      scenes.push({
-        sceneNumber: 1,
-        setting: 'Unknown location',
-        dialogue: allDialogue,
-      });
-    }
-  }
-
-  return scenes;
-}
-
-/**
- * Extract dialogue lines from a text block
- */
-function extractDialogueFromBlock(block: string): Array<{
-  speaker: 'M' | 'F' | 'NARRATOR';
-  line: string;
-  emotion?: string;
-  action?: string;
-}> {
-  const dialogue: Array<{
-    speaker: 'M' | 'F' | 'NARRATOR';
-    line: string;
-    emotion?: string;
-    action?: string;
-  }> = [];
-
-  const lines = block.split('\n');
-
-  let currentSpeaker: 'M' | 'F' | 'NARRATOR' | null = null;
-  let currentLine = '';
-  let currentEmotion: string | undefined;
-  let currentAction: string | undefined;
-
-  for (const line of lines) {
-    const trimmedLine = line.trim();
-
-    // Check for speaker label (M:, F:, NARRATOR:)
-    const speakerMatch = trimmedLine.match(/^(M|F|NARRATOR):\s*(.*)$/i);
-
-    if (speakerMatch) {
-      // Save previous dialogue if exists
-      if (currentSpeaker && currentLine) {
-        dialogue.push({
-          speaker: currentSpeaker,
-          line: currentLine.trim(),
-          emotion: currentEmotion,
-          action: currentAction,
-        });
-      }
-
-      // Start new dialogue
-      currentSpeaker = speakerMatch[1].toUpperCase() as 'M' | 'F' | 'NARRATOR';
-      currentLine = speakerMatch[2];
-      currentEmotion = undefined;
-      currentAction = undefined;
-    } else if (currentSpeaker) {
-      // Check for emotion annotation (emotion) or (beat)
-      const emotionMatch = trimmedLine.match(/^\(([^)]+)\)$/);
-      if (emotionMatch) {
-        currentEmotion = emotionMatch[1];
-        continue;
-      }
-
-      // Check for action annotation [action]
-      const actionMatch = trimmedLine.match(/^\[([^\]]+)\]$/);
-      if (actionMatch) {
-        currentAction = actionMatch[1];
-        continue;
-      }
-
-      // Continue current dialogue line
-      if (trimmedLine && !trimmedLine.startsWith('SCENE') && !trimmedLine.startsWith('---')) {
-        currentLine += ' ' + trimmedLine;
-      }
-    }
-  }
-
-  // Don't forget the last dialogue
-  if (currentSpeaker && currentLine) {
-    dialogue.push({
-      speaker: currentSpeaker,
-      line: currentLine.trim(),
-      emotion: currentEmotion,
-      action: currentAction,
-    });
-  }
-
-  return dialogue;
 }
 
 // ============================================================================
-// Validation Helpers
+// Validation Helpers (kept for compatibility)
 // ============================================================================
 
-/**
- * Check if the output is in valid screenplay format (not JSON)
- *
- * @param text - The raw text to validate
- * @returns true if it's screenplay format, false if it's JSON
- */
 export function isScreenplayFormat(text: string): boolean {
-  // Check if it's NOT JSON
-  const trimmed = text.trim();
-  if (trimmed.startsWith('{') || trimmed.startsWith('[')) {
-    try {
-      JSON.parse(trimmed);
-      return false; // It's valid JSON, not screenplay
-    } catch {
-      // Not valid JSON, continue checking
+  // Now we expect JSON, so check if it's valid JSON
+  try {
+    const trimmed = text.trim();
+    const jsonMatch = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/) || trimmed.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      JSON.parse(jsonMatch[1] || jsonMatch[0]);
+      return true;
     }
+    return false;
+  } catch {
+    return false;
   }
-
-  // Check for screenplay markers
-  const hasTitle = /TITLE:/i.test(text);
-  const hasSpeakerLabels = /\b(M|F|NARRATOR):/i.test(text);
-  const hasSceneMarkers = /SCENE\s*\d+/i.test(text) || /---/.test(text);
-
-  // Must have speaker labels at minimum
-  return hasSpeakerLabels && (hasTitle || hasSceneMarkers);
 }
 
-/**
- * Check if dialogue contains natural patterns (contractions, reactions)
- *
- * @param text - The screenplay text to check
- * @returns true if natural patterns are found
- */
 export function hasNaturalDialoguePatterns(text: string): boolean {
-  // Common contractions
   const contractions = [
     "I'm",
     "don't",
@@ -618,53 +409,14 @@ export function hasNaturalDialoguePatterns(text: string): boolean {
     "shouldn't",
     "I've",
     "you've",
-    "we've",
-    "they've",
     "I'll",
     "you'll",
-    "we'll",
-    "they'll",
     "that's",
     "what's",
-    "there's",
-    "here's",
-    "let's",
     "didn't",
     "wasn't",
-    "weren't",
-    "haven't",
-    "hasn't",
-    "hadn't",
-  ];
-
-  // Reaction words
-  const reactions = [
-    'Oh!',
-    'Really?',
-    'Wow!',
-    "That's great!",
-    'I see.',
-    'Amazing!',
-    'Incredible!',
-    'Oh no!',
-    'Oh my!',
-    'Hmm',
-    'Well...',
-    'Actually,',
-    'Um...',
-    'Uh...',
   ];
 
   const lowerText = text.toLowerCase();
-
-  // Check for contractions (case-insensitive)
-  const hasContraction = contractions.some((c) => lowerText.includes(c.toLowerCase()));
-
-  // Check for reactions (case-insensitive for the word part)
-  const hasReaction = reactions.some((r) => {
-    const reactionWord = r.replace(/[!?,.]+ $/, '').toLowerCase();
-    return lowerText.includes(reactionWord);
-  });
-
-  return hasContraction || hasReaction;
+  return contractions.some((c) => lowerText.includes(c.toLowerCase()));
 }

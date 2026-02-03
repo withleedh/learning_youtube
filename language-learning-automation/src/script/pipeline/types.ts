@@ -26,12 +26,32 @@ export interface ScreenplayLine {
 }
 
 /**
+ * Visual direction for a scene (from screenplay format)
+ */
+export interface SceneVisualDirection {
+  /** Location description (e.g., "INT. COZY CAFE - DAY") */
+  location: string;
+  /** Time of day (DAY, NIGHT, MORNING, etc.) */
+  timeOfDay: string;
+  /** Overall mood/atmosphere */
+  mood: string;
+  /** Camera direction hint */
+  cameraHint?: string;
+  /** Lighting description */
+  lighting?: string;
+  /** Character actions/blocking */
+  characterActions?: string;
+}
+
+/**
  * A scene in the screenplay format
  */
 export interface ScreenplayScene {
   sceneNumber: number;
   setting: string;
   dialogue: ScreenplayLine[];
+  /** Visual direction parsed from screenplay format */
+  visual?: SceneVisualDirection;
 }
 
 /**
@@ -67,6 +87,8 @@ export interface StructuralConverterInput {
   config: ChannelConfig;
   targetLanguage: string;
   nativeLanguage: string;
+  /** Original topic from topic selector (한국어 주제) - used for title.native */
+  originalTopic: string;
 }
 
 /**
@@ -81,6 +103,8 @@ export interface StructuredSentences {
     characters: Character[];
   };
   sentences: Sentence[];
+  /** Scene information from Creative phase (passed through for Visual phase) */
+  scenes?: ScreenplayScene[];
 }
 
 // ============================================================================
@@ -237,12 +261,25 @@ export const screenplayLineSchema = z.object({
 });
 
 /**
+ * Zod schema for SceneVisualDirection
+ */
+export const sceneVisualDirectionSchema = z.object({
+  location: z.string().min(1),
+  timeOfDay: z.string().min(1),
+  mood: z.string().min(1),
+  cameraHint: z.string().optional(),
+  lighting: z.string().optional(),
+  characterActions: z.string().optional(),
+});
+
+/**
  * Zod schema for ScreenplayScene
  */
 export const screenplaySceneSchema = z.object({
   sceneNumber: z.number().int().positive(),
   setting: z.string().min(1),
   dialogue: z.array(screenplayLineSchema).min(1),
+  visual: sceneVisualDirectionSchema.optional(),
 });
 
 /**

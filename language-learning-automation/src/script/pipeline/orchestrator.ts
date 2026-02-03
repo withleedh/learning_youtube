@@ -29,7 +29,13 @@ import {
 } from './creative-generator';
 import { convertToStructuredFormat } from './structural-converter';
 import { generateVisualPrompts } from './visual-generator';
-import { validateSentences, validateSceneCoverage } from './validators';
+import {
+  validateSentences,
+  validateSceneCoverage,
+  calculateEngagementScore,
+  hasBasicDialogueStructure,
+  MIN_ENGAGEMENT_SCORE,
+} from './validators';
 import { generateScript as generateLegacyScript } from '../generator';
 
 // ============================================================================
@@ -38,14 +44,14 @@ import { generateScript as generateLegacyScript } from '../generator';
 
 /**
  * Default max retries per phase.
- * - Creative: 2 retries (if output is not valid screenplay format)
+ * - Creative: 3 retries (if output lacks engagement or is not valid screenplay format)
  * - Structural: 3 retries (if JSON validation fails)
  * - Visual: 2 retries (if scene coverage is incomplete)
  *
  * **Validates: Requirements 4.2, 6.4**
  */
 const DEFAULT_MAX_RETRIES = {
-  creative: 2,
+  creative: 3,
   structural: 3,
   visual: 2,
 };
@@ -74,20 +80,23 @@ function formatValidationErrors(errors: ValidationError[]): string {
 /**
  * Retry wrapper for the Creative phase.
  *
- * Validates that output is in screenplay format (not JSON) and contains
- * natural dialogue patterns. Retries up to maxRetries times with error feedback.
+ * Validates that output is in screenplay format (not JSON), contains
+ * natural dialogue patterns, AND meets minimum engagement quality score.
+ * Retries up to maxRetries times with error feedback.
  *
  * @param input - Creative generator input
- * @param maxRetries - Maximum number of retries (default: 2)
+ * @param maxRetries - Maximum number of retries (default: 3)
  * @returns ScreenplayOutput and retry count
  *
- * **Validates: Requirements 4.2, 6.4**
+ * **Validates: Requirements 4.2, 6.4, Content Quality**
  */
 async function retryCreativePhase(
   input: CreativeGeneratorInput,
   maxRetries: number = DEFAULT_MAX_RETRIES.creative
 ): Promise<{ output: ScreenplayOutput; retries: number }> {
   let lastError: Error | undefined;
+  let bestOutput: ScreenplayOutput | undefined;
+  let bestScore = 0;
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
@@ -144,6 +153,67 @@ async function retryCreativePhase(
         throw error;
       }
 
+      // =====================================================================
+      // NEW: Engagement Quality Check (재미 검증) - LLM-based, language-agnostic
+      // =====================================================================
+      const targetLanguage = input.config.meta.targetLanguage;
+
+      // Quick structural check before expensive LLM call
+      if (!hasBasicDialogueStructure(output)) {
+        if (attempt < maxRetries) {
+          console.log(
+            `[Pipeline] Basic dialogue structure check failed (attempt ${attempt + 1}/${maxRetries + 1}). Retrying...`
+          );
+          continue;
+        }
+      }
+
+      console.log(`[Pipeline] Evaluating engagement quality (attempt ${attempt + 1})...`);
+      const engagementScore = await calculateEngagementScore(output, targetLanguage);
+
+      console.log(`[Pipeline] Engagement score: ${engagementScore.total}/100`);
+      console.log(`[Pipeline]   - Emotional Arc: ${engagementScore.breakdown.emotionalArc}/25`);
+      console.log(`[Pipeline]   - Natural Flow: ${engagementScore.breakdown.naturalFlow}/25`);
+      console.log(`[Pipeline]   - Engagement: ${engagementScore.breakdown.engagement}/25`);
+      console.log(`[Pipeline]   - Memorability: ${engagementScore.breakdown.memorability}/25`);
+
+      if (engagementScore.strengths.length > 0) {
+        console.log(`[Pipeline] Strengths: ${engagementScore.strengths.join(', ')}`);
+      }
+
+      // Track best output so far
+      if (engagementScore.total > bestScore) {
+        bestScore = engagementScore.total;
+        bestOutput = output;
+      }
+
+      // Check if engagement meets minimum threshold
+      if (engagementScore.total < MIN_ENGAGEMENT_SCORE) {
+        if (attempt < maxRetries) {
+          console.log(
+            `[Pipeline] Engagement score ${engagementScore.total} below minimum ${MIN_ENGAGEMENT_SCORE}. Issues:`
+          );
+          engagementScore.issues.forEach((issue) => console.log(`[Pipeline]   - ${issue}`));
+          console.log('[Pipeline] Retrying for better engagement...');
+          continue;
+        }
+
+        // On final attempt, use best output if available
+        if (bestOutput && bestScore >= MIN_ENGAGEMENT_SCORE * 0.8) {
+          console.log(
+            `[Pipeline] Using best attempt with score ${bestScore} (below target but acceptable)`
+          );
+          return { output: bestOutput, retries: attempt };
+        }
+
+        // Log warning but proceed with best available
+        console.log(
+          `[Pipeline] Warning: Best engagement score ${bestScore} is below target ${MIN_ENGAGEMENT_SCORE}`
+        );
+        console.log('[Pipeline] Issues with final output:');
+        engagementScore.issues.forEach((issue) => console.log(`[Pipeline]   - ${issue}`));
+      }
+
       return { output, retries: attempt };
     } catch (error) {
       lastError = error instanceof Error ? error : new Error(String(error));
@@ -155,6 +225,12 @@ async function retryCreativePhase(
         continue;
       }
     }
+  }
+
+  // If we have a best output, use it even if below threshold
+  if (bestOutput) {
+    console.log(`[Pipeline] Returning best available output with engagement score ${bestScore}`);
+    return { output: bestOutput, retries: maxRetries };
   }
 
   throw lastError || new Error('Creative phase failed after all retries');
@@ -471,6 +547,7 @@ export async function runScriptPipeline(
           config,
           targetLanguage,
           nativeLanguage,
+          originalTopic: topic, // 원래 한국어 주제를 전달
         },
         fullConfig.maxRetries.structural
       );

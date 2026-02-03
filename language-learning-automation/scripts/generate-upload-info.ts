@@ -13,6 +13,13 @@ import { calculateStep4Duration } from '../src/compositions/Step4';
 import { STEP_TRANSITION_DURATION } from '../src/compositions/StepTransition';
 import { GEMINI_MODELS, getGeminiApiKey } from '../src/config/gemini';
 
+// 채널 정보 (나중에 config로 분리 가능)
+const CHANNEL_INFO = {
+  name: '하루 영어 습관',
+  hashtags: '#영어듣기 #영어공부 #영어리스닝 #생활영어 #영어회화',
+  notionUrl: 'https://your-notion-url.notion.site/...',
+};
+
 /**
  * LLM을 사용해 제목에 어울리는 이모지 3개 생성
  */
@@ -56,7 +63,6 @@ async function generateEmojisForTitle(title: string): Promise<string> {
 
 /**
  * 카테고리에 맞는 콘텐츠 타입 라벨 반환
- * 경쟁 채널 "귀가 뚫리는 영어" 스타일 참고
  */
 function getContentTypeLabel(category: string): string {
   const labels: Record<string, string> = {
@@ -74,7 +80,6 @@ function getContentTypeLabel(category: string): string {
 /**
  * 경쟁 채널 스타일의 제목 생성
  * 형식: [콘텐츠 타입] - [한국어 주제] [이모지 3개]
- * 예: 영어 듣기 - 어릴 때 살던 집에 방문하게 됐어요 🏠💕✨
  */
 async function generateCompetitorStyleTitle(
   nativeTitle: string,
@@ -83,6 +88,50 @@ async function generateCompetitorStyleTitle(
   const contentType = getContentTypeLabel(category);
   const emojis = await generateEmojisForTitle(nativeTitle);
   return `${contentType} - ${nativeTitle} ${emojis}`;
+}
+
+/**
+ * 요일별 학습 주제 설명 생성
+ */
+function getWeeklySchedule(): string {
+  return `📅 요일별 콘텐츠
+월 📖 일상 이야기
+화 🗨️ 생활 회화  
+수 📰 뉴스 영어
+목 📢 안내·광고
+금 💼 여행·비즈니스
+토 ✏️ 영어 수업
+일 🐭 영어 동화`;
+}
+
+/**
+ * 학습 단계 설명 생성
+ */
+function getLearningStepsDescription(repeatCount: number): string {
+  return `🎧 4단계 듣기 훈련
+1️⃣ 자막 없이 듣기 → 전체 흐름 파악
+2️⃣ 자막과 함께 듣기 → 문장 구조 확인
+3️⃣ 문장별 ${repeatCount}회 반복 → 귀에 익히기
+4️⃣ 다시 자막 없이 → 실력 확인`;
+}
+
+/**
+ * 채널 소개 문구 생성
+ */
+function getChannelIntro(): string {
+  return `영어, 듣기만 해도 늘 수 있어요 👂✨
+
+매일 다양한 상황의 영어를 듣고, 자연스럽게 귀를 열어보세요.
+4단계 반복 학습으로 누구나 쉽게 따라할 수 있습니다.`;
+}
+
+/**
+ * 면책 조항 생성
+ */
+function getDisclaimer(): string {
+  return `📌 안내
+• 이 영상은 학습용으로 제작된 가상의 내용입니다.
+• 무단 복제 및 상업적 이용을 금합니다.`;
 }
 
 async function generateUploadInfo() {
@@ -212,19 +261,30 @@ async function generateUploadInfo() {
   const titleWithEmojis = await generateCompetitorStyleTitle(nativeTitle, script.category);
   console.log(`   ✓ Title: ${titleWithEmojis}`);
 
-  const uploadInfo = `제목: ${titleWithEmojis}
+  // 전체 업로드 정보 생성 (간결 버전)
+  const uploadInfo = `${CHANNEL_INFO.hashtags}
 
-타임라인:
+${getChannelIntro()}
+
+📌 안내
+• 이 영상은 학습용으로 제작된 가상의 내용입니다.
+• 무단 복제 및 상업적 이용을 금합니다.
+
+⏱️ 타임라인
 ${timelineText}
 
-토픽: ${script.metadata.topic}
-카테고리: ${script.category}
-영어 제목: ${script.metadata.title.target}
+━━━━━━━━━━━━
+📋 제목
+${titleWithEmojis}
 `;
+
+  // 제목 파일 별도 생성 삭제 - upload_info.txt에 포함됨
 
   await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');
   console.log(`\n✅ Upload info created: ${uploadInfoPath}`);
-  console.log('\n타임라인:');
+  console.log(`\n📋 YouTube 제목:`);
+  console.log(`   ${titleWithEmojis}`);
+  console.log('\n🕒 타임라인:');
   timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
 }
 

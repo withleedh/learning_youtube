@@ -8,6 +8,9 @@ import {
   generateBackgroundImage,
   generateThumbnail,
   generateSceneImages,
+  validateSceneImageConsistency,
+  regenerateInconsistentScenes,
+  MIN_CONSISTENCY_SCORE,
 } from '../image/generator';
 import { getGeminiApiKey, GEMINI_MODELS } from '../config/gemini';
 import type { IntroAssetConfig } from '../intro/types';
@@ -67,7 +70,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
     skipImage = false,
     autoRender = false,
     renderShorts = false,
-    scriptCandidates = 3,
+    // scriptCandidates no longer used - pipeline handles quality internally
   } = options;
 
   console.log(`\n🚀 Starting pipeline for channel: ${channelId}`);
@@ -90,7 +93,11 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       script = createSampleScript(config, category || 'conversation');
       console.log('   ✓ Created sample script (mock mode)');
     } else {
-      script = await generateScript(config, category, topic, scriptCandidates);
+      // Use multi-step pipeline by default for better quality scripts
+      script = await generateScript(config, category, topic, {
+        usePipeline: true,
+        candidateCount: 1, // Pipeline handles quality internally
+      });
       console.log(`   ✓ Generated script: "${script.metadata.title.target}"`);
     }
 
@@ -127,6 +134,50 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
             backgroundImagePath = sceneImagePaths[0];
           }
           console.log(`   ✓ Generated ${sceneImagePaths.length} scene images`);
+
+          // Step 5.5: Validate image consistency
+          if (sceneImagePaths.length >= 2) {
+            console.log('🔍 Validating scene image consistency...');
+            const consistencyResult = await validateSceneImageConsistency(
+              sceneImagePaths,
+              script.metadata.characters
+            );
+
+            if (!consistencyResult.isConsistent) {
+              console.log(
+                `   ⚠️ Consistency score ${consistencyResult.overallScore}/${MIN_CONSISTENCY_SCORE} - attempting regeneration...`
+              );
+
+              // Find scenes that need regeneration (score < 70)
+              const scenesToRegenerate = consistencyResult.sceneScores
+                .filter((s) => s.score < MIN_CONSISTENCY_SCORE && s.sceneIndex > 1) // Don't regenerate scene 1 (reference)
+                .map((s) => s.sceneIndex);
+
+              if (scenesToRegenerate.length > 0 && sceneImagePaths[0]) {
+                console.log(`   🔄 Regenerating scenes: ${scenesToRegenerate.join(', ')}`);
+                const regenerated = await regenerateInconsistentScenes(
+                  script,
+                  outputDir,
+                  scenesToRegenerate,
+                  sceneImagePaths[0],
+                  config.theme.preferredArtStyle
+                );
+
+                if (regenerated.length > 0) {
+                  console.log(`   ✓ Regenerated ${regenerated.length} scenes`);
+
+                  // Re-validate after regeneration
+                  const revalidation = await validateSceneImageConsistency(
+                    sceneImagePaths,
+                    script.metadata.characters
+                  );
+                  console.log(`   📊 New consistency score: ${revalidation.overallScore}/100`);
+                }
+              }
+            } else {
+              console.log(`   ✓ Consistency check passed: ${consistencyResult.overallScore}/100`);
+            }
+          }
         } catch (imageError) {
           console.warn(`   ⚠️ Failed to generate scene images: ${imageError}`);
           // Fallback to single image

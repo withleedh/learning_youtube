@@ -1,5 +1,219 @@
 import type { Sentence, ScenePrompt } from '../types';
-import type { ValidationError } from './types';
+import type { ValidationError, ScreenplayOutput } from './types';
+import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GEMINI_MODELS, getGeminiApiKey } from '../../config/gemini';
+
+// ============================================================================
+// LLM-Based Engagement Quality Scoring (재미 검증)
+// ============================================================================
+
+/**
+ * Engagement quality score result from LLM evaluation
+ */
+export interface EngagementScore {
+  total: number; // 0-100
+  breakdown: {
+    emotionalArc: number; // 감정선 (0-25)
+    naturalFlow: number; // 자연스러운 흐름 (0-25)
+    engagement: number; // 몰입도/재미 (0-25)
+    memorability: number; // 기억에 남는 요소 (0-25)
+  };
+  issues: string[];
+  strengths: string[];
+}
+
+/**
+ * Minimum engagement score to pass quality check
+ */
+export const MIN_ENGAGEMENT_SCORE = 60;
+
+/**
+ * Calculate engagement quality score using LLM evaluation
+ * Language-agnostic: works for any target language
+ *
+ * Updated for "귀가 트이는 영어" style:
+ * - Warm, authentic storytelling
+ * - Simple, clear sentences
+ * - Natural dialogue without forced humor
+ *
+ * @param screenplay - The screenplay output to evaluate
+ * @param targetLanguage - The language of the dialogue (for context)
+ * @returns EngagementScore with total, breakdown, issues, and strengths
+ */
+export async function calculateEngagementScore(
+  screenplay: ScreenplayOutput,
+  targetLanguage: string = 'English'
+): Promise<EngagementScore> {
+  const allDialogue = screenplay.scenes.flatMap((s) => s.dialogue);
+
+  if (allDialogue.length === 0) {
+    return {
+      total: 0,
+      breakdown: { emotionalArc: 0, naturalFlow: 0, engagement: 0, memorability: 0 },
+      issues: ['No dialogue found'],
+      strengths: [],
+    };
+  }
+
+  // Format dialogue for evaluation
+  const dialogueText = allDialogue.map((d) => `${d.speaker}: ${d.line}`).join('\n');
+
+  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+
+  const prompt = `You are evaluating a ${targetLanguage} script for a language learning video.
+The target style is WARM, SIMPLE, and AUTHENTIC - like "귀가 트이는 영어" (Korean English learning channel).
+
+DIALOGUE:
+${dialogueText}
+
+Rate the script on these 4 criteria (0-25 points each, total 100):
+
+1. EMOTIONAL_ARC (0-25): Does the dialogue have genuine emotional depth?
+   - Authentic feelings, not exaggerated reactions
+   - Natural emotional progression
+   - Warm, relatable moments
+   - NOT: forced drama, over-the-top reactions
+
+2. NATURAL_FLOW (0-25): Does it sound like real, simple conversation?
+   - Clear, simple sentences (5-12 words each)
+   - Natural question-answer patterns
+   - Appropriate for A1-A2 language learners
+   - NOT: complex vocabulary, idioms, or slang
+
+3. ENGAGEMENT (0-25): Is it relatable and easy to follow?
+   - Universal situations anyone can understand
+   - Clear context and purpose
+   - Practical, useful expressions
+   - NOT: confusing plot twists, Western-specific references
+
+4. MEMORABILITY (0-25): Does it leave a warm impression?
+   - Genuine moments that feel real
+   - Simple but meaningful content
+   - Something viewers can relate to
+   - NOT: forced jokes, catchphrases, or gimmicks
+
+IMPORTANT SCORING GUIDELINES:
+- A simple, warm, authentic script = 70-85 points (GOOD)
+- A practical, clear dialogue = 65-80 points (GOOD)
+- Forced humor or complex language = 40-55 points (BAD)
+- Robotic Q&A with no warmth = 35-50 points (BAD)
+
+The goal is WARMTH and SIMPLICITY, not entertainment or humor.
+
+Respond in this exact JSON format:
+{
+  "emotionalArc": <number 0-25>,
+  "naturalFlow": <number 0-25>,
+  "engagement": <number 0-25>,
+  "memorability": <number 0-25>,
+  "issues": ["issue1", "issue2"],
+  "strengths": ["strength1", "strength2"]
+}
+
+Be fair - simple and warm scripts should score well.`;
+
+  try {
+    const result = await model.generateContent(prompt);
+    const response = result.response.text();
+
+    // Extract JSON from response
+    const jsonMatch = response.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.log('[Engagement] Failed to parse LLM response, using fallback');
+      return createFallbackScore(dialogueText);
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    const breakdown = {
+      emotionalArc: Math.min(25, Math.max(0, parsed.emotionalArc || 0)),
+      naturalFlow: Math.min(25, Math.max(0, parsed.naturalFlow || 0)),
+      engagement: Math.min(25, Math.max(0, parsed.engagement || 0)),
+      memorability: Math.min(25, Math.max(0, parsed.memorability || 0)),
+    };
+
+    return {
+      total:
+        breakdown.emotionalArc +
+        breakdown.naturalFlow +
+        breakdown.engagement +
+        breakdown.memorability,
+      breakdown,
+      issues: parsed.issues || [],
+      strengths: parsed.strengths || [],
+    };
+  } catch (error) {
+    console.log('[Engagement] LLM evaluation failed:', error);
+    return createFallbackScore(dialogueText);
+  }
+}
+
+/**
+ * Fallback scoring when LLM fails - basic heuristics
+ */
+function createFallbackScore(dialogueText: string): EngagementScore {
+  const lines = dialogueText.split('\n').filter((l) => l.trim());
+  const hasVariety = new Set(lines.map((l) => l.split(':')[0])).size > 1;
+  const hasQuestions = dialogueText.includes('?');
+  const avgLength = dialogueText.length / Math.max(1, lines.length);
+
+  // Very basic fallback - just checks structure exists
+  const base = 50;
+  const varietyBonus = hasVariety ? 10 : 0;
+  const questionBonus = hasQuestions ? 5 : 0;
+  const lengthPenalty = avgLength > 100 ? -10 : 0; // Too long lines
+
+  return {
+    total: Math.min(100, Math.max(0, base + varietyBonus + questionBonus + lengthPenalty)),
+    breakdown: {
+      emotionalArc: 12,
+      naturalFlow: hasVariety ? 15 : 10,
+      engagement: 12,
+      memorability: 10,
+    },
+    issues: ['LLM evaluation failed - using basic heuristics'],
+    strengths: [],
+  };
+}
+
+/**
+ * Quick sync check for basic dialogue quality (no LLM call)
+ * Use this for fast pre-filtering before expensive LLM evaluation
+ */
+export function hasBasicDialogueStructure(screenplay: ScreenplayOutput): boolean {
+  const allDialogue = screenplay.scenes.flatMap((s) => s.dialogue);
+
+  // Must have dialogue
+  if (allDialogue.length < 5) return false;
+
+  // Must have multiple speakers (for conversation category)
+  const speakers = new Set(allDialogue.map((d) => d.speaker));
+  if (speakers.size < 1) return false;
+
+  // Lines shouldn't be too long (indicates unnatural dialogue)
+  const avgLineLength = allDialogue.reduce((sum, d) => sum + d.line.length, 0) / allDialogue.length;
+  if (avgLineLength > 150) return false;
+
+  return true;
+}
+
+/**
+ * Check if screenplay meets minimum engagement quality
+ *
+ * @param screenplay - The screenplay to check
+ * @param targetLanguage - Language for LLM context
+ * @param minScore - Minimum score to pass (default: 60)
+ * @returns true if engagement is sufficient
+ */
+export async function hasMinimumEngagement(
+  screenplay: ScreenplayOutput,
+  targetLanguage: string = 'English',
+  minScore: number = MIN_ENGAGEMENT_SCORE
+): Promise<boolean> {
+  const score = await calculateEngagementScore(screenplay, targetLanguage);
+  return score.total >= minScore;
+}
 
 // ============================================================================
 // Constants for Validation

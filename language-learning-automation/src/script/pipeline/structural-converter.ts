@@ -54,24 +54,34 @@ import { generateWrongChoices, isValidWrongChoice } from './wrong-choice-generat
 export async function convertToStructuredFormat(
   input: StructuralConverterInput
 ): Promise<StructuredSentences> {
-  const { screenplay, config, targetLanguage, nativeLanguage } = input;
+  const { screenplay, config, targetLanguage, nativeLanguage, originalTopic } = input;
 
   const genAI = new GoogleGenerativeAI(getGeminiApiKey());
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
-  const prompt = buildStructuralPrompt(screenplay, config, targetLanguage, nativeLanguage);
+  const prompt = buildStructuralPrompt(
+    screenplay,
+    config,
+    targetLanguage,
+    nativeLanguage,
+    originalTopic
+  );
 
   const result = await model.generateContent(prompt);
   const response = result.response;
   const text = response.text();
 
   // Parse JSON from response
-  const structured = parseStructuredOutput(text, screenplay);
+  const structured = parseStructuredOutput(text, screenplay, originalTopic);
 
   // Validate and fix any issues
   const validated = validateAndFixStructuredOutput(structured, screenplay);
 
-  return validated;
+  // Pass through scene information from Creative phase for Visual phase
+  return {
+    ...validated,
+    scenes: screenplay.scenes,
+  };
 }
 
 // ============================================================================
@@ -91,13 +101,15 @@ export async function convertToStructuredFormat(
  * @param config - Channel configuration
  * @param targetLanguage - Target language (e.g., "English")
  * @param nativeLanguage - Native language (e.g., "Korean")
+ * @param originalTopic - Original topic from topic selector (한국어 주제)
  * @returns The prompt string
  */
 function buildStructuralPrompt(
   screenplay: ScreenplayOutput,
   config: ChannelConfig,
   targetLanguage: string,
-  nativeLanguage: string
+  nativeLanguage: string,
+  originalTopic: string
 ): string {
   // Extract dialogue lines from screenplay
   const dialogueLines = extractDialogueLines(screenplay);
@@ -112,6 +124,7 @@ Focus ONLY on educational structure - the creative content is already written.
 Convert the following screenplay into structured JSON for a language learning video.
 
 ## Screenplay Title: ${screenplay.title}
+## Original Topic (for native title): ${originalTopic}
 
 ## Characters:
 ${screenplay.characters.map((c) => `- ${c.id} (${c.name}): ${c.description}`).join('\n')}
@@ -119,12 +132,24 @@ ${screenplay.characters.map((c) => `- ${c.id} (${c.name}): ${c.description}`).jo
 ## Dialogue Lines to Convert:
 ${dialogueLines.map((line, i) => `${i + 1}. [${line.speaker}] ${line.text}`).join('\n')}
 
+**IMPORTANT: Preserve the speaker labels exactly as shown above. [M] = speaker "M", [F] = speaker "F". 
+The same character CAN speak multiple lines in a row - do NOT force alternating M-F-M-F pattern.**
+
 # Educational Guidelines
 
-## CEFR Level: A1-A2 (Pre-Intermediate)
-- Sentences should be accessible to beginners
-- If a sentence is too complex, simplify while preserving meaning
-- Target: 4-15 words per sentence
+## CRITICAL: Preserve Natural Dialogue
+**DO NOT simplify or "clean up" the original dialogue!**
+- Keep contractions: "I'm", "don't", "can't", "it's", "you're", "that's"
+- Keep natural expressions: "I think", "kind of", "sort of", "you know"
+- Keep humor and personality: funny comparisons, exaggerations, jokes
+- Keep emotional expressions: "Oh my god", "Wait, what?", "No way!"
+
+**The goal is language LEARNING through REAL conversation, not textbook English.**
+
+## Sentence Length: 4-15 words
+- If a sentence is too long, split it into two natural sentences
+- Do NOT remove interesting details just to shorten
+- Keep the original meaning and tone
 
 ## Blank Word Selection (CRITICAL)
 Select ONE word per sentence for the fill-in-the-blank exercise.
@@ -164,7 +189,7 @@ Generate 2 wrong choices that are:
     "style": "casual",
     "title": {
       "target": "${screenplay.title}",
-      "native": "[Natural ${nativeLanguage} title]"
+      "native": "${originalTopic}"
     },
     "characters": [
       ${screenplay.characters
@@ -205,6 +230,9 @@ Generate 2 wrong choices that are:
 4. **Each sentence should have 4-15 words**
 5. **Native translation should be natural and conversational**
 6. **words array should include blankAnswer + 1-2 useful vocabulary words**
+7. **title.native MUST be "${originalTopic}" (the original topic)**
+8. **CRITICAL: speaker MUST match the original dialogue** - If the input shows [M] for a line, output "speaker": "M". Do NOT alternate M-F-M-F artificially. One character can speak multiple times in a row.
+9. **PRESERVE NATURAL LANGUAGE** - Keep contractions (don't, I'm, you're), keep humor, keep personality. Do NOT convert to textbook English!
 
 Generate ONLY the JSON output. No additional text.`;
 }
@@ -218,9 +246,14 @@ Generate ONLY the JSON output. No additional text.`;
  *
  * @param text - Raw text from AI
  * @param screenplay - Original screenplay for fallback
+ * @param originalTopic - Original topic for title.native fallback
  * @returns Parsed StructuredSentences
  */
-function parseStructuredOutput(text: string, screenplay: ScreenplayOutput): StructuredSentences {
+function parseStructuredOutput(
+  text: string,
+  screenplay: ScreenplayOutput,
+  originalTopic: string
+): StructuredSentences {
   // Extract JSON from response
   const jsonMatch = text.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
@@ -245,12 +278,13 @@ function parseStructuredOutput(text: string, screenplay: ScreenplayOutput): Stru
   };
 
   // Build structured output with defaults
+  // 원래 한국어 주제를 title.native로 사용 (LLM이 다른 값을 반환해도 덮어씀)
   const metadata = {
     topic: data.metadata?.topic || screenplay.title,
     style: data.metadata?.style || 'casual',
     title: {
       target: data.metadata?.title?.target || screenplay.title,
-      native: data.metadata?.title?.native || screenplay.title,
+      native: originalTopic, // 항상 원래 주제 사용
     },
     characters: data.metadata?.characters || buildDefaultCharacters(screenplay),
   };

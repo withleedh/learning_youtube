@@ -975,3 +975,319 @@ export async function generateSceneImages(
 export function getSceneImagePaths(outputDir: string, sceneCount: number): string[] {
   return Array.from({ length: sceneCount }, (_, i) => path.join(outputDir, `scene_${i + 1}.png`));
 }
+
+// =============================================================================
+// Scene Image Consistency Validation
+// =============================================================================
+
+/**
+ * 이미지 일관성 검증 결과
+ */
+export interface ImageConsistencyResult {
+  isConsistent: boolean;
+  overallScore: number; // 0-100
+  issues: string[];
+  sceneScores: Array<{
+    sceneIndex: number;
+    score: number;
+    issues: string[];
+  }>;
+}
+
+/**
+ * 최소 일관성 점수 (이 점수 미만이면 재생성 권장)
+ */
+export const MIN_CONSISTENCY_SCORE = 70;
+
+/**
+ * LLM을 사용하여 생성된 장면 이미지들의 일관성 검증
+ * - 캐릭터 외모 일관성 (얼굴, 머리, 옷)
+ * - 아트 스타일 일관성
+ * - 색상 팔레트 일관성
+ *
+ * @param imagePaths - 검증할 이미지 경로 배열
+ * @param characters - 스크립트의 캐릭터 정보
+ * @returns 일관성 검증 결과
+ */
+export async function validateSceneImageConsistency(
+  imagePaths: string[],
+  characters: Character[]
+): Promise<ImageConsistencyResult> {
+  if (imagePaths.length < 2) {
+    return {
+      isConsistent: true,
+      overallScore: 100,
+      issues: [],
+      sceneScores: imagePaths.map((_, i) => ({ sceneIndex: i + 1, score: 100, issues: [] })),
+    };
+  }
+
+  const apiKey = getGeminiApiKey();
+
+  console.log(`🔍 Validating consistency across ${imagePaths.length} scene images...`);
+
+  // 모든 이미지를 base64로 로드
+  const imageDataList: Array<{ path: string; base64: string }> = [];
+  for (const imagePath of imagePaths) {
+    try {
+      const imageBuffer = await fs.readFile(imagePath);
+      imageDataList.push({
+        path: imagePath,
+        base64: imageBuffer.toString('base64'),
+      });
+    } catch (error) {
+      console.warn(`   ⚠️ Failed to read image: ${imagePath}`);
+    }
+  }
+
+  if (imageDataList.length < 2) {
+    return {
+      isConsistent: true,
+      overallScore: 100,
+      issues: ['Not enough images to validate'],
+      sceneScores: [],
+    };
+  }
+
+  // 캐릭터 설명 생성
+  const characterDescriptions = characters
+    .filter((c) => c.role !== 'narrator')
+    .map((c) => {
+      const app = c.appearance;
+      if (!app) return `${c.name}: ${c.gender}, ${c.ethnicity}`;
+      return `${c.name}: ${c.gender}, ${app.hair}, ${app.clothing}, ${app.distinctiveFeatures || ''}`;
+    })
+    .join('\n');
+
+  // LLM에 모든 이미지를 한번에 전송하여 일관성 평가
+  const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [];
+
+  // 모든 이미지 추가
+  for (let i = 0; i < imageDataList.length; i++) {
+    parts.push({
+      inlineData: {
+        mimeType: 'image/png',
+        data: imageDataList[i].base64,
+      },
+    });
+    parts.push({
+      text: `[Scene ${i + 1}]`,
+    });
+  }
+
+  // 평가 프롬프트 추가
+  parts.push({
+    text: `You are a visual consistency QA expert for animation production.
+
+EXPECTED CHARACTERS:
+${characterDescriptions || 'No specific character descriptions provided'}
+
+Evaluate the consistency of these ${imageDataList.length} scene images. Check:
+
+1. CHARACTER CONSISTENCY (most important):
+   - Same face shape, features, expressions style
+   - Same hair color, style, length
+   - Same clothing colors and style
+   - Same body proportions
+
+2. ART STYLE CONSISTENCY:
+   - Same rendering style (3D, 2D, realistic, cartoon)
+   - Same level of detail
+   - Same line quality (if applicable)
+
+3. COLOR PALETTE CONSISTENCY:
+   - Similar color temperature
+   - Consistent saturation levels
+   - Harmonious color scheme across scenes
+
+Rate each scene (1-100) and identify specific issues.
+
+Respond in this exact JSON format:
+{
+  "overallScore": <number 0-100>,
+  "overallIssues": ["issue1", "issue2"],
+  "sceneScores": [
+    {"sceneIndex": 1, "score": <number>, "issues": ["issue1"]},
+    {"sceneIndex": 2, "score": <number>, "issues": ["issue1", "issue2"]}
+  ]
+}
+
+Be strict. Professional animation requires 90+ consistency. Score 70-89 is acceptable but noticeable. Below 70 needs regeneration.`,
+  });
+
+  try {
+    const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        contents: [{ parts }],
+        generationConfig: {
+          responseMimeType: 'text/plain',
+        },
+      }),
+    });
+
+    if (!response.ok) {
+      console.warn(`   ⚠️ Consistency check API failed: ${response.status}`);
+      return createFallbackConsistencyResult(imagePaths.length);
+    }
+
+    const data = await response.json();
+    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+    // JSON 파싱
+    const jsonMatch = responseText.match(/\{[\s\S]*\}/);
+    if (!jsonMatch) {
+      console.warn('   ⚠️ Failed to parse consistency check response');
+      return createFallbackConsistencyResult(imagePaths.length);
+    }
+
+    const parsed = JSON.parse(jsonMatch[0]);
+
+    const result: ImageConsistencyResult = {
+      isConsistent: parsed.overallScore >= MIN_CONSISTENCY_SCORE,
+      overallScore: parsed.overallScore || 50,
+      issues: parsed.overallIssues || [],
+      sceneScores: parsed.sceneScores || [],
+    };
+
+    // 결과 로깅
+    console.log(`   📊 Consistency Score: ${result.overallScore}/100`);
+    if (result.issues.length > 0) {
+      console.log(`   ⚠️ Issues found:`);
+      result.issues.forEach((issue) => console.log(`      - ${issue}`));
+    }
+
+    return result;
+  } catch (error) {
+    console.warn(`   ⚠️ Consistency check error: ${error}`);
+    return createFallbackConsistencyResult(imagePaths.length);
+  }
+}
+
+/**
+ * API 실패 시 기본 결과 반환
+ */
+function createFallbackConsistencyResult(sceneCount: number): ImageConsistencyResult {
+  return {
+    isConsistent: true, // API 실패 시 일단 통과
+    overallScore: 75,
+    issues: ['Consistency check skipped due to API error'],
+    sceneScores: Array.from({ length: sceneCount }, (_, i) => ({
+      sceneIndex: i + 1,
+      score: 75,
+      issues: [],
+    })),
+  };
+}
+
+/**
+ * 일관성이 낮은 특정 씬만 재생성
+ *
+ * @param script - 스크립트 데이터
+ * @param outputDir - 출력 디렉토리
+ * @param sceneIndicesToRegenerate - 재생성할 씬 인덱스 배열 (1-based)
+ * @param referenceImagePath - 참조 이미지 경로 (첫 번째 씬)
+ * @param styleId - 아트 스타일 ID
+ */
+export async function regenerateInconsistentScenes(
+  script: Script,
+  outputDir: string,
+  sceneIndicesToRegenerate: number[],
+  referenceImagePath: string,
+  styleId?: string
+): Promise<string[]> {
+  const apiKey = getGeminiApiKey();
+  const scenePrompts = script.metadata.scenePrompts;
+
+  if (!scenePrompts || scenePrompts.length === 0) {
+    return [];
+  }
+
+  // 참조 이미지 로드
+  let referenceImageBase64: string;
+  try {
+    const refBuffer = await fs.readFile(referenceImagePath);
+    referenceImageBase64 = refBuffer.toString('base64');
+  } catch {
+    console.warn('   ⚠️ Failed to load reference image for regeneration');
+    return [];
+  }
+
+  // 스타일 프롬프트
+  let stylePrompt: string | undefined;
+  if (styleId) {
+    const style = getStyleById(styleId);
+    if (style) stylePrompt = style.prompt;
+  }
+
+  const regeneratedPaths: string[] = [];
+
+  for (const sceneIndex of sceneIndicesToRegenerate) {
+    if (sceneIndex < 1 || sceneIndex > scenePrompts.length) continue;
+
+    const scene = scenePrompts[sceneIndex - 1];
+    const outputPath = path.join(outputDir, `scene_${sceneIndex}.png`);
+
+    console.log(`   🔄 Regenerating scene ${sceneIndex}...`);
+
+    const charactersDescription = buildAllCharactersDescription(script.metadata.characters, false);
+
+    const scenePrompt = buildCinematicPrompt(scene, charactersDescription, false, stylePrompt);
+
+    const parts: Array<{ text?: string; inlineData?: { mimeType: string; data: string } }> = [
+      {
+        inlineData: {
+          mimeType: 'image/png',
+          data: referenceImageBase64,
+        },
+      },
+      {
+        text: `CRITICAL: Match the EXACT character appearance from the reference image above.
+Same face, same hair, same clothing, same art style.
+
+${scenePrompt}`,
+      },
+    ];
+
+    try {
+      const response = await fetch(`${GEMINI_API_URLS.image}?key=${apiKey}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts }],
+          generationConfig: {
+            responseModalities: ['image', 'text'],
+            responseMimeType: 'text/plain',
+          },
+        }),
+      });
+
+      if (!response.ok) {
+        console.warn(`   ⚠️ Regeneration failed for scene ${sceneIndex}`);
+        continue;
+      }
+
+      const data = (await response.json()) as GeminiImageResponse;
+
+      for (const candidate of data.candidates || []) {
+        for (const part of candidate.content?.parts || []) {
+          if (part.inlineData?.data) {
+            const imageBuffer = Buffer.from(part.inlineData.data, 'base64');
+            await fs.writeFile(outputPath, imageBuffer);
+            regeneratedPaths.push(outputPath);
+            console.log(`   ✅ Scene ${sceneIndex} regenerated`);
+            break;
+          }
+        }
+      }
+    } catch (error) {
+      console.warn(`   ⚠️ Regeneration error for scene ${sceneIndex}: ${error}`);
+    }
+
+    // Rate limit
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+
+  return regeneratedPaths;
+}

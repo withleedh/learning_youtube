@@ -2,14 +2,11 @@
  * Visual Generator Module
  *
  * Phase 3 of the multi-step script pipeline.
- * Generates scene prompts with camera directions and character appearances.
- *
- * Role: "You are a cinematographer"
- * Focus: Scene boundaries, camera directions, lighting, character consistency
- * Output: ScenePrompt array with character appearances
+ * Now uses scene information from Creative phase and adds:
+ * - Character appearances (detailed physical descriptions)
+ * - Camera directions (cinematography details)
  *
  * @module visual-generator
- * **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6**
  */
 
 import { GoogleGenerativeAI } from '@google/generative-ai';
@@ -26,377 +23,494 @@ import { validateSceneCoverage, MIN_SCENE_COUNT, MAX_SCENE_COUNT } from './valid
 /**
  * Generate visual prompts for scene images.
  *
- * This is Phase 3 of the pipeline, focusing on cinematography.
- * The AI is instructed to act as a cinematographer and produce
- * scene prompts with consistent character appearances and varied camera work.
- *
- * @param input - Visual generator input containing structured script and config
- * @returns VisualOutput with characters (with appearances) and scene prompts
- *
- * **Validates: Requirements 3.1, 3.2, 3.3, 3.4, 3.5, 3.6**
+ * Now leverages scene information from Creative phase:
+ * - Uses existing scene boundaries and visual hints
+ * - Adds detailed character appearances
+ * - Adds specific camera directions
  */
 export async function generateVisualPrompts(input: VisualGeneratorInput): Promise<VisualOutput> {
   const { structuredScript, config } = input;
 
+  // Check if we already have scene info from Creative phase
+  const hasCreativeScenes = structuredScript.scenes && structuredScript.scenes.length > 0;
+
+  if (hasCreativeScenes) {
+    // Use Creative's scene info, just add character appearances and camera details
+    return enhanceCreativeScenes(structuredScript, config);
+  }
+
+  // Fallback: Generate scenes from scratch (legacy behavior)
+  return generateScenesFromScratch(structuredScript, config);
+}
+
+/**
+ * Enhance scenes from Creative phase with character appearances and camera details.
+ * This is the new preferred path - Creative already did the hard work.
+ */
+async function enhanceCreativeScenes(
+  structuredScript: StructuredSentences,
+  config: ChannelConfig
+): Promise<VisualOutput> {
   const genAI = new GoogleGenerativeAI(getGeminiApiKey());
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
 
-  const prompt = buildVisualPrompt(structuredScript, config);
+  const prompt = buildEnhancementPrompt(structuredScript, config);
 
   const result = await model.generateContent(prompt);
   const response = result.response;
   const text = response.text();
 
-  // Parse visual output from response
-  const visualOutput = parseVisualOutput(text, structuredScript);
+  // Parse character appearances from response
+  const characters = parseCharacterAppearances(text, structuredScript);
 
-  // Validate and fix any issues
-  const validated = validateAndFixVisualOutput(visualOutput, structuredScript);
+  // Convert Creative scenes to ScenePrompts with camera directions
+  const scenePrompts = convertCreativeScenesToPrompts(structuredScript, text);
 
-  return validated;
-}
-
-// ============================================================================
-// Prompt Building
-// ============================================================================
-
-/**
- * Infer emotion from sentence content.
- * Analyzes text for emotional indicators.
- */
-function inferEmotion(text: string): string {
-  const lowerText = text.toLowerCase();
-
-  // Joy/Excitement indicators
-  if (
-    lowerText.includes('!') ||
-    lowerText.includes('fantastic') ||
-    lowerText.includes('amazing') ||
-    lowerText.includes('passed') ||
-    lowerText.includes('got the job') ||
-    lowerText.includes('congratulations')
-  ) {
-    return 'joyful';
-  }
-
-  // Anxiety/Worry indicators
-  if (
-    lowerText.includes('waiting') ||
-    lowerText.includes('nervous') ||
-    lowerText.includes('worried') ||
-    lowerText.includes("can't believe") ||
-    lowerText.includes('shaking')
-  ) {
-    return 'anxious';
-  }
-
-  // Question/Curiosity indicators
-  if (lowerText.includes('?')) {
-    return 'curious';
-  }
-
-  // Supportive/Warm indicators
-  if (
-    lowerText.includes('thank you') ||
-    lowerText.includes('believe in') ||
-    lowerText.includes("let's") ||
-    lowerText.includes('together')
-  ) {
-    return 'warm';
-  }
-
-  // Surprise indicators
-  if (lowerText.includes('wait') || lowerText.includes('really') || lowerText.includes('oh')) {
-    return 'surprised';
-  }
-
-  return 'neutral';
+  return { characters, scenePrompts };
 }
 
 /**
- * Infer setting from topic.
- * Maps common topics to appropriate locations.
+ * Build prompt to enhance Creative's scenes with character appearances.
  */
-function inferSettingFromTopic(topic: string): { location: string; atmosphere: string } {
-  const lowerTopic = topic.toLowerCase();
+function buildEnhancementPrompt(
+  structuredScript: StructuredSentences,
+  _config: ChannelConfig
+): string {
+  const { metadata, scenes } = structuredScript;
 
-  // Job/Interview related
-  if (
-    lowerTopic.includes('job') ||
-    lowerTopic.includes('interview') ||
-    lowerTopic.includes('합격') ||
-    lowerTopic.includes('면접')
-  ) {
-    return { location: 'modern cafe with large windows', atmosphere: 'casual yet professional' };
-  }
+  // Format existing scenes for context
+  const scenesSummary = (scenes || [])
+    .map(
+      (s, i) =>
+        `Scene ${i + 1}: ${s.setting}\n  Mood: ${s.visual?.mood || 'neutral'}\n  Location: ${s.visual?.location || s.setting}`
+    )
+    .join('\n');
 
-  // Health related
-  if (
-    lowerTopic.includes('health') ||
-    lowerTopic.includes('checkup') ||
-    lowerTopic.includes('건강') ||
-    lowerTopic.includes('검진')
-  ) {
-    return { location: 'bright living room or kitchen', atmosphere: 'comfortable and domestic' };
-  }
+  return `# Role
+You are a character designer and cinematographer.
 
-  // Weather/Season related
-  if (
-    lowerTopic.includes('weather') ||
-    lowerTopic.includes('cold') ||
-    lowerTopic.includes('한파') ||
-    lowerTopic.includes('날씨')
-  ) {
-    return {
-      location: 'cozy indoor space with window view',
-      atmosphere: 'warm contrast to outside',
-    };
-  }
+# Task
+Add detailed character appearances and camera directions to these existing scenes.
 
-  // Food/Restaurant related
-  if (
-    lowerTopic.includes('food') ||
-    lowerTopic.includes('restaurant') ||
-    lowerTopic.includes('음식') ||
-    lowerTopic.includes('맛집')
-  ) {
-    return { location: 'trendy restaurant or food court', atmosphere: 'lively and appetizing' };
-  }
+## Script Info
+- Title: ${metadata.title.target}
+- Characters: ${metadata.characters.map((c) => `${c.id} (${c.name})`).join(', ')}
 
-  // Travel related
-  if (lowerTopic.includes('travel') || lowerTopic.includes('trip') || lowerTopic.includes('여행')) {
-    return { location: 'airport lounge or travel agency', atmosphere: 'exciting and adventurous' };
-  }
+## Existing Scenes (from script)
+${scenesSummary}
 
-  // Default
-  return { location: 'modern urban cafe', atmosphere: 'casual and friendly' };
+# Output JSON
+{
+  "characters": [
+    {
+      "id": "${metadata.characters[0]?.id || 'M'}",
+      "name": "${metadata.characters[0]?.name || 'Character'}",
+      "appearance": {
+        "age": "specific age range (e.g., mid-20s)",
+        "hair": "color, length, style",
+        "eyes": "color",
+        "skin": "tone",
+        "build": "body type",
+        "clothing": "outfit description",
+        "distinctiveFeatures": "any unique features"
+      }
+    }${
+      metadata.characters.length > 1
+        ? `,
+    {
+      "id": "${metadata.characters[1]?.id || 'F'}",
+      "name": "${metadata.characters[1]?.name || 'Character'}",
+      "appearance": {
+        "age": "specific age range",
+        "hair": "color, length, style",
+        "eyes": "color",
+        "skin": "tone",
+        "build": "body type",
+        "clothing": "outfit description",
+        "distinctiveFeatures": "any unique features"
+      }
+    }`
+        : ''
+    }
+  ],
+  "cameraDirections": [
+    "Wide establishing shot, eye-level",
+    "Medium shot, slight low angle",
+    "Close-up, shallow depth of field",
+    "Medium wide shot, pulling back"
+  ]
+}
+
+# Rules
+1. Create consistent, detailed appearances for each character
+2. Appearances should match the scene mood and setting
+3. Camera directions should progress: Wide → Medium → Close-up → Wide
+4. Keep clothing appropriate for the setting
+
+Output ONLY valid JSON.`;
 }
 
 /**
- * Get camera pattern for scene index.
- * Follows a natural progression: Wide → Medium → Close-up → Medium-wide
+ * Parse character appearances from AI response.
  */
-function getCameraPattern(sceneIndex: number, totalScenes: number, mood: string): string {
-  // Base pattern cycle
-  const patterns = [
+function parseCharacterAppearances(
+  text: string,
+  structuredScript: StructuredSentences
+): Character[] {
+  try {
+    // Extract JSON
+    let jsonStr = text.trim();
+    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/) || jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1] || jsonMatch[0];
+    }
+
+    const parsed = JSON.parse(jsonStr);
+    const characters: Character[] = [];
+
+    for (const c of parsed.characters || []) {
+      const baseChar = structuredScript.metadata.characters.find((ch) => ch.id === c.id);
+      characters.push({
+        id: (c.id as 'M' | 'F') || 'M',
+        name: c.name || baseChar?.name || 'Character',
+        gender: baseChar?.gender || (c.id === 'F' ? 'female' : 'male'),
+        ethnicity: baseChar?.ethnicity || 'American',
+        role: baseChar?.role || 'character',
+        appearance: c.appearance as Appearance,
+      });
+    }
+
+    // Ensure all characters from script are included
+    for (const baseChar of structuredScript.metadata.characters) {
+      if (!characters.find((c) => c.id === baseChar.id)) {
+        characters.push({
+          ...baseChar,
+          appearance: createDefaultAppearance(baseChar.id),
+        });
+      }
+    }
+
+    return characters;
+  } catch (error) {
+    console.error('Failed to parse character appearances:', error);
+    // Return characters with default appearances
+    return structuredScript.metadata.characters.map((c) => ({
+      ...c,
+      appearance: createDefaultAppearance(c.id),
+    }));
+  }
+}
+
+/**
+ * Convert Creative scenes to ScenePrompts with camera directions.
+ */
+function convertCreativeScenesToPrompts(
+  structuredScript: StructuredSentences,
+  aiResponse: string
+): ScenePrompt[] {
+  const { scenes, sentences } = structuredScript;
+
+  if (!scenes || scenes.length === 0) {
+    // Fallback to default scene distribution
+    return createDefaultScenePrompts(sentences.length);
+  }
+
+  // Parse camera directions from AI response
+  let cameraDirections: string[] = [];
+  try {
+    const jsonMatch = aiResponse.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      const parsed = JSON.parse(jsonMatch[0]);
+      cameraDirections = parsed.cameraDirections || [];
+    }
+  } catch {
+    // Use default camera directions
+  }
+
+  // Default camera progression
+  const defaultCameras = [
     'Wide establishing shot, eye-level',
     'Medium shot, slight low angle',
     'Close-up, eye-level, shallow depth of field',
     'Over-the-shoulder shot',
     'Medium wide shot, pulling back slowly',
+    'Two-shot, eye-level',
   ];
 
-  // Adjust for emotional moments
-  if (mood === 'joyful' || mood === 'anxious') {
-    if (sceneIndex === totalScenes - 1) {
-      return 'Medium wide shot, slowly pulling back to show both characters';
-    }
-    return 'Close-up, eye-level, shallow depth of field';
+  // Calculate sentence ranges for each scene
+  const scenePrompts: ScenePrompt[] = [];
+  let sentenceIndex = 1;
+
+  for (let i = 0; i < scenes.length; i++) {
+    const scene = scenes[i];
+    const dialogueCount = scene.dialogue?.length || 0;
+    const endIndex = Math.min(sentenceIndex + dialogueCount - 1, sentences.length);
+
+    const camera = cameraDirections[i] || defaultCameras[i % defaultCameras.length];
+
+    scenePrompts.push({
+      sentenceRange: [sentenceIndex, endIndex] as [number, number],
+      setting: scene.visual?.location || scene.setting || 'Unknown location',
+      mood: scene.visual?.mood || 'neutral',
+      characterActions: scene.visual?.characterActions || 'Characters present',
+      cameraDirection: camera,
+      lighting: scene.visual?.lighting || inferLightingFromTime(scene.visual?.timeOfDay || 'DAY'),
+      transition: i === 0 ? 'Fade in' : 'Cut',
+    });
+
+    sentenceIndex = endIndex + 1;
   }
 
-  return patterns[sceneIndex % patterns.length];
+  // Ensure all sentences are covered
+  if (
+    scenePrompts.length > 0 &&
+    scenePrompts[scenePrompts.length - 1].sentenceRange[1] < sentences.length
+  ) {
+    scenePrompts[scenePrompts.length - 1].sentenceRange[1] = sentences.length;
+  }
+
+  return scenePrompts;
 }
 
 /**
- * Build the visual generation prompt.
- *
- * Key principles:
- * - Focus on cinematography
- * - Consistent character appearances
- * - Varied camera directions
- * - Scene boundaries based on emotional beats
- *
- * @param structuredScript - The structured script from structural phase
- * @param config - Channel configuration
- * @returns The prompt string
+ * Create default appearance for a character.
  */
-function buildVisualPrompt(structuredScript: StructuredSentences, _config: ChannelConfig): string {
+function createDefaultAppearance(id: 'M' | 'F'): Appearance {
+  if (id === 'M') {
+    return {
+      age: 'late-20s',
+      hair: 'short dark brown hair',
+      eyes: 'brown eyes',
+      skin: 'light tan complexion',
+      build: 'average height, slim build',
+      clothing: 'casual button-up shirt, jeans',
+      distinctiveFeatures: 'friendly smile',
+    };
+  } else {
+    return {
+      age: 'mid-20s',
+      hair: 'shoulder-length black hair',
+      eyes: 'dark brown eyes',
+      skin: 'fair complexion',
+      build: 'average height, slim build',
+      clothing: 'casual blouse, light cardigan',
+      distinctiveFeatures: 'warm expression',
+    };
+  }
+}
+
+/**
+ * Infer lighting from time of day.
+ */
+function inferLightingFromTime(timeOfDay: string): string {
+  const time = timeOfDay.toUpperCase();
+  switch (time) {
+    case 'MORNING':
+      return 'Soft morning light, golden hour';
+    case 'DAY':
+      return 'Bright natural daylight';
+    case 'AFTERNOON':
+      return 'Warm afternoon sunlight';
+    case 'EVENING':
+      return 'Warm golden hour, sunset tones';
+    case 'NIGHT':
+      return 'Dim ambient lighting, warm interior lights';
+    case 'CONTINUOUS':
+      return 'Consistent with previous scene';
+    default:
+      return 'Natural lighting';
+  }
+}
+
+// ============================================================================
+// Legacy: Generate Scenes From Scratch
+// ============================================================================
+
+/**
+ * Generate scenes from scratch (legacy behavior).
+ * Used when Creative phase didn't provide scene information.
+ */
+async function generateScenesFromScratch(
+  structuredScript: StructuredSentences,
+  config: ChannelConfig
+): Promise<VisualOutput> {
+  const genAI = new GoogleGenerativeAI(getGeminiApiKey());
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+
+  const prompt = buildLegacyVisualPrompt(structuredScript, config);
+
+  const result = await model.generateContent(prompt);
+  const response = result.response;
+  const text = response.text();
+
+  const visualOutput = parseLegacyVisualOutput(text, structuredScript);
+  return validateAndFixVisualOutput(visualOutput, structuredScript);
+}
+
+/**
+ * Build legacy visual prompt (when no Creative scenes available).
+ */
+function buildLegacyVisualPrompt(
+  structuredScript: StructuredSentences,
+  _config: ChannelConfig
+): string {
   const { metadata, sentences } = structuredScript;
   const totalSentences = sentences.length;
-
-  // Calculate recommended scene count
   const recommendedScenes = suggestSceneCount(totalSentences);
 
-  // Infer setting from topic
-  const topicSetting = inferSettingFromTopic(metadata.topic || metadata.title.native);
-
-  // Format sentences with emotion tags
-  const sentenceList = sentences
-    .map((s) => {
-      const emotion = inferEmotion(s.target);
-      return `${s.id}. [${s.speaker}] [${emotion}] ${s.target}`;
-    })
-    .join('\n');
-
-  // Suggest scene boundaries based on emotional shifts
-  const suggestedBoundaries = suggestSceneBoundaries(sentences);
-  const boundaryHints = suggestedBoundaries
-    .map(([start, end], i) => `Scene ${i + 1}: sentences ${start}-${end}`)
-    .join('\n');
-
-  // Few-shot example
-  const fewShotExample = `
-## ✅ Good Example (Reference)
-Topic: "건강 검진 결과가 나왔어요" (Health checkup results)
-
-{
-  "characters": [
-    {
-      "id": "M",
-      "name": "James",
-      "gender": "male",
-      "ethnicity": "American",
-      "role": "friend sharing health concerns",
-      "appearance": {
-        "age": "early-30s",
-        "hair": "short brown hair, neatly combed",
-        "eyes": "hazel eyes",
-        "skin": "light tan complexion",
-        "build": "average height, slightly athletic",
-        "clothing": "navy blue polo shirt, khaki pants",
-        "distinctiveFeatures": "reading glasses on head"
-      }
-    }
-  ],
-  "scenePrompts": [
-    {
-      "sentenceRange": [1, 5],
-      "setting": "Bright kitchen with morning sunlight, coffee cups on counter",
-      "mood": "casual, slightly concerned",
-      "characterActions": "M holding coffee, F looking at phone with furrowed brow",
-      "cameraDirection": "Medium shot, eye-level, showing both characters",
-      "lighting": "Warm natural morning light from window",
-      "transition": "Fade in"
-    },
-    {
-      "sentenceRange": [6, 10],
-      "setting": "Same kitchen, closer view",
-      "mood": "empathetic, supportive",
-      "characterActions": "F nodding sympathetically, M gesturing while explaining",
-      "cameraDirection": "Over-the-shoulder from F, focusing on M's expressions",
-      "lighting": "Consistent warm daylight",
-      "transition": "Cut"
-    }
-  ]
-}`;
+  const sentenceList = sentences.map((s) => `${s.id}. [${s.speaker}] ${s.target}`).join('\n');
 
   return `# Role
 You are a cinematographer creating visual scenes for a language learning video.
-Focus on EMOTIONAL STORYTELLING through camera work and lighting.
 
 # Task
 Create ${recommendedScenes.recommended} scene prompts for this script.
 
 ## Script Info
-- Title: ${metadata.title.target} (${metadata.title.native})
-- Topic: ${metadata.topic || 'conversation'}
-- Inferred Setting: ${topicSetting.location}
-- Atmosphere: ${topicSetting.atmosphere}
+- Title: ${metadata.title.target}
+- Characters: ${metadata.characters.map((c) => `${c.id} (${c.name})`).join(', ')}
 
-## Characters
-${metadata.characters.map((c) => `- ${c.id} (${c.name}): ${c.role}`).join('\n')}
-
-## Sentences with Emotion Tags
+## Sentences
 ${sentenceList}
 
-## Suggested Scene Boundaries (based on emotional flow)
-${boundaryHints}
-
-# Visual Direction Rules
-
-## 1. Camera Pattern (MUST follow this progression)
-- Scene 1: Wide establishing shot (show environment)
-- Scene 2: Medium shot (conversation)
-- Scene 3: Close-up (emotional peak)
-- Scene 4: Medium-wide (resolution/ending)
-
-## 2. Lighting by Emotion
-- [anxious] → Slightly dim, focused lighting
-- [joyful] → Bright, warm golden light
-- [curious] → Natural daylight
-- [warm] → Soft, diffused warm tones
-- [surprised] → Sudden brightness change
-
-## 3. Character Actions (CRITICAL)
-Match actions to emotion tags:
-- [anxious]: fidgeting, checking phone, biting lip
-- [joyful]: smiling widely, hands raised, leaning forward
-- [curious]: tilting head, raised eyebrows
-- [warm]: reaching out, nodding, soft smile
-- [surprised]: eyes wide, mouth open, frozen posture
-
-${fewShotExample}
-
-# Output Format (JSON)
+# Output JSON
 {
   "characters": [
     {
-      "id": "${metadata.characters[0]?.id || 'M'}",
-      "name": "${metadata.characters[0]?.name || 'James'}",
-      "gender": "${metadata.characters[0]?.gender || 'male'}",
-      "ethnicity": "${metadata.characters[0]?.ethnicity || 'American'}",
-      "role": "${metadata.characters[0]?.role || 'narrator'}",
+      "id": "M",
+      "name": "Name",
+      "gender": "male",
+      "ethnicity": "American",
+      "role": "description",
       "appearance": {
-        "age": "specific age (e.g., mid-20s)",
-        "hair": "color, length, style",
-        "eyes": "color and shape",
-        "skin": "tone description",
+        "age": "age range",
+        "hair": "description",
+        "eyes": "color",
+        "skin": "tone",
         "build": "body type",
-        "clothing": "specific outfit for this scene",
-        "distinctiveFeatures": "unique features"
+        "clothing": "outfit",
+        "distinctiveFeatures": "features"
       }
     }
   ],
   "scenePrompts": [
     {
       "sentenceRange": [1, 4],
-      "setting": "${topicSetting.location} - add specific details",
-      "mood": "match the emotion tags in this range",
-      "characterActions": "specific actions matching emotions",
-      "cameraDirection": "follow the camera pattern above",
-      "lighting": "match the emotion-lighting rules",
-      "transition": "fade/cut/match cut"
+      "setting": "Location description",
+      "mood": "emotional tone",
+      "characterActions": "what characters are doing",
+      "cameraDirection": "camera angle and movement",
+      "lighting": "lighting description",
+      "transition": "fade/cut"
     }
   ]
 }
 
-# Critical Rules
-1. Cover ALL ${totalSentences} sentences (no gaps)
-2. Follow the camera pattern progression
-3. Match lighting to emotion tags
-4. Character actions must reflect the emotion in each scene
-5. Keep setting consistent (${topicSetting.location})
-6. Scene count: ${recommendedScenes.min}-${recommendedScenes.max}
+# Rules
+1. Cover ALL ${totalSentences} sentences
+2. Scene count: ${recommendedScenes.min}-${recommendedScenes.max}
+3. Camera progression: Wide → Medium → Close-up → Wide
+4. Consistent character appearances
 
-Generate ONLY the JSON output.`;
+Output ONLY valid JSON.`;
+}
+
+/**
+ * Parse legacy visual output.
+ */
+function parseLegacyVisualOutput(
+  text: string,
+  structuredScript: StructuredSentences
+): VisualOutput {
+  try {
+    let jsonStr = text.trim();
+    const jsonMatch = jsonStr.match(/```(?:json)?\s*([\s\S]*?)```/) || jsonStr.match(/\{[\s\S]*\}/);
+    if (jsonMatch) {
+      jsonStr = jsonMatch[1] || jsonMatch[0];
+    }
+
+    const parsed = JSON.parse(jsonStr);
+
+    const characters: Character[] = (parsed.characters || []).map(
+      (
+        c: {
+          id?: string;
+          name?: string;
+          gender?: string;
+          ethnicity?: string;
+          role?: string;
+          appearance?: Appearance;
+        },
+        index: number
+      ) => {
+        const fallbackChar = structuredScript.metadata.characters[index];
+        return {
+          id: (c.id as 'M' | 'F') || fallbackChar?.id || (index === 0 ? 'M' : 'F'),
+          name: c.name || fallbackChar?.name || 'Character',
+          gender: (c.gender as 'male' | 'female') || fallbackChar?.gender || 'male',
+          ethnicity: c.ethnicity || fallbackChar?.ethnicity || 'American',
+          role: c.role || fallbackChar?.role || 'character',
+          appearance: c.appearance,
+        };
+      }
+    );
+
+    if (characters.length === 0) {
+      characters.push(
+        ...structuredScript.metadata.characters.map((c) => ({
+          ...c,
+          appearance: createDefaultAppearance(c.id),
+        }))
+      );
+    }
+
+    const scenePrompts: ScenePrompt[] = (parsed.scenePrompts || []).map(
+      (sp: {
+        sentenceRange?: [number, number];
+        setting?: string;
+        mood?: string;
+        characterActions?: string;
+        cameraDirection?: string;
+        lighting?: string;
+        transition?: string;
+      }) => ({
+        sentenceRange: sp.sentenceRange || [1, 1],
+        setting: sp.setting || 'Unknown location',
+        mood: sp.mood || 'neutral',
+        characterActions: sp.characterActions || 'Characters present',
+        cameraDirection: sp.cameraDirection || 'Medium shot',
+        lighting: sp.lighting,
+        transition: sp.transition,
+      })
+    );
+
+    return { characters, scenePrompts };
+  } catch (error) {
+    console.error('Failed to parse legacy visual output:', error);
+    return {
+      characters: structuredScript.metadata.characters.map((c) => ({
+        ...c,
+        appearance: createDefaultAppearance(c.id),
+      })),
+      scenePrompts: createDefaultScenePrompts(structuredScript.sentences.length),
+    };
+  }
 }
 
 // ============================================================================
-// Scene Boundary Detection
+// Helper Functions
 // ============================================================================
 
-/**
- * Suggest scene count based on total sentences.
- *
- * @param totalSentences - Total number of sentences
- * @returns Recommended scene count range
- *
- * **Validates: Requirements 3.1, 3.5**
- */
 export function suggestSceneCount(totalSentences: number): {
   min: number;
   max: number;
   recommended: number;
 } {
-  // Base calculation: roughly 3-5 sentences per scene
   const idealScenesLow = Math.ceil(totalSentences / 5);
   const idealScenesHigh = Math.ceil(totalSentences / 3);
 
-  // Clamp to valid range
   const min = Math.max(MIN_SCENE_COUNT, idealScenesLow);
   const max = Math.min(MAX_SCENE_COUNT, idealScenesHigh);
-
-  // Recommended is the middle
   const recommended = Math.round((min + max) / 2);
 
   return {
@@ -406,36 +520,14 @@ export function suggestSceneCount(totalSentences: number): {
   };
 }
 
-/**
- * Suggest scene boundaries based on content analysis.
- *
- * This helper analyzes sentences to identify natural break points based on:
- * - Speaker changes (potential scene transitions)
- * - Emotional beat indicators (questions, exclamations)
- * - Content transitions (topic shifts)
- *
- * @param sentences - Array of sentences from structured script
- * @returns Array of suggested scene boundaries (sentence ranges)
- *
- * **Validates: Requirements 3.1, 3.5**
- */
 export function suggestSceneBoundaries(
   sentences: StructuredSentences['sentences']
 ): Array<[number, number]> {
   const totalSentences = sentences.length;
-  const { min, max, recommended } = suggestSceneCount(totalSentences);
+  const { recommended } = suggestSceneCount(totalSentences);
 
   if (totalSentences === 0) return [];
 
-  // Identify potential break points based on content
-  const breakPoints = identifyBreakPoints(sentences);
-
-  // If we have good break points, use them
-  if (breakPoints.length >= min - 1 && breakPoints.length <= max - 1) {
-    return createBoundariesFromBreakPoints(breakPoints, totalSentences);
-  }
-
-  // Fall back to even distribution
   const boundaries: Array<[number, number]> = [];
   const sentencesPerScene = Math.ceil(totalSentences / recommended);
 
@@ -444,11 +536,9 @@ export function suggestSceneBoundaries(
     const end = Math.min(start + sentencesPerScene - 1, totalSentences);
     boundaries.push([start, end]);
     start = end + 1;
-
     if (start > totalSentences) break;
   }
 
-  // Ensure last boundary covers remaining sentences
   if (boundaries.length > 0 && boundaries[boundaries.length - 1][1] < totalSentences) {
     boundaries[boundaries.length - 1][1] = totalSentences;
   }
@@ -456,310 +546,6 @@ export function suggestSceneBoundaries(
   return boundaries;
 }
 
-/**
- * Identify potential scene break points based on content analysis.
- *
- * Looks for:
- * - Speaker changes (dialogue exchanges)
- * - Emotional beats (questions, exclamations)
- * - Transition words
- *
- * @param sentences - Array of sentences to analyze
- * @returns Array of sentence IDs where breaks could occur (after that sentence)
- */
-export function identifyBreakPoints(sentences: StructuredSentences['sentences']): number[] {
-  const breakPoints: number[] = [];
-
-  // Transition indicators that suggest scene changes
-  const transitionWords = [
-    'suddenly',
-    'then',
-    'later',
-    'next',
-    'finally',
-    'meanwhile',
-    'after',
-    'before',
-    'when',
-    'now',
-    'so',
-    'but then',
-  ];
-
-  // Emotional beat indicators
-  const emotionalIndicators = ['!', '?', '...'];
-
-  for (let i = 0; i < sentences.length - 1; i++) {
-    const current = sentences[i];
-    const next = sentences[i + 1];
-    let breakScore = 0;
-
-    // Speaker change suggests potential scene break
-    if (current.speaker !== next.speaker) {
-      breakScore += 1;
-    }
-
-    // Emotional beat at end of current sentence
-    const currentTarget = current.target.toLowerCase();
-    if (emotionalIndicators.some((ind) => currentTarget.endsWith(ind))) {
-      breakScore += 1;
-    }
-
-    // Transition word at start of next sentence
-    const nextTarget = next.target.toLowerCase();
-    if (transitionWords.some((word) => nextTarget.startsWith(word))) {
-      breakScore += 2;
-    }
-
-    // Question followed by answer pattern
-    if (currentTarget.endsWith('?') && !nextTarget.endsWith('?')) {
-      breakScore += 1;
-    }
-
-    // Strong break point (score >= 2)
-    if (breakScore >= 2) {
-      breakPoints.push(current.id);
-    }
-  }
-
-  return breakPoints;
-}
-
-/**
- * Create scene boundaries from identified break points.
- *
- * @param breakPoints - Array of sentence IDs where breaks occur
- * @param totalSentences - Total number of sentences
- * @returns Array of scene boundaries
- */
-function createBoundariesFromBreakPoints(
-  breakPoints: number[],
-  totalSentences: number
-): Array<[number, number]> {
-  const boundaries: Array<[number, number]> = [];
-
-  // Sort break points
-  const sorted = [...breakPoints].sort((a, b) => a - b);
-
-  let start = 1;
-  for (const breakPoint of sorted) {
-    if (breakPoint >= start && breakPoint < totalSentences) {
-      boundaries.push([start, breakPoint]);
-      start = breakPoint + 1;
-    }
-  }
-
-  // Add final scene
-  if (start <= totalSentences) {
-    boundaries.push([start, totalSentences]);
-  }
-
-  return boundaries;
-}
-
-// ============================================================================
-// Output Parsing
-// ============================================================================
-
-/**
- * Parse the visual output from AI response.
- *
- * @param text - Raw text from AI
- * @param structuredScript - Original structured script for fallback
- * @returns Parsed VisualOutput
- */
-function parseVisualOutput(text: string, structuredScript: StructuredSentences): VisualOutput {
-  // Extract JSON from response
-  const jsonMatch = text.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error('Failed to extract JSON from visual generator response');
-  }
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(jsonMatch[0]);
-  } catch {
-    throw new Error('Failed to parse JSON from visual generator response');
-  }
-
-  const data = parsed as {
-    characters?: Array<{
-      id?: string;
-      name?: string;
-      gender?: string;
-      ethnicity?: string;
-      role?: string;
-      appearance?: Appearance;
-    }>;
-    scenePrompts?: Array<{
-      sentenceRange?: [number, number];
-      setting?: string;
-      mood?: string;
-      characterActions?: string;
-      cameraDirection?: string;
-      lighting?: string;
-      transition?: string;
-    }>;
-  };
-
-  // Build characters with appearances
-  const characters: Character[] = (data.characters || []).map((c, index) => {
-    const fallbackChar = structuredScript.metadata.characters[index];
-    return {
-      id: (c.id as 'M' | 'F') || fallbackChar?.id || (index === 0 ? 'M' : 'F'),
-      name: c.name || fallbackChar?.name || (index === 0 ? 'James' : 'Sarah'),
-      gender:
-        (c.gender as 'male' | 'female') ||
-        fallbackChar?.gender ||
-        (index === 0 ? 'male' : 'female'),
-      ethnicity: c.ethnicity || fallbackChar?.ethnicity || 'American',
-      role: c.role || fallbackChar?.role || 'character',
-      appearance: c.appearance,
-    };
-  });
-
-  // If no characters parsed, use defaults from structured script
-  if (characters.length === 0) {
-    characters.push(...structuredScript.metadata.characters);
-  }
-
-  // Build scene prompts
-  const scenePrompts: ScenePrompt[] = (data.scenePrompts || []).map((sp) => ({
-    sentenceRange: sp.sentenceRange || [1, 1],
-    setting: sp.setting || 'Unknown location',
-    mood: sp.mood || 'neutral',
-    characterActions: sp.characterActions || 'Characters present',
-    cameraDirection: sp.cameraDirection || 'Medium shot',
-    lighting: sp.lighting,
-    transition: sp.transition,
-  }));
-
-  return { characters, scenePrompts };
-}
-
-// ============================================================================
-// Validation and Fixing
-// ============================================================================
-
-/**
- * Validate and fix the visual output.
- *
- * @param visualOutput - The parsed visual output
- * @param structuredScript - Original structured script for reference
- * @returns Validated and fixed VisualOutput
- */
-function validateAndFixVisualOutput(
-  visualOutput: VisualOutput,
-  structuredScript: StructuredSentences
-): VisualOutput {
-  const totalSentences = structuredScript.sentences.length;
-  let { characters, scenePrompts } = visualOutput;
-
-  // Validate scene coverage
-  const coverageErrors = validateSceneCoverage(scenePrompts, totalSentences);
-
-  if (coverageErrors.length > 0) {
-    // Try to fix scene coverage
-    scenePrompts = fixSceneCoverage(scenePrompts, totalSentences);
-  }
-
-  // Ensure character appearance consistency
-  characters = ensureCharacterConsistency(characters);
-
-  // Ensure camera direction variety
-  scenePrompts = ensureCameraVariety(scenePrompts);
-
-  return { characters, scenePrompts };
-}
-
-/**
- * Fix scene coverage issues.
- *
- * @param scenePrompts - Original scene prompts
- * @param totalSentences - Total number of sentences to cover
- * @returns Fixed scene prompts with proper coverage
- */
-function fixSceneCoverage(scenePrompts: ScenePrompt[], totalSentences: number): ScenePrompt[] {
-  // If no scenes or invalid, create default distribution
-  if (scenePrompts.length === 0) {
-    return createDefaultScenePrompts(totalSentences);
-  }
-
-  // Sort by start range
-  const sorted = [...scenePrompts].sort((a, b) => a.sentenceRange[0] - b.sentenceRange[0]);
-
-  // Find gaps and overlaps
-  const covered = new Set<number>();
-  const fixed: ScenePrompt[] = [];
-
-  for (const scene of sorted) {
-    const [start, end] = scene.sentenceRange;
-
-    // Skip invalid ranges
-    if (start > end || start < 1) continue;
-
-    // Adjust for overlaps
-    let adjustedStart = start;
-    while (covered.has(adjustedStart) && adjustedStart <= end) {
-      adjustedStart++;
-    }
-
-    if (adjustedStart <= end) {
-      const adjustedEnd = Math.min(end, totalSentences);
-      fixed.push({
-        ...scene,
-        sentenceRange: [adjustedStart, adjustedEnd],
-      });
-
-      for (let i = adjustedStart; i <= adjustedEnd; i++) {
-        covered.add(i);
-      }
-    }
-  }
-
-  // Fill gaps
-  for (let i = 1; i <= totalSentences; i++) {
-    if (!covered.has(i)) {
-      // Find the gap range
-      let gapEnd = i;
-      while (gapEnd + 1 <= totalSentences && !covered.has(gapEnd + 1)) {
-        gapEnd++;
-      }
-
-      // Add a scene for this gap
-      fixed.push({
-        sentenceRange: [i, gapEnd],
-        setting: 'Continuation of scene',
-        mood: 'neutral',
-        characterActions: 'Characters continue',
-        cameraDirection: 'Medium shot',
-      });
-
-      for (let j = i; j <= gapEnd; j++) {
-        covered.add(j);
-      }
-    }
-  }
-
-  // Sort again and ensure scene count is valid
-  const result = fixed.sort((a, b) => a.sentenceRange[0] - b.sentenceRange[0]);
-
-  // Merge if too many scenes
-  if (result.length > MAX_SCENE_COUNT) {
-    return mergeScenes(result, MAX_SCENE_COUNT);
-  }
-
-  // Split if too few scenes
-  if (result.length < MIN_SCENE_COUNT && totalSentences >= MIN_SCENE_COUNT) {
-    return splitScenes(result, MIN_SCENE_COUNT, totalSentences);
-  }
-
-  return result;
-}
-
-/**
- * Create default scene prompts with even distribution.
- */
 function createDefaultScenePrompts(totalSentences: number): ScenePrompt[] {
   const boundaries = suggestSceneBoundaries(
     Array.from({ length: totalSentences }, (_, i) => ({
@@ -773,210 +559,185 @@ function createDefaultScenePrompts(totalSentences: number): ScenePrompt[] {
     }))
   );
 
+  const cameras = [
+    'Wide establishing shot, eye-level',
+    'Medium shot, slight low angle',
+    'Close-up, eye-level',
+    'Over-the-shoulder shot',
+    'Medium wide shot, pulling back',
+  ];
+
   return boundaries.map(([start, end], index) => ({
     sentenceRange: [start, end] as [number, number],
     setting: `Scene ${index + 1}`,
     mood: 'neutral',
     characterActions: 'Characters present',
-    cameraDirection: getVariedCameraDirection(index),
+    cameraDirection: cameras[index % cameras.length],
   }));
 }
 
-/**
- * Merge scenes to reduce count.
- */
-function mergeScenes(scenes: ScenePrompt[], targetCount: number): ScenePrompt[] {
-  while (scenes.length > targetCount && scenes.length > 1) {
-    // Find the smallest scene to merge with its neighbor
-    let smallestIndex = 0;
-    let smallestSize = Infinity;
+function validateAndFixVisualOutput(
+  visualOutput: VisualOutput,
+  structuredScript: StructuredSentences
+): VisualOutput {
+  const totalSentences = structuredScript.sentences.length;
+  let { characters, scenePrompts } = visualOutput;
 
-    for (let i = 0; i < scenes.length; i++) {
-      const size = scenes[i].sentenceRange[1] - scenes[i].sentenceRange[0] + 1;
-      if (size < smallestSize) {
-        smallestSize = size;
-        smallestIndex = i;
-      }
-    }
+  const coverageErrors = validateSceneCoverage(scenePrompts, totalSentences);
 
-    // Merge with previous or next
-    const mergeWith = smallestIndex > 0 ? smallestIndex - 1 : smallestIndex + 1;
-    if (mergeWith < scenes.length) {
-      const [scene1, scene2] =
-        smallestIndex < mergeWith
-          ? [scenes[smallestIndex], scenes[mergeWith]]
-          : [scenes[mergeWith], scenes[smallestIndex]];
-
-      const merged: ScenePrompt = {
-        sentenceRange: [scene1.sentenceRange[0], scene2.sentenceRange[1]],
-        setting: scene1.setting,
-        mood: scene1.mood,
-        characterActions: scene1.characterActions,
-        cameraDirection: scene1.cameraDirection,
-        lighting: scene1.lighting,
-        transition: scene2.transition,
-      };
-
-      scenes.splice(Math.min(smallestIndex, mergeWith), 2, merged);
-    }
+  if (coverageErrors.length > 0) {
+    scenePrompts = fixSceneCoverage(scenePrompts, totalSentences);
   }
 
-  return scenes;
+  scenePrompts = ensureCameraVariety(scenePrompts);
+
+  return { characters, scenePrompts };
 }
 
-/**
- * Split scenes to increase count.
- */
-function splitScenes(
-  scenes: ScenePrompt[],
-  targetCount: number,
-  _totalSentences: number
-): ScenePrompt[] {
-  const result: ScenePrompt[] = [];
+function fixSceneCoverage(scenePrompts: ScenePrompt[], totalSentences: number): ScenePrompt[] {
+  if (scenePrompts.length === 0) {
+    return createDefaultScenePrompts(totalSentences);
+  }
 
-  for (const scene of scenes) {
+  const sorted = [...scenePrompts].sort((a, b) => a.sentenceRange[0] - b.sentenceRange[0]);
+  const covered = new Set<number>();
+  const fixed: ScenePrompt[] = [];
+
+  for (const scene of sorted) {
     const [start, end] = scene.sentenceRange;
-    const size = end - start + 1;
+    if (start > end || start < 1) continue;
 
-    // If we need more scenes and this one is big enough to split
-    if (result.length + (scenes.length - scenes.indexOf(scene)) < targetCount && size >= 2) {
-      const mid = Math.floor((start + end) / 2);
+    let adjustedStart = start;
+    while (covered.has(adjustedStart) && adjustedStart <= end) {
+      adjustedStart++;
+    }
 
-      result.push({
-        ...scene,
-        sentenceRange: [start, mid],
-      });
-
-      result.push({
-        ...scene,
-        sentenceRange: [mid + 1, end],
-        cameraDirection: getVariedCameraDirection(result.length),
-      });
-    } else {
-      result.push(scene);
+    if (adjustedStart <= end) {
+      const adjustedEnd = Math.min(end, totalSentences);
+      fixed.push({ ...scene, sentenceRange: [adjustedStart, adjustedEnd] });
+      for (let i = adjustedStart; i <= adjustedEnd; i++) covered.add(i);
     }
   }
 
-  return result;
+  for (let i = 1; i <= totalSentences; i++) {
+    if (!covered.has(i)) {
+      let gapEnd = i;
+      while (gapEnd + 1 <= totalSentences && !covered.has(gapEnd + 1)) gapEnd++;
+      fixed.push({
+        sentenceRange: [i, gapEnd],
+        setting: 'Continuation',
+        mood: 'neutral',
+        characterActions: 'Characters continue',
+        cameraDirection: 'Medium shot',
+      });
+      for (let j = i; j <= gapEnd; j++) covered.add(j);
+    }
+  }
+
+  return fixed.sort((a, b) => a.sentenceRange[0] - b.sentenceRange[0]);
 }
 
-/**
- * Ensure character appearances are consistent across the output.
- */
-function ensureCharacterConsistency(characters: Character[]): Character[] {
-  // Characters should already have consistent appearances from the AI
-  // This function ensures the data structure is correct
-  return characters.map((char) => ({
-    ...char,
-    appearance: char.appearance || undefined,
-  }));
-}
-
-/**
- * Ensure camera directions vary across scenes.
- */
 function ensureCameraVariety(scenePrompts: ScenePrompt[]): ScenePrompt[] {
   if (scenePrompts.length < 3) return scenePrompts;
 
-  // Check if all camera directions are the same
   const directions = scenePrompts.map((sp) => sp.cameraDirection?.toLowerCase().trim());
   const uniqueDirections = new Set(directions);
 
   if (uniqueDirections.size === 1) {
-    // All same - add variety
-    return scenePrompts.map((sp, index) => ({
+    const cameras = [
+      'Wide establishing shot, eye-level',
+      'Medium shot, slight low angle',
+      'Close-up, eye-level',
+      'Over-the-shoulder shot',
+      'Medium wide shot, pulling back',
+    ];
+    return scenePrompts.map((sp, i) => ({
       ...sp,
-      cameraDirection: getVariedCameraDirection(index),
+      cameraDirection: cameras[i % cameras.length],
     }));
   }
 
   return scenePrompts;
 }
 
-/**
- * Get a varied camera direction based on index.
- */
-function getVariedCameraDirection(index: number): string {
-  const directions = [
-    'Wide establishing shot, eye-level',
-    'Medium shot, slight low angle',
-    'Close-up, eye-level',
-    'Over-the-shoulder shot',
-    'Medium close-up, high angle',
-    'Two-shot, eye-level',
-  ];
+// ============================================================================
+// Exports
+// ============================================================================
 
-  return directions[index % directions.length];
+export function identifyBreakPoints(sentences: StructuredSentences['sentences']): number[] {
+  const breakPoints: number[] = [];
+  const transitionWords = ['suddenly', 'then', 'later', 'next', 'finally', 'meanwhile'];
+
+  for (let i = 0; i < sentences.length - 1; i++) {
+    const current = sentences[i];
+    const next = sentences[i + 1];
+    let breakScore = 0;
+
+    if (current.speaker !== next.speaker) breakScore += 1;
+    if (current.target.endsWith('?') || current.target.endsWith('!')) breakScore += 1;
+    if (transitionWords.some((w) => next.target.toLowerCase().startsWith(w))) breakScore += 2;
+
+    if (breakScore >= 2) breakPoints.push(current.id);
+  }
+
+  return breakPoints;
 }
 
-// ============================================================================
-// Validation Helpers
-// ============================================================================
-
-/**
- * Check if character appearances are consistent across scenes.
- *
- * @param characters - Array of characters with appearances
- * @returns true if appearances are consistent
- *
- * **Validates: Requirement 3.3**
- */
 export function areCharacterAppearancesConsistent(characters: Character[]): boolean {
-  // Group characters by ID
   const byId = new Map<string, Character[]>();
-
   for (const char of characters) {
     const existing = byId.get(char.id) || [];
     existing.push(char);
     byId.set(char.id, existing);
   }
 
-  // Check each character ID has consistent appearance
   for (const [, chars] of byId) {
     if (chars.length <= 1) continue;
-
-    const firstAppearance = JSON.stringify(chars[0].appearance);
+    const first = JSON.stringify(chars[0].appearance);
     for (let i = 1; i < chars.length; i++) {
-      if (JSON.stringify(chars[i].appearance) !== firstAppearance) {
-        return false;
-      }
+      if (JSON.stringify(chars[i].appearance) !== first) return false;
     }
   }
-
   return true;
 }
 
-/**
- * Check if camera directions vary across scenes.
- *
- * @param scenePrompts - Array of scene prompts
- * @returns true if camera directions vary (not all identical)
- *
- * **Validates: Requirement 3.4**
- */
 export function doCameraDirectionsVary(scenePrompts: ScenePrompt[]): boolean {
-  if (scenePrompts.length < 3) return true; // Not enough scenes to require variety
-
+  if (scenePrompts.length < 3) return true;
   const directions = scenePrompts.map((sp) => sp.cameraDirection?.toLowerCase().trim() || '');
-
-  const uniqueDirections = new Set(directions.filter((d) => d.length > 0));
-
-  return uniqueDirections.size > 1;
+  return new Set(directions.filter((d) => d.length > 0)).size > 1;
 }
 
-// ============================================================================
-// Exports for Testing
-// ============================================================================
-
+// Legacy exports for compatibility
 export {
-  buildVisualPrompt,
-  parseVisualOutput,
+  buildLegacyVisualPrompt as buildVisualPrompt,
+  parseLegacyVisualOutput as parseVisualOutput,
   validateAndFixVisualOutput,
   fixSceneCoverage,
   createDefaultScenePrompts,
-  ensureCharacterConsistency,
+  createDefaultAppearance as ensureCharacterConsistency,
   ensureCameraVariety,
-  inferEmotion,
-  inferSettingFromTopic,
-  getCameraPattern,
 };
+
+export function inferEmotion(text: string): string {
+  const lower = text.toLowerCase();
+  if (lower.includes('!') || lower.includes('amazing') || lower.includes('congratulations'))
+    return 'joyful';
+  if (lower.includes('nervous') || lower.includes('worried')) return 'anxious';
+  if (lower.includes('?')) return 'curious';
+  if (lower.includes('thank') || lower.includes('together')) return 'warm';
+  return 'neutral';
+}
+
+export function inferSettingFromTopic(topic: string): { location: string; atmosphere: string } {
+  const lower = topic.toLowerCase();
+  if (lower.includes('cafe') || lower.includes('coffee'))
+    return { location: 'cozy cafe', atmosphere: 'warm' };
+  if (lower.includes('travel') || lower.includes('trip'))
+    return { location: 'airport', atmosphere: 'exciting' };
+  return { location: 'modern urban setting', atmosphere: 'casual' };
+}
+
+export function getCameraPattern(index: number, _total: number, _mood: string): string {
+  const patterns = ['Wide shot', 'Medium shot', 'Close-up', 'Over-the-shoulder', 'Medium wide'];
+  return patterns[index % patterns.length];
+}
