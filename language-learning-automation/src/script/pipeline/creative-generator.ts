@@ -69,7 +69,7 @@ function buildNarrationPrompt(
   category: Category,
   config: ChannelConfig,
   sentenceCount: number,
-  formatConfig: { description: string }
+  _formatConfig: { description: string }
 ): string {
   const categoryGuidance = getCategoryCreativeGuidance(category);
   const defaultSpeaker = getDefaultSpeaker(category);
@@ -172,7 +172,7 @@ function buildConversationPrompt(
   category: Category,
   config: ChannelConfig,
   sentenceCount: number,
-  formatConfig: { description: string }
+  _formatConfig: { description: string }
 ): string {
   const categoryGuidance = getCategoryCreativeGuidance(category);
   const recommendedScenes = Math.max(3, Math.min(6, Math.ceil(sentenceCount / 4)));
@@ -197,12 +197,27 @@ F: Yeah, I did. I had a quiet night at home.
 M: That sounds nice. Did you do anything fun?
 F: I watched a short video about photography.
 
+# IMPORTANT: Natural Dialogue Rules
+- Do NOT use character names in every sentence
+- Real people rarely call each other by name in conversation
+- Use names only at the start of conversation or to get attention
+- BAD: "Hey Sarah! Sarah, look at this. Sarah, what do you think?"
+- GOOD: "Hey! Look at this. What do you think?"
+
+# CRITICAL: Visual Scene Rules for Image Generation
+- characterActions MUST accurately reflect the RELATIONSHIP between M and F
+- M and F are the ONLY characters visible in the scene (they are the speakers)
+- If the dialogue mentions a THIRD PERSON (e.g., "I told Tom...", "My boss said..."), that person is NOT in the scene
+- NEVER show M and F as a romantic couple unless the dialogue explicitly states they are dating each other
+- Common relationships: friends, coworkers, classmates, siblings, strangers
+- Example: If F says "I confessed to Tom", the scene shows F telling M (her friend) about it, NOT F with Tom
+
 # Output JSON Schema
 {
   "title": "Simple English Title",
   "characters": [
-    {"id": "M", "name": "Name", "description": "Brief description"},
-    {"id": "F", "name": "Name", "description": "Brief description"}
+    {"id": "M", "name": "Name", "description": "Brief description including relationship to F"},
+    {"id": "F", "name": "Name", "description": "Brief description including relationship to M"}
   ],
   "scenes": [
     {
@@ -213,7 +228,7 @@ F: I watched a short video about photography.
         "timeOfDay": "MORNING/DAY/EVENING/NIGHT",
         "mood": "warm/casual/excited/etc",
         "lighting": "Lighting description",
-        "characterActions": "What we see the characters doing"
+        "characterActions": "[Name] (relationship) does X while [Name] (relationship) does Y"
       },
       "dialogue": [
         {"speaker": "M", "line": "Hey, how are you?", "emotion": "friendly"},
@@ -231,30 +246,46 @@ F: I watched a short video about photography.
 5. Each line: 5-12 words, natural speech
 6. Include visual directions for each scene
 7. Natural turn-taking (not strict M-F-M-F)
+8. characterActions must specify character relationships (friend, coworker, etc.)
 
 # Example Output
 {
-  "title": "Meeting an Old Friend",
+  "title": "Talking About a Crush",
   "characters": [
-    {"id": "M", "name": "Daniel", "description": "A friendly young man"},
-    {"id": "F", "name": "Anna", "description": "His old friend from college"}
+    {"id": "M", "name": "Ben", "description": "Lisa's supportive friend from work"},
+    {"id": "F", "name": "Lisa", "description": "A woman who has a crush on someone named Tom"}
   ],
   "scenes": [
     {
       "sceneNumber": 1,
-      "setting": "INT. COZY CAFE - AFTERNOON",
+      "setting": "INT. COFFEE SHOP - AFTERNOON",
       "visual": {
-        "location": "A warm cafe with large windows",
+        "location": "A cozy coffee shop with wooden tables",
         "timeOfDay": "AFTERNOON",
-        "mood": "warm, friendly",
-        "lighting": "Soft afternoon sunlight",
-        "characterActions": "Daniel waves as Anna enters the cafe"
+        "mood": "curious, supportive",
+        "lighting": "Warm afternoon light",
+        "characterActions": "Lisa (nervous) fidgets with her cup while Ben (her friend) listens attentively across the table"
       },
       "dialogue": [
-        {"speaker": "M", "line": "Hey Anna! Long time no see.", "emotion": "happy"},
-        {"speaker": "F", "line": "Hi Daniel! It's been two years.", "emotion": "surprised"},
-        {"speaker": "M", "line": "You look great. Please sit down.", "emotion": "warm"},
-        {"speaker": "F", "line": "Thanks. I'm so happy to see you.", "emotion": "grateful"}
+        {"speaker": "M", "line": "You look nervous. What happened?", "emotion": "curious"},
+        {"speaker": "F", "line": "I finally talked to Tom today.", "emotion": "nervous"},
+        {"speaker": "M", "line": "Really? What did you say?", "emotion": "interested"},
+        {"speaker": "F", "line": "I told him I like him.", "emotion": "shy"}
+      ]
+    },
+    {
+      "sceneNumber": 2,
+      "setting": "INT. COFFEE SHOP - CONTINUOUS",
+      "visual": {
+        "location": "Same coffee shop table",
+        "timeOfDay": "AFTERNOON",
+        "mood": "excited, celebratory",
+        "lighting": "Warm afternoon light",
+        "characterActions": "Ben (friend) gives Lisa a high-five to celebrate her courage; they laugh together as friends"
+      },
+      "dialogue": [
+        {"speaker": "M", "line": "That's amazing! What did he say?", "emotion": "excited"},
+        {"speaker": "F", "line": "He wants to have dinner on Friday!", "emotion": "happy"}
       ]
     }
   ]

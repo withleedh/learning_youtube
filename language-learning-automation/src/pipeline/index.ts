@@ -800,18 +800,111 @@ async function renderVideo(
 
   const uploadInfoPath = path.join(outputDir, 'upload_info.txt');
   const timelineText = timeline.map((t) => `${t.time} ${t.label}`).join('\n');
-  const uploadInfo = `${timelineLabels.timelineHeader}:
+
+  // 경쟁 채널 스타일 제목 생성
+  const titleWithEmojis = await generateCompetitorStyleTitle(
+    script.metadata.title.native,
+    script.category
+  );
+
+  // 채널 정보
+  const CHANNEL_HASHTAGS = '#영어듣기 #영어공부 #영어리스닝 #생활영어 #영어회화';
+
+  const uploadInfo = `${CHANNEL_HASHTAGS}
+
+영어, 듣기만 해도 늘 수 있어요 👂✨
+
+매일 다양한 상황의 영어를 듣고, 자연스럽게 귀를 열어보세요.
+4단계 반복 학습으로 누구나 쉽게 따라할 수 있습니다.
+
+📌 안내
+• 이 영상은 학습용으로 제작된 가상의 내용입니다.
+• 무단 복제 및 상업적 이용을 금합니다.
+
+⏱️ ${timelineLabels.timelineHeader}
 ${timelineText}
 
-${timelineLabels.titleLabel}: ${script.metadata.title.target}
-${timelineLabels.topicLabel}: ${script.metadata.topic}
-${timelineLabels.categoryLabel}: ${script.category}
+━━━━━━━━━━━━
+📋 제목
+${titleWithEmojis}
 `;
 
   await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');
   console.log(`✅ Upload info created: ${uploadInfoPath}`);
-  console.log(`\n${timelineLabels.timelineHeader}:`);
+  console.log(`\n📋 YouTube 제목: ${titleWithEmojis}`);
+  console.log(`\n⏱️ ${timelineLabels.timelineHeader}:`);
   timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
+}
+
+/**
+ * 카테고리에 맞는 콘텐츠 타입 라벨 반환
+ */
+function getContentTypeLabel(category: string): string {
+  const labels: Record<string, string> = {
+    story: '영어 듣기',
+    fairytale: '영어 동화',
+    news: '영어 뉴스',
+    conversation: '영어 회화',
+    travel_business: '여행 영어',
+    announcement: '영어 안내',
+    lesson: '영어 레슨',
+  };
+  return labels[category] || '영어 듣기';
+}
+
+/**
+ * LLM을 사용해 제목에 어울리는 이모지 3개 생성
+ */
+async function generateEmojisForTitle(title: string): Promise<string> {
+  try {
+    const { GoogleGenerativeAI } = await import('@google/generative-ai');
+    const { GEMINI_MODELS, getGeminiApiKey } = await import('../config/gemini');
+
+    const apiKey = getGeminiApiKey();
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+
+    const prompt = `다음 제목에 가장 어울리는 이모지 3개를 선택해주세요.
+제목의 감정, 상황, 분위기를 잘 표현하는 이모지를 골라주세요.
+
+제목: "${title}"
+
+규칙:
+- 이모지만 3개 출력 (공백 없이 붙여서)
+- 설명 없이 이모지만 출력
+- 예시: 😊💼✨
+
+출력:`;
+
+    const result = await model.generateContent(prompt);
+    const response = result.response.text().trim();
+
+    // 이모지만 추출 (3개)
+    const emojiRegex =
+      /[\u{1F300}-\u{1F9FF}]|[\u{2600}-\u{26FF}]|[\u{2700}-\u{27BF}]|[\u{1F600}-\u{1F64F}]|[\u{1F680}-\u{1F6FF}]|[\u{1F1E0}-\u{1F1FF}]/gu;
+    const emojis = response.match(emojiRegex) || [];
+
+    if (emojis.length >= 3) {
+      return emojis.slice(0, 3).join('');
+    }
+
+    return '✨💬🎯';
+  } catch {
+    return '✨💬🎯';
+  }
+}
+
+/**
+ * 경쟁 채널 스타일의 제목 생성
+ * 형식: [콘텐츠 타입] - [한국어 주제] [이모지 3개]
+ */
+async function generateCompetitorStyleTitle(
+  nativeTitle: string,
+  category: string
+): Promise<string> {
+  const contentType = getContentTypeLabel(category);
+  const emojis = await generateEmojisForTitle(nativeTitle);
+  return `${contentType} - ${nativeTitle} ${emojis}`;
 }
 
 /**
@@ -892,7 +985,7 @@ export function getTimelineLabels(nativeLanguage: string = 'Korean') {
 function generateThumbnailSubtitle(_targetLanguage: string, nativeLanguage: string): string {
   // 언어별 후킹 문구 (간단하게)
   if (nativeLanguage === 'Korean') {
-    return `인생이 바뀌는 10분 영어`;
+    return `들려요! 10분 영어`;
   } else if (nativeLanguage === 'Japanese') {
     return `毎日10分リスニング`;
   } else {

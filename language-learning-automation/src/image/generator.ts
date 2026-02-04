@@ -744,6 +744,8 @@ function buildAllCharactersDescription(
 /**
  * 🎬 시네마틱 프롬프트 생성 (구조화된 순서)
  * [Quality] + [Camera] + [Subject] + [Setting] + [Lighting] + [Style] + [Negative]
+ *
+ * Enhanced: Now includes emotional/physical cues from characterActions
  */
 function buildCinematicPrompt(
   scene: {
@@ -764,8 +766,8 @@ function buildCinematicPrompt(
   const cameraDirection = scene.cameraDirection || 'Medium shot, eye-level';
   const camera = `${cameraDirection}, cinematic composition, depth of field, 8K resolution`;
 
-  // 3. Subject (캐릭터 액션)
-  const subject = scene.characterActions;
+  // 3. Subject (캐릭터 액션) - Enhanced with visual storytelling
+  const subject = enhanceSubjectDescription(scene.characterActions, scene.mood);
 
   // 4. Setting (배경/환경)
   const setting = scene.setting;
@@ -808,6 +810,53 @@ function buildCinematicPrompt(
 [Style] ${style},
 [Quality] ${avoidance}`;
   }
+}
+
+/**
+ * 🎭 Subject 설명을 시각적으로 풍부하게 강화
+ * characterActions에서 감정/물리적 단서를 추출하여 더 구체적인 시각 묘사로 변환
+ */
+function enhanceSubjectDescription(characterActions: string, mood: string): string {
+  if (!characterActions || characterActions === 'Characters present') {
+    return `Characters in ${mood} mood, natural body language, expressive faces`;
+  }
+
+  // 이미 풍부한 설명이면 그대로 사용
+  if (characterActions.length > 50) {
+    return characterActions;
+  }
+
+  // Mood에 따른 표정/자세 힌트 추가
+  const moodEnhancements: Record<string, string> = {
+    nervous: 'tense posture, fidgeting hands, worried expression',
+    anxious: 'restless movement, furrowed brow, uneasy stance',
+    happy: 'relaxed posture, genuine smile, bright eyes',
+    sad: 'slumped shoulders, downcast eyes, melancholic expression',
+    excited: 'animated gestures, wide eyes, energetic stance',
+    curious: 'leaning forward, raised eyebrows, attentive gaze',
+    sympathetic: 'gentle expression, comforting posture, soft eyes',
+    confessional: 'vulnerable posture, avoiding eye contact, hesitant gestures',
+    hopeful: 'lifted chin, soft smile, open body language',
+    tense: 'rigid posture, clenched jaw, alert eyes',
+    romantic: 'soft gaze, gentle touch, intimate proximity',
+    peaceful: 'serene expression, relaxed shoulders, calm demeanor',
+  };
+
+  const moodLower = mood.toLowerCase();
+  let enhancement = '';
+
+  for (const [key, value] of Object.entries(moodEnhancements)) {
+    if (moodLower.includes(key)) {
+      enhancement = value;
+      break;
+    }
+  }
+
+  if (enhancement) {
+    return `${characterActions}. ${enhancement}`;
+  }
+
+  return `${characterActions}, expressive body language, natural interaction`;
 }
 
 /**

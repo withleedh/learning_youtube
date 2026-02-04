@@ -60,6 +60,18 @@ export const IMAGE_STYLES: ImageStyle[] = [
     prompt: `Korean webtoon style, clean digital art, soft gradients, romantic atmosphere, beautiful character designs, pastel color palette, dreamy lighting.`,
   },
   {
+    id: 'webtoon_warm',
+    name: 'Webtoon Warm (귀트영 스타일)',
+    category: 'illustration',
+    prompt: `Korean webtoon illustration style, semi-realistic digital art, soft cel-shading with smooth gradients, warm pastel color palette, friendly and approachable character expressions, everyday life scenes, cozy atmosphere, natural warm lighting, clean line art with soft edges, romantic novel cover aesthetic.`,
+  },
+  {
+    id: 'webtoon_daily',
+    name: 'Webtoon Daily Life',
+    category: 'illustration',
+    prompt: `Korean slice-of-life webtoon style, semi-realistic characters with idealized proportions, soft digital painting, warm earth tones and pastels, casual everyday settings (cafe, home, street), gentle expressions, natural daylight, comfortable and relatable mood.`,
+  },
+  {
     id: 'comic_american',
     name: 'American Comic',
     category: 'illustration',

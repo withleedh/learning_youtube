@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import type { Sentence, Script } from '../script/types';
+import type { Sentence, Script, Character } from '../script/types';
 import type { ChannelConfig } from '../config/types';
 import {
   type AudioFile,
@@ -10,7 +10,12 @@ import {
   speedVariants,
 } from './types';
 import { generateAllSpeedsWithEdge, type EdgeVoice } from './edge';
-import { generateAllSpeedsWithGoogle, selectRandomVoice, getPitchForGender } from './google';
+import {
+  generateAllSpeedsWithGoogle,
+  selectRandomVoice,
+  getPitchForGender,
+  getPitchForCharacter,
+} from './google';
 
 // Maximum retry attempts for TTS generation
 const MAX_RETRIES = 3;
@@ -27,13 +32,27 @@ export interface EpisodeVoices {
 /**
  * Select random voices for an episode (Google TTS)
  * Call this once at the start of episode generation
+ * @param characters - Optional character info for age-based pitch selection
  */
-export function selectEpisodeVoices(): EpisodeVoices {
+export function selectEpisodeVoices(characters?: Character[]): EpisodeVoices {
+  // Find male and female characters
+  const maleChar = characters?.find((c) => c.id === 'M' || c.gender === 'male');
+  const femaleChar = characters?.find((c) => c.id === 'F' || c.gender === 'female');
+
+  // Get age-based pitch or fallback to default
+  const malePitch = maleChar?.appearance?.age
+    ? getPitchForCharacter('MALE', maleChar.appearance.age)
+    : getPitchForGender('MALE');
+
+  const femalePitch = femaleChar?.appearance?.age
+    ? getPitchForCharacter('FEMALE', femaleChar.appearance.age)
+    : getPitchForGender('FEMALE');
+
   return {
     maleVoice: selectRandomVoice('MALE'),
     femaleVoice: selectRandomVoice('FEMALE'),
-    malePitch: getPitchForGender('MALE'),
-    femalePitch: getPitchForGender('FEMALE'),
+    malePitch,
+    femalePitch,
   };
 }
 
@@ -105,9 +124,10 @@ export async function generateAllAudio(
   const totalSentences = script.sentences.length;
 
   // Select random voices for this episode (Google TTS only)
+  // Pass character info for age-based pitch selection
   let episodeVoices: EpisodeVoices | undefined;
   if (config.tts.provider === 'google') {
-    episodeVoices = selectEpisodeVoices();
+    episodeVoices = selectEpisodeVoices(script.metadata.characters);
     console.log(`   🎤 Selected voices for episode:`);
     console.log(`      Male: ${episodeVoices.maleVoice} (pitch: ${episodeVoices.malePitch})`);
     console.log(`      Female: ${episodeVoices.femaleVoice} (pitch: ${episodeVoices.femalePitch})`);

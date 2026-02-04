@@ -86,6 +86,42 @@ function buildEnhancementPrompt(
     )
     .join('\n');
 
+  // Build character info with gender
+  const characterInfo = metadata.characters
+    .map((c) => `${c.id}: ${c.name} (${c.gender || 'unknown gender'})`)
+    .join(', ');
+
+  // Build character appearance template with gender-appropriate examples
+  const characterTemplates = metadata.characters
+    .map((c) => {
+      const isMale = c.gender === 'male';
+      const exampleHair = isMale
+        ? 'short dark brown hair, neatly styled'
+        : 'shoulder-length black hair, soft waves';
+      const exampleClothing = isMale
+        ? 'navy blue suit jacket, white dress shirt, dark trousers'
+        : 'cream blouse, fitted blazer, dark skirt';
+      const exampleFeatures = isMale
+        ? 'clean-shaven, confident posture'
+        : 'light makeup, warm smile';
+
+      return `    {
+      "id": "${c.id}",
+      "name": "${c.name}",
+      "gender": "${c.gender || 'unknown'}",
+      "appearance": {
+        "age": "specific age range (e.g., mid-20s)",
+        "hair": "${exampleHair}",
+        "eyes": "color",
+        "skin": "tone",
+        "build": "body type appropriate for ${c.gender || 'the character'}",
+        "clothing": "${exampleClothing}",
+        "distinctiveFeatures": "${exampleFeatures}"
+      }
+    }`;
+    })
+    .join(',\n');
+
   return `# Role
 You are a character designer and cinematographer.
 
@@ -94,7 +130,12 @@ Add detailed character appearances and camera directions to these existing scene
 
 ## Script Info
 - Title: ${metadata.title.target}
-- Characters: ${metadata.characters.map((c) => `${c.id} (${c.name})`).join(', ')}
+- Characters: ${characterInfo}
+
+## CRITICAL: Gender-Appropriate Appearances
+- MALE characters: short hair, masculine clothing (suits, shirts, trousers), no earrings/jewelry unless specified
+- FEMALE characters: can have longer hair, feminine clothing (blouses, dresses, skirts), jewelry is okay
+- ALWAYS match the appearance to the character's gender
 
 ## Existing Scenes (from script)
 ${scenesSummary}
@@ -102,36 +143,7 @@ ${scenesSummary}
 # Output JSON
 {
   "characters": [
-    {
-      "id": "${metadata.characters[0]?.id || 'M'}",
-      "name": "${metadata.characters[0]?.name || 'Character'}",
-      "appearance": {
-        "age": "specific age range (e.g., mid-20s)",
-        "hair": "color, length, style",
-        "eyes": "color",
-        "skin": "tone",
-        "build": "body type",
-        "clothing": "outfit description",
-        "distinctiveFeatures": "any unique features"
-      }
-    }${
-      metadata.characters.length > 1
-        ? `,
-    {
-      "id": "${metadata.characters[1]?.id || 'F'}",
-      "name": "${metadata.characters[1]?.name || 'Character'}",
-      "appearance": {
-        "age": "specific age range",
-        "hair": "color, length, style",
-        "eyes": "color",
-        "skin": "tone",
-        "build": "body type",
-        "clothing": "outfit description",
-        "distinctiveFeatures": "any unique features"
-      }
-    }`
-        : ''
-    }
+${characterTemplates}
   ],
   "cameraDirections": [
     "Wide establishing shot, eye-level",
@@ -143,7 +155,7 @@ ${scenesSummary}
 
 # Rules
 1. Create consistent, detailed appearances for each character
-2. Appearances should match the scene mood and setting
+2. Appearances MUST match the character's GENDER (male/female)
 3. Camera directions should progress: Wide → Medium → Close-up → Wide
 4. Keep clothing appropriate for the setting
 
@@ -203,6 +215,7 @@ function parseCharacterAppearances(
 
 /**
  * Convert Creative scenes to ScenePrompts with camera directions.
+ * Enhanced: Extracts emotional context from dialogue to enrich characterActions.
  */
 function convertCreativeScenesToPrompts(
   structuredScript: StructuredSentences,
@@ -248,11 +261,19 @@ function convertCreativeScenesToPrompts(
 
     const camera = cameraDirections[i] || defaultCameras[i % defaultCameras.length];
 
+    // 🎬 Enhanced: Build rich characterActions from dialogue content
+    const sceneSentences = sentences.slice(sentenceIndex - 1, endIndex);
+    const enrichedActions = buildEnrichedCharacterActions(
+      scene.visual?.characterActions || '',
+      sceneSentences,
+      structuredScript.metadata.characters
+    );
+
     scenePrompts.push({
       sentenceRange: [sentenceIndex, endIndex] as [number, number],
       setting: scene.visual?.location || scene.setting || 'Unknown location',
       mood: scene.visual?.mood || 'neutral',
-      characterActions: scene.visual?.characterActions || 'Characters present',
+      characterActions: enrichedActions,
       cameraDirection: camera,
       lighting: scene.visual?.lighting || inferLightingFromTime(scene.visual?.timeOfDay || 'DAY'),
       transition: i === 0 ? 'Fade in' : 'Cut',
@@ -270,6 +291,121 @@ function convertCreativeScenesToPrompts(
   }
 
   return scenePrompts;
+}
+
+/**
+ * 🎬 Build enriched character actions from dialogue content.
+ * Extracts emotional cues, physical descriptions, and situational context.
+ */
+function buildEnrichedCharacterActions(
+  baseAction: string,
+  sceneSentences: StructuredSentences['sentences'],
+  characters: StructuredSentences['metadata']['characters']
+): string {
+  if (sceneSentences.length === 0) {
+    return baseAction || 'Characters present';
+  }
+
+  // Extract emotional/physical cues from dialogue
+  const emotionalCues: string[] = [];
+  const physicalCues: string[] = [];
+
+  for (const sentence of sceneSentences) {
+    const text = sentence.target.toLowerCase();
+    const speaker = characters.find((c) => c.id === sentence.speaker);
+    const speakerName = speaker?.name || sentence.speaker;
+
+    // Physical state detection
+    if (text.includes('shaking') || text.includes('trembling')) {
+      physicalCues.push(`${speakerName}'s hands visibly trembling`);
+    }
+    if (text.includes('red') && (text.includes('face') || text.includes('cheek'))) {
+      physicalCues.push(`${speakerName}'s cheeks flushed red with embarrassment`);
+    }
+    if (text.includes('sweat') || text.includes('nervous')) {
+      physicalCues.push(`${speakerName} showing visible signs of nervousness`);
+    }
+    if (text.includes('smile') || text.includes('laugh')) {
+      physicalCues.push(`${speakerName} with a warm smile`);
+    }
+    if (text.includes('cry') || text.includes('tear')) {
+      physicalCues.push(`${speakerName}'s eyes glistening with tears`);
+    }
+    if (text.includes('tired') || text.includes('exhausted')) {
+      physicalCues.push(`${speakerName} looking visibly tired`);
+    }
+
+    // Emotional state detection
+    if (text.includes('terrible') || text.includes('awful') || text.includes('worst')) {
+      emotionalCues.push('distressed expression');
+    }
+    if (text.includes('happy') || text.includes('excited') || text.includes('great')) {
+      emotionalCues.push('joyful expression');
+    }
+    if (text.includes('worried') || text.includes('anxious') || text.includes('scared')) {
+      emotionalCues.push('worried expression');
+    }
+    if (text.includes('sorry') || text.includes('apologize')) {
+      emotionalCues.push('apologetic demeanor');
+    }
+    if (text.includes('thank') || text.includes('grateful')) {
+      emotionalCues.push('grateful expression');
+    }
+    if (text.includes('hope') || text.includes('wish')) {
+      emotionalCues.push('hopeful gaze');
+    }
+
+    // Action detection
+    if (text.includes('sit') || text.includes('sitting')) {
+      physicalCues.push('seated position');
+    }
+    if (text.includes('stand') || text.includes('standing')) {
+      physicalCues.push('standing posture');
+    }
+    if (text.includes('walk') || text.includes('walking')) {
+      physicalCues.push('walking movement');
+    }
+    if (text.includes('look') || text.includes('looking')) {
+      physicalCues.push('attentive gaze');
+    }
+  }
+
+  // Combine base action with extracted cues
+  const uniquePhysical = [...new Set(physicalCues)];
+  const uniqueEmotional = [...new Set(emotionalCues)];
+
+  const parts: string[] = [];
+
+  // Start with base action if meaningful
+  if (baseAction && baseAction !== 'Characters present') {
+    parts.push(baseAction);
+  }
+
+  // Add physical cues (most important for visual)
+  if (uniquePhysical.length > 0) {
+    parts.push(uniquePhysical.slice(0, 2).join(', '));
+  }
+
+  // Add emotional cues
+  if (uniqueEmotional.length > 0) {
+    parts.push(uniqueEmotional.slice(0, 2).join(', '));
+  }
+
+  // Fallback if nothing extracted
+  if (parts.length === 0) {
+    // Generate from speaker pattern
+    const speakers = [...new Set(sceneSentences.map((s) => s.speaker))];
+    if (speakers.length === 2) {
+      const names = speakers.map((id) => characters.find((c) => c.id === id)?.name || id);
+      return `${names[0]} and ${names[1]} in conversation, natural body language`;
+    } else if (speakers.length === 1) {
+      const name = characters.find((c) => c.id === speakers[0])?.name || speakers[0];
+      return `${name} speaking with expressive gestures`;
+    }
+    return 'Characters engaged in natural conversation';
+  }
+
+  return parts.join('. ');
 }
 
 /**
@@ -581,7 +717,8 @@ function validateAndFixVisualOutput(
   structuredScript: StructuredSentences
 ): VisualOutput {
   const totalSentences = structuredScript.sentences.length;
-  let { characters, scenePrompts } = visualOutput;
+  const { characters } = visualOutput;
+  let { scenePrompts } = visualOutput;
 
   const coverageErrors = validateSceneCoverage(scenePrompts, totalSentences);
 

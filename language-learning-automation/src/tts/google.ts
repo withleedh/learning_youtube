@@ -59,6 +59,55 @@ export const DEFAULT_PITCH = {
   female: 2.0,
 } as const;
 
+// Age-based pitch ranges for more natural voice variation
+type AgeCategory = 'young' | 'adult' | 'mature';
+
+const PITCH_RANGES: Record<'male' | 'female', Record<AgeCategory, { min: number; max: number }>> = {
+  male: {
+    young: { min: 0, max: 3 }, // 20대 남성: 약간 높은 톤
+    adult: { min: -3, max: 0 }, // 30대 남성: 중간
+    mature: { min: -5, max: -2 }, // 40대+ 남성: 낮은 톤
+  },
+  female: {
+    young: { min: 2, max: 5 }, // 20대 여성: 밝은 톤
+    adult: { min: 0, max: 3 }, // 30대 여성: 중간
+    mature: { min: -2, max: 1 }, // 40대+ 여성: 차분한 톤
+  },
+};
+
+/**
+ * Parse age string to category
+ * Examples: "mid-20s" → young, "late-30s" → adult, "50s" → mature
+ */
+export function parseAgeToCategory(ageString?: string): AgeCategory {
+  if (!ageString) return 'adult';
+
+  const lower = ageString.toLowerCase();
+
+  // Extract numbers from string
+  const numbers = lower.match(/\d+/g);
+  if (numbers && numbers.length > 0) {
+    const age = parseInt(numbers[0]);
+    if (age < 30) return 'young';
+    if (age < 45) return 'adult';
+    return 'mature';
+  }
+
+  // Fallback to keyword matching
+  if (lower.includes('young') || lower.includes('teen') || lower.includes('20')) return 'young';
+  if (lower.includes('middle') || lower.includes('mature') || lower.includes('elder'))
+    return 'mature';
+
+  return 'adult';
+}
+
+/**
+ * Get random pitch within range
+ */
+function getRandomInRange(min: number, max: number): number {
+  return Math.round((Math.random() * (max - min) + min) * 10) / 10;
+}
+
 /**
  * Select random voice for a gender
  */
@@ -69,10 +118,25 @@ export function selectRandomVoice(gender: 'MALE' | 'FEMALE'): string {
 }
 
 /**
- * Get pitch for a gender
+ * Get pitch for a gender (legacy - uses default)
  */
 export function getPitchForGender(gender: 'MALE' | 'FEMALE'): number {
   return gender === 'MALE' ? DEFAULT_PITCH.male : DEFAULT_PITCH.female;
+}
+
+/**
+ * Get pitch based on character age
+ * @param gender - Character gender
+ * @param ageString - Age description from character appearance (e.g., "mid-20s", "late-30s")
+ * @returns Random pitch within appropriate range
+ */
+export function getPitchForCharacter(gender: 'MALE' | 'FEMALE', ageString?: string): number {
+  const genderKey = gender === 'MALE' ? 'male' : 'female';
+  const ageCategory = parseAgeToCategory(ageString);
+  const range = PITCH_RANGES[genderKey][ageCategory];
+
+  const pitch = getRandomInRange(range.min, range.max);
+  return pitch;
 }
 
 /**
@@ -176,7 +240,8 @@ export async function generateWithGoogleAtSpeed(
     await fs.mkdir(outputDir, { recursive: true });
 
     // Generate filename and save
-    const filename = generateAudioFilename(sentenceId, speaker, speed);
+    const numericId = typeof sentenceId === 'string' ? parseInt(sentenceId) || 0 : sentenceId;
+    const filename = generateAudioFilename(numericId, speaker, speed);
     const filePath = path.join(outputDir, filename);
     await fs.writeFile(filePath, audioBuffer);
 
@@ -194,7 +259,7 @@ export async function generateWithGoogleAtSpeed(
     }
 
     const audioFile: AudioFile = {
-      sentenceId: typeof sentenceId === 'string' ? parseInt(sentenceId) || 0 : sentenceId,
+      sentenceId: numericId,
       speaker,
       speed,
       path: filePath,
