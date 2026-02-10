@@ -83,6 +83,18 @@ export const IMAGE_STYLES: ImageStyle[] = [
     category: 'illustration',
     prompt: `European bande dessinée style (Tintin, Asterix), clear ligne claire technique, flat colors, detailed backgrounds, clean outlines, classic illustration feel.`,
   },
+  {
+    id: 'sketch_warm',
+    name: 'Warm Sketch Illustration',
+    category: 'illustration',
+    prompt: `Hand-drawn sketch illustration style, visible pencil/ink strokes, warm muted color palette (browns, blues, oranges), cozy atmosphere, slightly rough line art with character, vintage storybook feel, soft shading, friendly expressive characters with simple features, casual everyday scenes.`,
+  },
+  {
+    id: 'indie_comic',
+    name: 'Indie Comic Style',
+    category: 'illustration',
+    prompt: `Independent comic book style, hand-drawn aesthetic with visible brush strokes, limited warm color palette, expressive simple character designs, cozy slice-of-life atmosphere, slightly sketchy line work, nostalgic and intimate mood, detailed but not overly polished backgrounds.`,
+  },
 
   // === 회화/아트 (Painting) ===
   {
