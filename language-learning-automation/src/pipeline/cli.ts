@@ -47,6 +47,11 @@ Examples:
   npx tsx src/pipeline/cli.ts --channel english --topic "겨울 코트 쇼핑"
   npx tsx src/pipeline/cli.ts --all --mock-tts
   npx tsx src/pipeline/cli.ts --history
+
+Related Scripts:
+  # Generate episode thumbnail from existing output
+  npx tsx scripts/generate-episode-thumbnail.ts <outputDir>
+  npx tsx scripts/generate-episode-thumbnail.ts output/english/2026-02-03_115630
 `);
 }
 

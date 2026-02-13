@@ -256,50 +256,13 @@ export const SingleSentenceShort: React.FC<SingleSentenceShortProps> = ({
   return (
     <AbsoluteFill style={{ backgroundColor: '#000' }}>
       {/* Top Header Area (420px) */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 0,
-          left: 0,
-          right: 0,
-          height: TOP_BLACK_HEIGHT,
-          backgroundColor: '#000',
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'flex-start',
-          paddingTop: 240,
-          gap: 16,
-        }}
-      >
-        {/* 이거 맞히면 네이티브? 👂 */}
-        <div
-          style={{
-            fontSize: 84,
-            fontWeight: 900,
-            fontFamily: 'Pretendard, -apple-system, sans-serif',
-            letterSpacing: 4,
-          }}
-        >
-          <span style={{ color: '#FFFFFF' }}>이거 맞히면 </span>
-          <span style={{ color: '#FF9500' }}>네이티브?</span>
-          <span>👂</span>
-        </div>
-        {/* 주제 + 문장 번호 */}
-        <div
-          style={{
-            fontSize: 32,
-            fontWeight: 500,
-            color: '#FFFFFF',
-            fontFamily: 'Pretendard, -apple-system, sans-serif',
-            textAlign: 'center',
-            opacity: 0.7,
-          }}
-        >
-          {episodeTitle && `${episodeTitle}`}
-          {sentenceIndex && ` (${sentenceIndex})`}
-        </div>
-      </div>
+      <TopHeader
+        episodeTitle={episodeTitle}
+        sentenceIndex={sentenceIndex}
+        nativeLanguage={config.meta.nativeLanguage}
+        quizHook={config.uiLabels?.quizHook}
+        quizHookColor={config.shortsTheme?.quizHookColor}
+      />
 
       {/* Bottom Image Area (16:9, 1080x608) - Ken Burns subtle zoom */}
       <BottomImageArea backgroundImage={backgroundImage} />
@@ -383,6 +346,86 @@ export const SingleSentenceShort: React.FC<SingleSentenceShortProps> = ({
 // =============================================================================
 // Comic Speech Bubble with Jagged Lines Animation
 // =============================================================================
+
+// =============================================================================
+// Top Header Component
+// =============================================================================
+
+const TopHeader: React.FC<{
+  episodeTitle?: string;
+  sentenceIndex?: number;
+  nativeLanguage: string;
+  quizHook?: string;
+  quizHookColor?: string;
+}> = ({ episodeTitle, sentenceIndex, nativeLanguage, quizHook, quizHookColor }) => {
+  // Default hook text based on native language
+  const defaultHook =
+    nativeLanguage === 'Korean'
+      ? { prefix: '이거 맞히면 ', highlight: '네이티브?', emoji: '👂' }
+      : nativeLanguage === 'Japanese'
+        ? { prefix: '聞こえたら ', highlight: '英語の達人！', emoji: '👂' }
+        : { prefix: 'Get it right, ', highlight: "you're native!", emoji: '👂' };
+
+  // If custom quizHook is provided, use it as the highlight text
+  const hookText = quizHook || `${defaultHook.prefix}${defaultHook.highlight}`;
+  const hookColor = quizHookColor || '#FF9500';
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: TOP_BLACK_HEIGHT,
+        backgroundColor: '#000',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-start',
+        paddingTop: 240,
+        gap: 16,
+      }}
+    >
+      <div
+        style={{
+          fontSize: 84,
+          fontWeight: 900,
+          fontFamily: 'Pretendard, -apple-system, sans-serif',
+          letterSpacing: 4,
+        }}
+      >
+        {quizHook ? (
+          // Custom hook from config - display as single colored text
+          <>
+            <span style={{ color: hookColor }}>{hookText}</span>
+            <span> 👂</span>
+          </>
+        ) : (
+          // Default hook with prefix + highlight pattern
+          <>
+            <span style={{ color: '#FFFFFF' }}>{defaultHook.prefix}</span>
+            <span style={{ color: hookColor }}>{defaultHook.highlight}</span>
+            <span> {defaultHook.emoji}</span>
+          </>
+        )}
+      </div>
+      <div
+        style={{
+          fontSize: 32,
+          fontWeight: 500,
+          color: '#FFFFFF',
+          fontFamily: 'Pretendard, -apple-system, sans-serif',
+          textAlign: 'center',
+          opacity: 0.7,
+        }}
+      >
+        {episodeTitle && `${episodeTitle}`}
+        {sentenceIndex && ` (${sentenceIndex})`}
+      </div>
+    </div>
+  );
+};
 
 // =============================================================================
 // Bottom Image Area with Ken Burns Effect

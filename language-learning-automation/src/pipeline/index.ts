@@ -804,13 +804,57 @@ async function renderVideo(
   // 경쟁 채널 스타일 제목 생성
   const titleWithEmojis = await generateCompetitorStyleTitle(
     script.metadata.title.native,
-    script.category
+    script.category,
+    config.meta.nativeLanguage
   );
 
-  // 채널 정보
-  const CHANNEL_HASHTAGS = '#영어듣기 #영어공부 #영어리스닝 #생활영어 #영어회화';
+  // 언어별 채널 정보
+  const uploadInfoContent = getUploadInfoContent(
+    config.meta.nativeLanguage,
+    timelineLabels,
+    timelineText,
+    titleWithEmojis
+  );
 
-  const uploadInfo = `${CHANNEL_HASHTAGS}
+  await fs.writeFile(uploadInfoPath, uploadInfoContent, 'utf-8');
+  console.log(`✅ Upload info created: ${uploadInfoPath}`);
+  console.log(`\n📋 YouTube 제목: ${titleWithEmojis}`);
+  console.log(`\n⏱️ ${timelineLabels.timelineHeader}:`);
+  timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
+}
+
+/**
+ * Get upload info content based on native language
+ */
+function getUploadInfoContent(
+  nativeLanguage: string,
+  timelineLabels: ReturnType<typeof getTimelineLabels>,
+  timelineText: string,
+  titleWithEmojis: string
+): string {
+  if (nativeLanguage === 'Japanese') {
+    return `#英語リスニング #英語学習 #英語勉強 #日常英語 #英会話
+
+英語、聞くだけで上達できます 👂✨
+
+毎日様々な状況の英語を聞いて、自然に耳を開いてみましょう。
+4段階反復学習で誰でも簡単についていけます。
+
+📌 お知らせ
+• この動画は学習用に制作された架空の内容です。
+• 無断複製および商業利用を禁じます。
+
+⏱️ ${timelineLabels.timelineHeader}
+${timelineText}
+
+━━━━━━━━━━━━
+📋 タイトル
+${titleWithEmojis}
+`;
+  }
+
+  // Default: Korean
+  return `#영어듣기 #영어공부 #영어리스닝 #생활영어 #영어회화
 
 영어, 듣기만 해도 늘 수 있어요 👂✨
 
@@ -828,28 +872,44 @@ ${timelineText}
 📋 제목
 ${titleWithEmojis}
 `;
-
-  await fs.writeFile(uploadInfoPath, uploadInfo, 'utf-8');
-  console.log(`✅ Upload info created: ${uploadInfoPath}`);
-  console.log(`\n📋 YouTube 제목: ${titleWithEmojis}`);
-  console.log(`\n⏱️ ${timelineLabels.timelineHeader}:`);
-  timeline.forEach((t) => console.log(`  ${t.time} ${t.label}`));
 }
 
 /**
- * 카테고리에 맞는 콘텐츠 타입 라벨 반환
+ * 카테고리에 맞는 콘텐츠 타입 라벨 반환 (다국어 지원)
  */
-function getContentTypeLabel(category: string): string {
-  const labels: Record<string, string> = {
-    story: '영어 듣기',
-    fairytale: '영어 동화',
-    news: '영어 뉴스',
-    conversation: '영어 회화',
-    travel_business: '여행 영어',
-    announcement: '영어 안내',
-    lesson: '영어 레슨',
+function getContentTypeLabel(category: string, nativeLanguage: string = 'Korean'): string {
+  const labels: Record<string, Record<string, string>> = {
+    Korean: {
+      story: '영어 듣기',
+      fairytale: '영어 동화',
+      news: '영어 뉴스',
+      conversation: '영어 회화',
+      travel_business: '여행 영어',
+      announcement: '영어 안내',
+      lesson: '영어 레슨',
+    },
+    Japanese: {
+      story: '英語リスニング',
+      fairytale: '英語童話',
+      news: '英語ニュース',
+      conversation: '英語会話',
+      travel_business: '旅行英語',
+      announcement: '英語アナウンス',
+      lesson: '英語レッスン',
+    },
+    English: {
+      story: 'English Listening',
+      fairytale: 'English Fairytale',
+      news: 'English News',
+      conversation: 'English Conversation',
+      travel_business: 'Travel English',
+      announcement: 'English Announcement',
+      lesson: 'English Lesson',
+    },
   };
-  return labels[category] || '영어 듣기';
+
+  const langLabels = labels[nativeLanguage] || labels['Korean'];
+  return langLabels[category] || langLabels['story'];
 }
 
 /**
@@ -896,13 +956,14 @@ async function generateEmojisForTitle(title: string): Promise<string> {
 
 /**
  * 경쟁 채널 스타일의 제목 생성
- * 형식: [콘텐츠 타입] - [한국어 주제] [이모지 3개]
+ * 형식: [콘텐츠 타입] - [네이티브 주제] [이모지 3개]
  */
 async function generateCompetitorStyleTitle(
   nativeTitle: string,
-  category: string
+  category: string,
+  nativeLanguage: string = 'Korean'
 ): Promise<string> {
-  const contentType = getContentTypeLabel(category);
+  const contentType = getContentTypeLabel(category, nativeLanguage);
   const emojis = await generateEmojisForTitle(nativeTitle);
   return `${contentType} - ${nativeTitle} ${emojis}`;
 }

@@ -114,6 +114,9 @@ function buildStructuralPrompt(
   // Extract dialogue lines from screenplay
   const dialogueLines = extractDialogueLines(screenplay);
 
+  // Get pronunciation guide based on native language
+  const pronunciationGuide = getPronunciationGuide(nativeLanguage, targetLanguage);
+
   return `# Role
 You are a language education expert specializing in CEFR-based curriculum design.
 
@@ -178,9 +181,14 @@ Generate 2 wrong choices that are:
 - blankAnswer: "familiar" → wrongWordChoices: ["similar", "family"]
 - blankAnswer: "coffee" → wrongWordChoices: ["copy", "coughing"]
 
+## Pronunciation Guide (targetPronunciation)
+${pronunciationGuide}
+
 ## Native Translation
-- Natural, conversational translation (NOT textbook-style)
+- Natural, conversational translation in ${nativeLanguage} (NOT textbook-style)
 - Should sound like how a native ${nativeLanguage} speaker would actually say it
+${nativeLanguage === 'Japanese' ? '- Use natural Japanese expressions (日本語の自然な表現を使用)' : ''}
+${nativeLanguage === 'Korean' ? '- Use natural Korean expressions (자연스러운 한국어 표현 사용)' : ''}
 
 # Output Format (JSON)
 {
@@ -210,7 +218,7 @@ Generate 2 wrong choices that are:
       "id": 1,
       "speaker": "M or F",
       "target": "Full sentence in ${targetLanguage}",
-      "targetPronunciation": "Pronunciation guide in ${nativeLanguage} script (optional)",
+      "targetPronunciation": "${getPronunciationExample(nativeLanguage)}",
       "targetBlank": "Sentence with _______ replacing the blank word",
       "blankAnswer": "the word that fills the blank",
       "native": "Natural ${nativeLanguage} translation",
@@ -228,13 +236,65 @@ Generate 2 wrong choices that are:
 2. **targetBlank MUST contain exactly "_______" (7 underscores) replacing the blankAnswer**
 3. **wrongWordChoices MUST be single words (no spaces)**
 4. **Each sentence should have 4-15 words**
-5. **Native translation should be natural and conversational**
-6. **words array should include blankAnswer + 1-2 useful vocabulary words**
+5. **Native translation should be natural and conversational in ${nativeLanguage}**
+6. **words array should include blankAnswer + 1-2 useful vocabulary words with ${nativeLanguage} meanings**
 7. **title.native MUST be "${originalTopic}" (the original topic)**
 8. **CRITICAL: speaker MUST match the original dialogue** - If the input shows [M] for a line, output "speaker": "M". Do NOT alternate M-F-M-F artificially. One character can speak multiple times in a row.
 9. **PRESERVE NATURAL LANGUAGE** - Keep contractions (don't, I'm, you're), keep humor, keep personality. Do NOT convert to textbook English!
+10. **targetPronunciation MUST be in ${getPronunciationScript(nativeLanguage)}** - NOT IPA symbols!
 
 Generate ONLY the JSON output. No additional text.`;
+}
+
+/**
+ * Get pronunciation guide based on native language
+ */
+function getPronunciationGuide(nativeLanguage: string, targetLanguage: string): string {
+  if (nativeLanguage === 'Japanese') {
+    return `**CRITICAL: Use KATAKANA (カタカナ) for pronunciation!**
+- Write how Japanese speakers would read the ${targetLanguage} sentence
+- Example: "Can you believe it?" → "キャン ユー ビリーブ イット？"
+- Example: "I'm going to miss this place." → "アイム ゴーイング トゥ ミス ディス プレイス。"
+- DO NOT use IPA symbols (ə, ɪ, æ, etc.)
+- DO NOT use romaji`;
+  }
+
+  if (nativeLanguage === 'Korean') {
+    return `**Use Korean phonetic transcription (한글 발음 표기)**
+- Write how Korean speakers would read the ${targetLanguage} sentence
+- Example: "Can you believe it?" → "캔 유 빌리브 잇?"
+- Example: "I'm going to miss this place." → "아임 고잉 투 미스 디스 플레이스."
+- DO NOT use IPA symbols (ə, ɪ, æ, etc.)`;
+  }
+
+  return `Use simple phonetic guide that ${nativeLanguage} speakers can read easily.
+DO NOT use IPA symbols.`;
+}
+
+/**
+ * Get pronunciation example based on native language
+ */
+function getPronunciationExample(nativeLanguage: string): string {
+  if (nativeLanguage === 'Japanese') {
+    return 'カタカナ発音ガイド (例: キャン ユー ビリーブ イット？)';
+  }
+  if (nativeLanguage === 'Korean') {
+    return '한글 발음 가이드 (예: 캔 유 빌리브 잇?)';
+  }
+  return 'Phonetic pronunciation guide';
+}
+
+/**
+ * Get pronunciation script name based on native language
+ */
+function getPronunciationScript(nativeLanguage: string): string {
+  if (nativeLanguage === 'Japanese') {
+    return 'KATAKANA (カタカナ)';
+  }
+  if (nativeLanguage === 'Korean') {
+    return 'Korean (한글)';
+  }
+  return 'simple phonetic script';
 }
 
 // ============================================================================

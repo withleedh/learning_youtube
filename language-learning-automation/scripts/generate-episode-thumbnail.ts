@@ -19,6 +19,19 @@ import path from 'path';
 import { createCanvas, loadImage } from 'canvas';
 import type { Script } from '../src/script/types';
 
+/**
+ * Get subtitle text based on native language
+ */
+function getSubtitleByLanguage(nativeLanguage: string): string {
+  const subtitles: Record<string, string> = {
+    Korean: '들려요! 10분 영어',
+    Japanese: '聞こえる！10分英語',
+    English: '10 Mins Daily Listening',
+    Chinese: '听得懂！10分钟英语',
+  };
+  return subtitles[nativeLanguage] || subtitles['Korean'];
+}
+
 async function generateVideoThumbnail(
   backgroundPath: string,
   titleText: string,
@@ -180,14 +193,43 @@ Examples:
   }
 
   let title = titleOverride || '';
+  let channelId = '';
   if (!titleOverride && scriptFile) {
     const scriptPath = path.join(outputDir, scriptFile);
     const scriptContent = await fs.readFile(scriptPath, 'utf-8');
     const script: Script = JSON.parse(scriptContent);
     title = script.metadata.title.native;
+    channelId = script.channelId;
   }
 
-  const subtitle = subtitleOverride || '들려요! 10분 영어';
+  // Determine subtitle based on channel's native language
+  let subtitle = subtitleOverride;
+  if (!subtitle) {
+    // Try to get channel config to determine native language
+    if (!channelId) {
+      // Extract channelId from path (e.g., output/japan_english/2026-02-10_004952)
+      const pathParts = outputDir.split(path.sep);
+      const outputIndex = pathParts.indexOf('output');
+      if (outputIndex >= 0 && pathParts.length > outputIndex + 1) {
+        channelId = pathParts[outputIndex + 1];
+      }
+    }
+
+    if (channelId) {
+      try {
+        const configPath = path.join(process.cwd(), 'channels', `${channelId}.json`);
+        const configContent = await fs.readFile(configPath, 'utf-8');
+        const config = JSON.parse(configContent);
+        const nativeLanguage = config.meta?.nativeLanguage || 'Korean';
+        subtitle = getSubtitleByLanguage(nativeLanguage);
+      } catch {
+        subtitle = '들려요! 10분 영어';
+      }
+    } else {
+      subtitle = '들려요! 10분 영어';
+    }
+  }
+
   const outputPath = path.join(outputDir, 'episode_thumbnail.png');
 
   console.log(`
