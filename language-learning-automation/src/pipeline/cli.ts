@@ -36,8 +36,8 @@ Options:
   --sample-script    Use sample script (no Gemini API call)
   --skip-intro       Skip intro asset generation
   --output <dir>     Custom output directory
-  --render           Auto-render video after pipeline completes
-  --shorts           Render individual Shorts for each sentence
+  --render           Auto-render video after pipeline completes (default: on)
+  --shorts           Render individual Shorts for each sentence (default: on)
   --help             Show this help message
 
 Examples:
@@ -78,8 +78,8 @@ async function main() {
   let useSampleScript = false;
   let skipIntro = false;
   let outputDir: string | undefined;
-  let autoRender = false;
-  let renderShorts = false;
+  let autoRender = true;
+  let renderShorts = true;
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];

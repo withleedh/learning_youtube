@@ -12,14 +12,14 @@ export const speedMultipliers: Record<SpeedVariant, number> = {
 };
 
 // TTS Provider type
-export type TTSProvider = 'openai' | 'google';
+export type TTSProvider = 'openai' | 'google' | 'edge';
 
 // TTS Options schema
 export const ttsOptionsSchema = z.object({
   text: z.string().min(1, 'Text is required'),
   voice: z.string().min(1, 'Voice is required'),
   speed: z.number().min(0.5).max(2.0),
-  provider: z.enum(['openai', 'google']),
+  provider: z.enum(['openai', 'google', 'edge']),
   languageCode: z.string().min(1, 'Language code is required'),
 });
 

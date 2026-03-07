@@ -7,6 +7,7 @@
 
 import { z } from 'zod';
 import type { WordMapEntry } from './ssml-injector';
+import { getGoogleAccessToken, getGoogleQuotaProject } from './google-auth';
 
 // ============================================================================
 // Constants
@@ -133,25 +134,6 @@ interface GoogleTTSRequestBody {
 // ============================================================================
 
 /**
- * Get access token from gcloud CLI (Application Default Credentials)
- */
-async function getAccessToken(): Promise<string> {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-
-  try {
-    const { stdout } = await execAsync('gcloud auth print-access-token');
-    return stdout.trim();
-  } catch (error) {
-    throw new TimepointTTSError(
-      'Failed to get gcloud access token. Make sure you are logged in with: gcloud auth login',
-      'AUTH_ERROR'
-    );
-  }
-}
-
-/**
  * Get audio duration from buffer using music-metadata
  */
 async function getAudioDuration(audioBuffer: Buffer): Promise<number> {
@@ -193,7 +175,18 @@ async function getAudioDuration(audioBuffer: Buffer): Promise<number> {
 export async function synthesizeWithTimepoints(
   request: TimepointTTSRequest
 ): Promise<TimepointTTSResponse> {
-  const accessToken = await getAccessToken();
+  let accessToken: string;
+  let quotaProject: string;
+
+  try {
+    accessToken = await getGoogleAccessToken();
+    quotaProject = await getGoogleQuotaProject();
+  } catch (error) {
+    throw new TimepointTTSError(
+      error instanceof Error ? error.message : String(error),
+      'AUTH_ERROR'
+    );
+  }
 
   const requestBody: GoogleTTSRequestBody = {
     input: { ssml: request.ssml },
@@ -215,7 +208,7 @@ export async function synthesizeWithTimepoints(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
-      'X-Goog-User-Project': process.env.GOOGLE_CLOUD_PROJECT || 'project-7041221e-8ba7-4667-971',
+      'X-Goog-User-Project': quotaProject,
     },
     body: JSON.stringify(requestBody),
   });

@@ -6,6 +6,7 @@ import { renderMedia, selectComposition } from '@remotion/renderer';
 import type { Script } from '../src/script/types';
 import type { ChannelConfig } from '../src/config/types';
 import type { AudioFile } from '../src/tts/types';
+import { calculateExpectedAudioCount } from '../src/tts/types';
 import { calculateIntroDuration } from '../src/compositions/Intro';
 import { calculateStep1Duration } from '../src/compositions/Step1';
 import { calculateStep2Duration } from '../src/compositions/Step2';
@@ -130,6 +131,14 @@ async function renderVideo() {
   const manifestPath = path.join(baseDir, 'audio/manifest.json');
   const manifestContent = await fs.readFile(manifestPath, 'utf-8');
   const rawAudioFiles: AudioFile[] = JSON.parse(manifestContent);
+  const expectedAudioCount = calculateExpectedAudioCount(script.sentences.length);
+
+  if (rawAudioFiles.length < expectedAudioCount) {
+    console.error(
+      `❌ Audio manifest incomplete: expected ${expectedAudioCount} audio files, got ${rawAudioFiles.length}`
+    );
+    process.exit(1);
+  }
 
   // Setup public folder (copy assets before bundling)
   await setupPublicFolder(channelId, outputFolder);

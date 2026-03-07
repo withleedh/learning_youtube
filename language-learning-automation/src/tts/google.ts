@@ -1,6 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import type { AudioFile, SpeedVariant, AudioGenerationResult } from './types';
+import { getGoogleAccessToken, getGoogleQuotaProject } from './google-auth';
 import { generateAudioFilename } from './types';
 
 const GOOGLE_TTS_API_URL = 'https://texttospeech.googleapis.com/v1/text:synthesize';
@@ -140,24 +141,6 @@ export function getPitchForCharacter(gender: 'MALE' | 'FEMALE', ageString?: stri
 }
 
 /**
- * Get access token from gcloud CLI (Application Default Credentials)
- */
-async function getAccessToken(): Promise<string> {
-  const { exec } = await import('child_process');
-  const { promisify } = await import('util');
-  const execAsync = promisify(exec);
-
-  try {
-    const { stdout } = await execAsync('gcloud auth print-access-token');
-    return stdout.trim();
-  } catch (error) {
-    throw new Error(
-      'Failed to get gcloud access token. Make sure you are logged in with: gcloud auth login'
-    );
-  }
-}
-
-/**
  * Synthesize speech using Google Cloud TTS API with ADC
  */
 export async function synthesizeWithGoogle(
@@ -168,7 +151,8 @@ export async function synthesizeWithGoogle(
   speakingRate: number = 1.0,
   pitch: number = 0.0 // -20.0 to 20.0 semitones
 ): Promise<Buffer> {
-  const accessToken = await getAccessToken();
+  const accessToken = await getGoogleAccessToken();
+  const quotaProject = await getGoogleQuotaProject();
 
   // SSML로 감싸서 끝에 무음 추가 (Google TTS 끝 잘림 방지)
   const ssmlText = `<speak>${text}<break time="300ms"/></speak>`;
@@ -192,7 +176,7 @@ export async function synthesizeWithGoogle(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${accessToken}`,
-      'X-Goog-User-Project': process.env.GOOGLE_CLOUD_PROJECT || 'project-7041221e-8ba7-4667-971',
+      'X-Goog-User-Project': quotaProject,
     },
     body: JSON.stringify(request),
   });

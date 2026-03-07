@@ -204,7 +204,12 @@ const SentenceDisplay: React.FC<{
 
 export function calculateStep4Duration(audioFiles: AudioFile[]): number {
   const normalSpeedAudios = audioFiles.filter((af) => af.speed === '1.0x');
+  if (normalSpeedAudios.length === 0) {
+    return 1;
+  }
+
   const totalDuration = normalSpeedAudios.reduce((sum, af) => sum + af.duration, 0);
-  const gaps = (normalSpeedAudios.length - 1) * 2;
-  return Math.ceil((totalDuration + gaps) * 30);
+  const gaps = Math.max(0, normalSpeedAudios.length - 1) * 2;
+
+  return Math.max(1, Math.ceil((totalDuration + gaps) * 30));
 }

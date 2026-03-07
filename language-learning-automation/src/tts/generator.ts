@@ -10,6 +10,7 @@ import {
   speedVariants,
 } from './types';
 import { generateAllSpeedsWithEdge, type EdgeVoice } from './edge';
+import { generateAllSpeedsWithOpenAI, type OpenAIVoice } from './openai';
 import {
   generateAllSpeedsWithGoogle,
   selectRandomVoice,
@@ -69,6 +70,17 @@ export async function generateSentenceAudio(
 
   // Switch based on provider
   switch (config.tts.provider) {
+    case 'openai': {
+      const voice = sentence.speaker === 'M' ? config.tts.maleVoice : config.tts.femaleVoice;
+      return generateAllSpeedsWithOpenAI(
+        sentence.target,
+        voice as OpenAIVoice,
+        outputDir,
+        sentence.id,
+        sentence.speaker
+      );
+    }
+
     case 'google': {
       // Use episode voices if provided (random selection), otherwise use config
       const voice = episodeVoices
@@ -96,8 +108,7 @@ export async function generateSentenceAudio(
       );
     }
 
-    case 'edge':
-    default: {
+    case 'edge': {
       // Use config voices for Edge TTS
       const voice = sentence.speaker === 'M' ? config.tts.maleVoice : config.tts.femaleVoice;
       return generateAllSpeedsWithEdge(
@@ -155,6 +166,14 @@ export async function generateAllAudio(
           break;
         }
 
+        const failedResults = results.filter((r) => !r.success);
+        if (failedResults.length > 0) {
+          const errorSummary = failedResults.map((r) => r.error ?? 'unknown error').join(' | ');
+          console.warn(
+            `   ⚠️ TTS retry for sentence ${sentence.id} (${attempts + 1}/${MAX_RETRIES}): ${errorSummary}`
+          );
+        }
+
         // Some failed, retry
         attempts++;
         if (attempts < MAX_RETRIES) {
@@ -170,6 +189,10 @@ export async function generateAllAudio(
           await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS * attempts));
         }
       }
+    }
+
+    if (results.length === 0) {
+      console.error(`   ❌ No TTS result returned for sentence ${sentence.id}`);
     }
 
     // Collect successful results

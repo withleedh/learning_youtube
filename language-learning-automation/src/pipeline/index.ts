@@ -17,6 +17,7 @@ import type { IntroAssetConfig } from '../intro/types';
 import type { ChannelConfig } from '../config/types';
 import type { Script } from '../script/types';
 import type { AudioFile } from '../tts/types';
+import { calculateExpectedAudioCount } from '../tts/types';
 import type { Category } from '../script/types';
 
 export interface PipelineOptions {
@@ -223,6 +224,13 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
         console.log(`   Processing sentence ${current}/${total}...`);
       });
       console.log(`   ✓ Generated ${audioFiles.length} audio files`);
+    }
+
+    const expectedAudioCount = calculateExpectedAudioCount(script.sentences.length);
+    if (audioFiles.length < expectedAudioCount) {
+      throw new Error(
+        `TTS generation incomplete: expected ${expectedAudioCount} audio files, got ${audioFiles.length}. Provider=${config.tts.provider}`
+      );
     }
 
     // Save audio manifest
@@ -582,6 +590,13 @@ async function renderVideo(
   const manifestPath = path.join(outputDir, 'audio/manifest.json');
   const manifestContent = await fs.readFile(manifestPath, 'utf-8');
   const rawAudioFiles: AudioFile[] = JSON.parse(manifestContent);
+  const expectedAudioCount = calculateExpectedAudioCount(script.sentences.length);
+
+  if (rawAudioFiles.length < expectedAudioCount) {
+    throw new Error(
+      `Audio manifest incomplete: expected ${expectedAudioCount} audio files, got ${rawAudioFiles.length}`
+    );
+  }
 
   // Convert to staticFile paths (with folderName prefix for dynamic files)
   const audioFiles: AudioFile[] = rawAudioFiles.map((af) => ({
