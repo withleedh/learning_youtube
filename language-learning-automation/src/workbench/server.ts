@@ -65,6 +65,10 @@ const createJobBodySchema = z.object({
   version: z.number().int().positive(),
 });
 
+const saveTopicDraftBodySchema = z.object({
+  topic: z.string().min(1),
+});
+
 const createCommentBodySchema = z.object({
   stage: episodeStageSchema,
   version: z.number().int().positive().optional(),
@@ -436,8 +440,19 @@ export async function createWorkbenchServer(
         const [, channelId, episodeId, rawStage] = currentArtifactMatch;
         const stage = episodeStageSchema.parse(rawStage);
 
-        if (stage !== 'script' && stage !== 'package') {
-          sendError(res, 400, `Manual draft updates are only supported for the script or package stage`);
+        if (stage !== 'topic' && stage !== 'script' && stage !== 'package') {
+          sendError(res, 400, `Manual draft updates are only supported for the topic, script, or package stage`);
+          return;
+        }
+
+        if (stage === 'topic') {
+          const body = saveTopicDraftBodySchema.parse(await parseBody());
+          const result = await service.saveTopicDraft({
+            channelId,
+            episodeId,
+            topic: body.topic,
+          });
+          sendJson(res, 200, result as unknown as JsonValue);
           return;
         }
 

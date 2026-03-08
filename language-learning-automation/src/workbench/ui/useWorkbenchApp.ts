@@ -804,6 +804,29 @@ export function useWorkbenchApp() {
     });
   }
 
+  async function handleSaveTopicDraft(channelId: string, episodeId: string): Promise<boolean> {
+    const nextTopic = topicApprovalText.trim();
+    if (!nextTopic) {
+      showNotice('Topic text must not be empty.');
+      return false;
+    }
+
+    let didSucceed = false;
+    await withBusy(async () => {
+      await fetchJson(`/api/workbench/episodes/${channelId}/${episodeId}/stages/topic/current-artifact`, {
+        method: 'PUT',
+        body: JSON.stringify({ topic: nextTopic }),
+      });
+
+      showNotice('Topic text saved.');
+      await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
+      didSucceed = true;
+    });
+
+    return didSucceed;
+  }
+
   function handleLoadScriptPoolCandidate(index: number): void {
     const candidate = currentScriptPoolArtifact?.candidates[index];
     if (!candidate) {
@@ -1375,6 +1398,7 @@ export function useWorkbenchApp() {
     handleSetScriptDraftText: setScriptDraftText,
     handleSetScriptEditorMode: setScriptEditorMode,
     handleSetHighlightState: setHighlightState,
+    handleSaveTopicDraft,
     handleSpawnScriptCandidates,
     handleToggleCandidateSelection,
     handleToggleSelectFilteredCandidates,

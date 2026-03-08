@@ -646,6 +646,60 @@ describe('WorkbenchServer', () => {
     expect(body.impact.affectedSceneIndices).toEqual([1]);
   });
 
+  it('saves a topic draft through the current artifact endpoint', async () => {
+    const batch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 1,
+      category: 'conversation',
+    });
+    const pool = batch.candidates[0]!;
+    const topicArtifact = {
+      generatedAt: '2026-03-07T00:00:00.000Z',
+      category: 'conversation' as const,
+      candidates: ['Missed the train'],
+      recommendedTopic: 'Missed the train',
+    };
+
+    await store.saveStageArtifactJson(
+      'english',
+      pool.id,
+      'topic',
+      1,
+      'candidates.json',
+      topicArtifact
+    );
+
+    const [candidate] = await service.materializeTopicBatchCandidates(
+      'english',
+      pool.id,
+      1,
+      topicArtifact
+    );
+
+    const response = await fetch(
+      `${baseUrl}/api/workbench/episodes/english/${candidate.id}/stages/topic/current-artifact`,
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: 'Edited station topic',
+        }),
+      }
+    );
+    const body = (await response.json()) as {
+      episode: { title: string; stageStates: { topic: { reviewStatus: string } } };
+      version: { reviewStatus: string };
+      artifact: { candidates: string[]; recommendedTopic: string };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.version.reviewStatus).toBe('pending_review');
+    expect(body.episode.stageStates.topic.reviewStatus).toBe('pending_review');
+    expect(body.episode.title).toBe('Edited station topic');
+    expect(body.artifact.candidates).toEqual(['Edited station topic']);
+    expect(body.artifact.recommendedTopic).toBe('Edited station topic');
+  });
+
   it('returns the review queue and thread lineage for spawned script candidates', async () => {
     const topicBatch = await service.createTopicCandidateBatch({
       channelId: 'english',

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { App } from './App';
 import type {
@@ -707,6 +707,7 @@ describe('Workbench App', () => {
       ...reviewReadyTopicQueueItem,
       id: 'english/ep-006',
       recordId: 'ep-006',
+      kind: 'topic_candidate',
       title: 'Fresh Topic Pool',
       previewText: 'Missed the train',
     };
@@ -758,8 +759,8 @@ describe('Workbench App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Fresh Topic Pool')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(await screen.findByRole('table', { name: 'Generated Topics' })).toBeInTheDocument();
+    expect((await screen.findAllByRole('button', { name: 'Approve' })).length).toBeGreaterThan(0);
     expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Request Changes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve & Next' })).not.toBeInTheDocument();
@@ -768,10 +769,12 @@ describe('Workbench App', () => {
   it('approves a topic and moves into script lab', async () => {
     window.history.replaceState({}, '', '#english/ep-006/topic');
     let scriptPoolQueued = false;
+    let savedTopic = 'Missed the train';
     const selectedTopicQueueItem: ReviewQueueItem = {
       ...reviewReadyTopicQueueItem,
       id: 'english/ep-006',
       recordId: 'ep-006',
+      kind: 'topic_candidate',
       title: 'Fresh Topic Pool',
       previewText: 'Missed the train',
     };
@@ -803,7 +806,17 @@ describe('Workbench App', () => {
             stages: [topicWorkflow.stages[0]],
           });
         case '/api/workbench/episodes/english/ep-006/stages/topic/current-artifact':
-          return jsonResponse({ artifact: topicArtifact });
+          if (_init?.method === 'PUT') {
+            const body = JSON.parse(String(_init.body ?? '{}')) as { topic: string };
+            savedTopic = body.topic;
+          }
+          return jsonResponse({
+            artifact: {
+              ...topicArtifact,
+              candidates: [savedTopic],
+              recommendedTopic: savedTopic,
+            },
+          });
         case '/api/workbench/episodes/english/ep-006/stages/topic/versions':
           return jsonResponse({ versions: [] });
         case '/api/workbench/episodes/english/ep-006/stages/topic/review-context':
@@ -869,8 +882,32 @@ describe('Workbench App', () => {
 
     render(<App />);
 
-    expect(await screen.findByText('Fresh Topic Pool')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+    expect(await screen.findByRole('table', { name: 'Generated Topics' })).toBeInTheDocument();
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit' }));
+    const input = screen.getByRole('textbox', { name: 'Edit topic ep-006' });
+    await waitFor(() => {
+      expect(input).toHaveFocus();
+    });
+    expect(screen.getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
+    fireEvent.change(input, {
+      target: { value: 'Edited train topic' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/workbench/episodes/english/ep-006/stages/topic/current-artifact',
+        expect.objectContaining({
+          method: 'PUT',
+          body: JSON.stringify({
+            topic: 'Edited train topic',
+          }),
+        })
+      );
+    });
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Approve' }));
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
@@ -880,7 +917,7 @@ describe('Workbench App', () => {
           body: JSON.stringify({
             count: 5,
             usePipeline: true,
-            approvedTopic: 'Missed the train',
+            approvedTopic: 'Edited train topic',
           }),
         })
       );
@@ -913,6 +950,7 @@ describe('Workbench App', () => {
       id: 'english/ep-008',
       recordId: 'ep-008',
       threadId: 'thread-008',
+      kind: 'topic_candidate',
       title: 'Station Topic Pool',
       previewText: 'Late for class',
       updatedAt: '2026-03-08T02:00:00.000Z',
@@ -989,16 +1027,26 @@ describe('Workbench App', () => {
     render(<App />);
 
     expect(await screen.findByText('Fresh Topic Pool')).toBeInTheDocument();
+    expect(screen.queryByRole('textbox', { name: 'Edit topic ep-006' })).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /Station Topic Pool/i }));
 
-    const firstCard = screen.getByText('Fresh Topic Pool').closest('.topic-list-row');
-    const secondCard = screen.getByText('Station Topic Pool').closest('.topic-list-row');
-
     await waitFor(() => {
-      expect(firstCard).not.toHaveClass('active');
-      expect(secondCard).toHaveClass('active');
+      const rows = Array.from(document.querySelectorAll('.topic-list-row'));
+      expect(rows[0]).not.toHaveClass('active');
+      expect(rows[1]).toHaveClass('active');
     });
+    expect(screen.queryByRole('textbox', { name: 'Edit topic ep-008' })).not.toBeInTheDocument();
+
+    const rows = Array.from(document.querySelectorAll('.topic-list-row'));
+    fireEvent.doubleClick(rows[1]!);
+    const secondRow = rows[1] as HTMLElement;
+    const editInput = await screen.findByRole('textbox', { name: 'Edit topic ep-008' });
+    await waitFor(() => {
+      expect(editInput).toHaveFocus();
+    });
+    expect(within(secondRow).getByRole('button', { name: 'Save' })).toBeInTheDocument();
+    expect(within(secondRow).queryByRole('button', { name: 'Approve' })).not.toBeInTheDocument();
 
     resolveSecondReviewContext?.(
       jsonResponse({
@@ -1017,9 +1065,10 @@ describe('Workbench App', () => {
     );
 
     await waitFor(() => {
-      expect(secondCard).toHaveClass('active');
+      const nextRows = Array.from(document.querySelectorAll('.topic-list-row'));
+      expect(nextRows[1]).toHaveClass('active');
     });
-    expect(screen.getAllByText('Station Topic Pool').length).toBeGreaterThan(0);
+    expect(screen.getByRole('textbox', { name: 'Edit topic ep-008' })).toHaveValue('Station Topic Pool');
   });
 
   it('switches the studio channel context and clears records from other channels', async () => {

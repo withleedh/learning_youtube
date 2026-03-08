@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { formatDate, getAutoCategoryForDate, getCategoryLabel, workbenchCategoryOptions } from '../helpers';
 import { useWorkbenchApp } from '../useWorkbenchApp';
 import { useWorkbenchStudio } from '../useWorkbenchStudio';
@@ -19,12 +20,27 @@ function getTopicRowTitle(title?: string, previewText?: string, fallbackId?: str
   return title || previewText || fallbackId || 'Untitled topic';
 }
 
+function getTopicRowSubtitle(primaryText: string, subtitleCandidates: Array<string | undefined>): string {
+  for (const candidate of subtitleCandidates) {
+    const nextValue = candidate?.trim();
+    if (!nextValue || nextValue === primaryText) {
+      continue;
+    }
+
+    return nextValue;
+  }
+
+  return '';
+}
+
 export function TopicInboxPage(props: {
   app: WorkbenchAppState;
   studio: StudioState;
   items: StudioState['reviewQueue'];
 }) {
   const { app, studio, items } = props;
+  const [editingRecordKey, setEditingRecordKey] = useState<string | null>(null);
+  const topicInputRef = useRef<HTMLInputElement | null>(null);
   const selectedChannel = app.selectedChannel;
   const resolvedTopicCategory = app.topicBatchCategory || getAutoCategoryForDate(new Date());
   const generatedTopicKeys = new Set(items.map((item) => `${item.channelId}/${item.recordId}`));
@@ -39,6 +55,65 @@ export function TopicInboxPage(props: {
 
     return isTopicRecord && candidate.currentStage === 'topic' && isGenerating && !generatedTopicKeys.has(candidateKey);
   });
+
+  useEffect(() => {
+    if (!app.selectedRecordKey || editingRecordKey === null) {
+      return;
+    }
+
+    if (app.selectedRecordKey !== editingRecordKey) {
+      setEditingRecordKey(null);
+      app.handleSetTopicApprovalText('');
+    }
+  }, [app, app.selectedRecordKey, editingRecordKey]);
+
+  useEffect(() => {
+    if (editingRecordKey === null || topicInputRef.current === null) {
+      return;
+    }
+
+    const frameId = window.requestAnimationFrame(() => {
+      topicInputRef.current?.focus();
+      topicInputRef.current?.select();
+    });
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [editingRecordKey]);
+
+  async function handleSelectGeneratedTopic(item: StudioState['reviewQueue'][number]): Promise<void> {
+    await studio.selectQueueItem(item);
+    setEditingRecordKey(null);
+    app.handleSetTopicApprovalText('');
+  }
+
+  async function handleStartTopicEdit(
+    item: StudioState['reviewQueue'][number],
+    defaultTopic: string
+  ): Promise<void> {
+    const itemKey = `${item.channelId}/${item.recordId}`;
+    if (app.selectedRecordKey !== itemKey) {
+      await studio.selectQueueItem(item);
+    }
+    setEditingRecordKey(itemKey);
+    app.handleSetTopicApprovalText(defaultTopic);
+  }
+
+  function handleCancelTopicEdit(): void {
+    setEditingRecordKey(null);
+    app.handleSetTopicApprovalText('');
+  }
+
+  async function handleSaveTopicEdit(item: StudioState['reviewQueue'][number]): Promise<void> {
+    const didSucceed = await app.handleSaveTopicDraft(item.channelId, item.recordId);
+    if (!didSucceed) {
+      return;
+    }
+
+    setEditingRecordKey(null);
+    app.handleSetTopicApprovalText('');
+  }
 
   return (
     <>
@@ -116,6 +191,12 @@ export function TopicInboxPage(props: {
                 {generatingItems.map((item) => {
                   const itemKey = `${item.channelId}/${item.id}`;
                   const isSelected = app.selectedRecordKey === itemKey;
+                  const primaryText = getTopicRowTitle(item.title, item.previewText, item.id);
+                  const subtitle = getTopicRowSubtitle(primaryText, [
+                    item.nextAction,
+                    item.previewText,
+                    'Generating topic candidates...',
+                  ]);
                   return (
                     <div
                       key={itemKey}
@@ -130,10 +211,8 @@ export function TopicInboxPage(props: {
                           app.handleSelectStage('topic');
                         }}
                       >
-                        <strong>{getTopicRowTitle(item.title, item.previewText, item.id)}</strong>
-                        <span className="topic-row-subtitle">
-                          {item.nextAction || item.previewText || 'Generating topic candidates...'}
-                        </span>
+                        <strong>{primaryText}</strong>
+                        {subtitle ? <span className="topic-row-subtitle">{subtitle}</span> : null}
                       </button>
                       <span>{getTopicCategoryLabel(item.previewMeta)}</span>
                       <span>{formatDate(item.createdAt)}</span>
@@ -184,45 +263,119 @@ export function TopicInboxPage(props: {
                 {items.map((item) => {
                   const itemKey = `${item.channelId}/${item.recordId}`;
                   const isSelected = app.selectedRecordKey === itemKey;
+                  const isEditing = isSelected && editingRecordKey === itemKey;
+                  const isEditable = item.kind === 'topic_candidate';
+                  const primaryText = getTopicRowTitle(item.title, item.previewText, item.recordId);
+                  const subtitle = getTopicRowSubtitle(primaryText, [item.previewText, item.nextAction]);
                   return (
                     <div
                       key={item.id}
                       className={`topic-list-row ${isSelected ? 'active' : ''}`}
                       role="row"
+                      onDoubleClick={() => {
+                        if (!isEditable || isEditing) {
+                          return;
+                        }
+
+                        void handleStartTopicEdit(item, primaryText);
+                      }}
                     >
-                      <button
-                        type="button"
-                        className="topic-row-title"
-                        onClick={() => {
-                          void studio.selectQueueItem(item);
-                        }}
-                      >
-                        <strong>{getTopicRowTitle(item.title, item.previewText, item.recordId)}</strong>
-                        <span className="topic-row-subtitle">{item.previewText || item.nextAction || ''}</span>
-                      </button>
+                      {isEditing ? (
+                        <div className="topic-row-title topic-row-editor">
+                          <input
+                            ref={topicInputRef}
+                            autoFocus
+                            type="text"
+                            className="topic-row-input"
+                            aria-label={`Edit topic ${item.recordId}`}
+                            placeholder="Enter approved topic"
+                            value={app.topicApprovalText}
+                            onChange={(event) => {
+                              app.handleSetTopicApprovalText(event.target.value);
+                            }}
+                          />
+                          <span className="topic-row-helper">Save to update this topic before approval.</span>
+                          {subtitle ? <span className="topic-row-subtitle">{subtitle}</span> : null}
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          className="topic-row-title"
+                          onClick={() => {
+                            void handleSelectGeneratedTopic(item);
+                          }}
+                        >
+                          <strong>{primaryText}</strong>
+                          {subtitle ? <span className="topic-row-subtitle">{subtitle}</span> : null}
+                        </button>
+                      )}
                       <span>{getTopicCategoryLabel(item.previewMeta)}</span>
                       <span>{formatDate(item.createdAt)}</span>
                       <span>
                         <span className={`status-badge status-${item.reviewStatus}`}>{item.reviewStatus}</span>
                       </span>
-                      <button
-                        type="button"
-                        className="primary-button topic-row-action"
-                        disabled={app.isBusy || studio.isStudioBusy || item.reviewStatus !== 'pending_review'}
-                        onClick={() => {
-                          void (async () => {
-                            const didApprove = await app.handleApproveTopicCandidate(
-                              item.channelId,
-                              item.recordId
-                            );
-                            if (didApprove) {
-                              studio.setWorkspace('script_lab');
-                            }
-                          })();
-                        }}
-                      >
-                        Approve
-                      </button>
+                      <div className="topic-row-actions">
+                        {isEditing ? (
+                          <>
+                            <button
+                              type="button"
+                              className="secondary-button topic-row-secondary-action"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleCancelTopicEdit();
+                              }}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button topic-row-action"
+                              disabled={app.isBusy || studio.isStudioBusy || !app.topicApprovalText.trim()}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleSaveTopicEdit(item);
+                              }}
+                            >
+                              Save
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              className="secondary-button topic-row-secondary-action"
+                              disabled={app.isBusy || studio.isStudioBusy || !isEditable}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void handleStartTopicEdit(item, primaryText);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button topic-row-action"
+                              disabled={app.isBusy || studio.isStudioBusy || item.reviewStatus !== 'pending_review'}
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                void (async () => {
+                                  const didApprove = await app.handleApproveTopicCandidate(
+                                    item.channelId,
+                                    item.recordId
+                                  );
+                                  if (didApprove) {
+                                    setEditingRecordKey(null);
+                                    app.handleSetTopicApprovalText('');
+                                    studio.setWorkspace('script_lab');
+                                  }
+                                })();
+                              }}
+                            >
+                              Approve
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </div>
                   );
                 })}

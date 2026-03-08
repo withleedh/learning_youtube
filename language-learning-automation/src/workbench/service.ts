@@ -138,6 +138,18 @@ export interface SaveScriptDraftResult {
   impact: ScriptImpactSummary;
 }
 
+export interface SaveTopicDraftInput {
+  channelId: string;
+  episodeId: string;
+  topic: string;
+}
+
+export interface SaveTopicDraftResult {
+  episode: EpisodeRecord;
+  version: StageVersion;
+  artifact: TopicCandidatesArtifact;
+}
+
 export interface StageWorkflowSummary {
   stage: EpisodeStage;
   currentVersion: number;
@@ -1424,6 +1436,90 @@ export class WorkbenchService {
       version: targetVersion,
       artifact: nextScript,
       impact,
+    };
+  }
+
+  public async saveTopicDraft(input: SaveTopicDraftInput): Promise<SaveTopicDraftResult> {
+    const nextTopic = input.topic.trim();
+    if (!nextTopic) {
+      throw new Error('Topic draft must not be empty.');
+    }
+
+    let episode = await this.store.getEpisode(input.channelId, input.episodeId);
+    assertTopicReviewSourceRecord(episode, input.episodeId);
+
+    let targetVersion: StageVersion;
+    let previousArtifact: TopicCandidatesArtifact;
+
+    if (episode.stageStates.topic.currentVersion <= 0) {
+      throw new Error(`No generated topic version found for episode ${input.episodeId}`);
+    }
+
+    if (episode.stageStates.topic.currentVersion === episode.stageStates.topic.approvedVersion) {
+      const forked = await this.forkCurrentStageVersion({
+        channelId: input.channelId,
+        episodeId: input.episodeId,
+        stage: 'topic',
+        reviewStatus: 'draft',
+        notes: 'Forked for manual topic edits',
+      });
+      targetVersion = forked.version;
+      previousArtifact = topicCandidatesArtifactSchema.parse(forked.sourceArtifact);
+      episode = await this.store.getEpisode(input.channelId, input.episodeId);
+    } else {
+      targetVersion = await this.store.getStageVersion(
+        input.channelId,
+        input.episodeId,
+        'topic',
+        episode.stageStates.topic.currentVersion
+      );
+      previousArtifact = topicCandidatesArtifactSchema.parse(
+        await this.getStageVersionArtifact(
+          input.channelId,
+          input.episodeId,
+          'topic',
+          targetVersion.version
+        )
+      );
+    }
+
+    if (previousArtifact.candidates.length !== 1) {
+      throw new Error('Manual topic edits are only supported for individual topic candidates.');
+    }
+
+    const nextArtifact: TopicCandidatesArtifact = {
+      ...previousArtifact,
+      candidates: [nextTopic],
+      recommendedTopic: nextTopic,
+    };
+    const timestamp = nowIso();
+
+    targetVersion.reviewStatus = 'pending_review';
+    targetVersion.updatedAt = timestamp;
+    episode.stageStates.topic.reviewStatus = 'pending_review';
+    episode.stageStates.topic.staleReasons = [];
+    episode.currentStage = 'topic';
+    episode.workflowStatus = 'awaiting_review';
+    episode.updatedAt = timestamp;
+    episode.lastHumanActionAt = timestamp;
+    episode.title = nextTopic;
+    episode.titleSource = 'topic_auto';
+
+    await this.store.saveStageArtifactJson(
+      input.channelId,
+      input.episodeId,
+      'topic',
+      targetVersion.version,
+      'candidates.json',
+      nextArtifact
+    );
+    await this.store.saveStageVersion(input.channelId, input.episodeId, targetVersion);
+    await this.store.saveEpisode(episode);
+
+    return {
+      episode,
+      version: targetVersion,
+      artifact: nextArtifact,
     };
   }
 
