@@ -10,6 +10,7 @@ const workspaceLabels: Record<ReviewWorkspace, string> = {
 
 export function ReviewQueuePane(props: {
   title: string;
+  channelLabel?: string;
   items: ReviewQueueItem[];
   selectedId: string | null;
   currentWorkspace: ReviewWorkspace;
@@ -17,7 +18,16 @@ export function ReviewQueuePane(props: {
   loadError?: string;
   onSelect(item: ReviewQueueItem): void | Promise<void>;
 }) {
-  const { title, items, selectedId, currentWorkspace, workspaceCounts, loadError, onSelect } = props;
+  const {
+    title,
+    channelLabel,
+    items,
+    selectedId,
+    currentWorkspace,
+    workspaceCounts,
+    loadError,
+    onSelect,
+  } = props;
   const totalCount = Object.values(workspaceCounts).reduce((sum, count) => sum + count, 0);
   const otherWorkspaceSummaries = Object.entries(workspaceCounts)
     .filter(([workspace, count]) => workspace !== currentWorkspace && count > 0)
@@ -42,7 +52,9 @@ export function ReviewQueuePane(props: {
       <div className="queue-list">
         {items.length === 0 ? (
           <div className="empty-state">
-            {totalCount === 0 ? 'No review tasks in this workspace.' : `No review tasks in ${title} right now.`}
+            {totalCount === 0
+              ? `No review tasks for ${channelLabel || 'this channel'} yet.`
+              : `No review tasks in ${title} for ${channelLabel || 'this channel'} right now.`}
             {otherWorkspaceSummaries.length > 0 ? (
               <p className="queue-meta">Other queues: {otherWorkspaceSummaries.join(' · ')}</p>
             ) : null}
@@ -59,12 +71,14 @@ export function ReviewQueuePane(props: {
             >
               <div className="queue-card-head">
                 <span className={`status-badge status-${item.reviewStatus}`}>{item.reviewStatus}</span>
-                <span className="queue-meta">{formatDate(item.updatedAt)}</span>
               </div>
               <strong>{item.title}</strong>
               <p className="queue-body-copy">{item.previewText || item.previewMeta || item.nextAction}</p>
               <p className="queue-meta">
-                {item.channelId} · {item.stage} · {item.lineageLabel}
+                Created {formatDate(item.createdAt)} · Updated {formatDate(item.updatedAt)}
+              </p>
+              <p className="queue-meta">
+                {channelLabel ? `${item.stage} · ${item.lineageLabel}` : `${item.channelId} · ${item.stage} · ${item.lineageLabel}`}
               </p>
               <div className="queue-pill-row">
                 <span className="queue-pill">open {item.issueCounts.open}</span>

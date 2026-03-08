@@ -7,12 +7,14 @@ import { TopicCandidateReview } from './TopicCandidateReview';
 import {
   canRegenerateCurrentVersion,
   formatDate,
+  getCategoryLabel,
   isImageManifest,
   isScriptArtifact,
   isScriptPoolArtifact,
   isTopicCandidatesArtifact,
   isTtsManifest,
   stageLabels,
+  workbenchCategoryOptions,
 } from '../helpers';
 import type {
   EpisodeStage,
@@ -25,12 +27,6 @@ import type {
 } from '../types';
 
 type DragPosition = 'before' | 'after' | null;
-const categoryOptions = [
-  { value: '', label: 'Auto category' },
-  { value: 'conversation', label: 'Conversation' },
-  { value: 'news', label: 'News' },
-  { value: 'travel_business', label: 'Travel & Business' },
-] as const;
 
 export function InspectorPanel(props: {
   workflow: EpisodeWorkflow | null;
@@ -300,13 +296,23 @@ export function InspectorPanel(props: {
                           onScriptBatchCategoryChange(event.target.value);
                         }}
                       >
-                        {categoryOptions.map((option) => (
+                        <option value="">Use approved topic category</option>
+                        {workbenchCategoryOptions.map((option) => (
                           <option key={option.value || 'auto'} value={option.value}>
                             {option.label}
                           </option>
                         ))}
                       </select>
                     </label>
+                    {!scriptBatchCategory ? (
+                      <p className="panel-note">
+                        Current topic category will be used automatically.
+                      </p>
+                    ) : (
+                      <p className="panel-note">
+                        Override active: {getCategoryLabel(scriptBatchCategory)}.
+                      </p>
+                    )}
                     <label className="checkbox-field">
                       <input
                         type="checkbox"

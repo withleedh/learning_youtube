@@ -172,6 +172,7 @@ export async function createWorkbenchServer(
           uiRoute.source === 'source'
             ? await readWorkbenchUiFile(workbenchUiSourceDir, uiRoute.file)
             : await readWorkbenchUiFile(workbenchUiBuildDir, uiRoute.file);
+        res.setHeader('Cache-Control', 'no-store');
         sendText(res, 200, content, uiRoute.contentType);
         return;
       }
@@ -205,7 +206,8 @@ export async function createWorkbenchServer(
       }
 
       if (req.method === 'GET' && pathname === '/api/workbench/review-queue') {
-        const items = await service.listReviewQueue();
+        const channelId = url.searchParams.get('channelId') ?? undefined;
+        const items = await service.listReviewQueue(channelId);
         sendJson(res, 200, { items } as unknown as JsonValue);
         return;
       }
@@ -223,13 +225,15 @@ export async function createWorkbenchServer(
       }
 
       if (req.method === 'GET' && pathname === '/api/workbench/episodes') {
-        const episodes = await service.listEpisodes();
+        const channelId = url.searchParams.get('channelId') ?? undefined;
+        const episodes = await service.listEpisodes(channelId);
         sendJson(res, 200, { episodes });
         return;
       }
 
       if (req.method === 'GET' && pathname === '/api/workbench/candidates') {
-        const candidates = await service.listCandidates();
+        const channelId = url.searchParams.get('channelId') ?? undefined;
+        const candidates = await service.listCandidates(channelId);
         sendJson(res, 200, { candidates });
         return;
       }
@@ -328,6 +332,16 @@ export async function createWorkbenchServer(
         return;
       }
 
+      const archiveEpisodeMatch = pathname.match(
+        /^\/api\/workbench\/episodes\/([^/]+)\/([^/]+)\/archive$/
+      );
+      if (req.method === 'POST' && archiveEpisodeMatch) {
+        const [, channelId, episodeId] = archiveEpisodeMatch;
+        const episode = await service.archiveRecord(channelId, episodeId);
+        sendJson(res, 200, { episode });
+        return;
+      }
+
       const stageVersionMatch = pathname.match(
         /^\/api\/workbench\/episodes\/([^/]+)\/([^/]+)\/stages\/([^/]+)\/versions$/
       );
@@ -362,7 +376,12 @@ export async function createWorkbenchServer(
         const [, channelId, episodeId, rawStage, rawVersion] = stageVersionArtifactMatch;
         const stage = episodeStageSchema.parse(rawStage);
         const version = Number.parseInt(rawVersion, 10);
-        const artifact = await service.getStageVersionArtifact(channelId, episodeId, stage, version);
+        const artifact = await service.tryGetStageVersionArtifact(
+          channelId,
+          episodeId,
+          stage,
+          version
+        );
         sendJson(res, 200, { stage, version, artifact } as unknown as JsonValue);
         return;
       }
@@ -406,7 +425,7 @@ export async function createWorkbenchServer(
       if (req.method === 'GET' && currentArtifactMatch) {
         const [, channelId, episodeId, rawStage] = currentArtifactMatch;
         const stage = episodeStageSchema.parse(rawStage);
-        const artifact = await service.getCurrentStageArtifact(channelId, episodeId, stage);
+        const artifact = await service.tryGetCurrentStageArtifact(channelId, episodeId, stage);
         sendJson(res, 200, { stage, artifact } as unknown as JsonValue);
         return;
       }

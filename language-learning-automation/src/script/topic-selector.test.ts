@@ -44,16 +44,19 @@ describe('Topic Selector', () => {
     generateContentMock.mockReset();
   });
 
-  it('builds topic pools from raw candidate batches and ranks the final pool once', async () => {
+  it('builds topic pools by repeating the cli-style topic selection path', async () => {
     generateContentMock
-      .mockResolvedValueOnce(createModelResponse('Topic A1\nTopic A2'))
+      .mockResolvedValueOnce(createModelResponse('Topic A1\nTopic A2\nTopic A3'))
+      .mockResolvedValueOnce(createModelResponse('Topic A2'))
+      .mockResolvedValueOnce(createModelResponse('Topic B1\nTopic B2\nTopic B3'))
+      .mockResolvedValueOnce(createModelResponse('Topic B1'))
       .mockResolvedValueOnce(createModelResponse('Topic A2'));
 
     const bundle = await generateTopicWorkbenchBundle('conversation', 'English', 'Korean', 2);
 
     expect(bundle.category).toBe('conversation');
-    expect(bundle.candidates).toEqual(['Topic A1', 'Topic A2']);
+    expect(bundle.candidates).toEqual(['Topic A2', 'Topic B1']);
     expect(bundle.recommendedTopic).toBe('Topic A2');
-    expect(generateContentMock).toHaveBeenCalledTimes(2);
+    expect(generateContentMock).toHaveBeenCalledTimes(5);
   });
 });

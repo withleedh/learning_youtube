@@ -1,14 +1,5 @@
 import type { EpisodeStage } from '../types';
-
-const CATEGORY_OPTIONS = [
-  { value: 'story', label: '영어 이야기' },
-  { value: 'conversation', label: '영어 회화' },
-  { value: 'news', label: '영어 뉴스' },
-  { value: 'announcement', label: '광고 & 안내' },
-  { value: 'travel_business', label: '여행 & 비즈니스 영어' },
-  { value: 'lesson', label: '영어 수업' },
-  { value: 'fairytale', label: '영어 동화' },
-] as const;
+import { workbenchCategoryOptions } from '../helpers';
 
 type PayloadObject = Record<string, unknown>;
 
@@ -48,7 +39,7 @@ export function GenerationPayloadForm(props: {
               }}
             >
               <option value="">Auto by day</option>
-              {CATEGORY_OPTIONS.map((option) => (
+              {workbenchCategoryOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
@@ -108,7 +99,7 @@ export function GenerationPayloadForm(props: {
               }}
             >
               <option value="">Use approved topic category</option>
-              {CATEGORY_OPTIONS.map((option) => (
+              {workbenchCategoryOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>

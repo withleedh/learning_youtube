@@ -7,12 +7,12 @@ export function DecisionPanel(props: {
   isBusy: boolean;
   commentText: string;
   renderTimestampMs: string;
+  showApproveDiscardActions?: boolean;
   onCommentTextChange(value: string): void;
   onRenderTimestampMsChange(value: string): void;
   onGenerate(): void;
   onApprove(): void;
-  onRequestChanges(): void;
-  onApproveAndNext(): void;
+  onDiscard(): void;
   onAddComment(): void;
   extraActions?: ReactNode;
 }) {
@@ -22,12 +22,12 @@ export function DecisionPanel(props: {
     isBusy,
     commentText,
     renderTimestampMs,
+    showApproveDiscardActions = true,
     onCommentTextChange,
     onRenderTimestampMsChange,
     onGenerate,
     onApprove,
-    onRequestChanges,
-    onApproveAndNext,
+    onDiscard,
     onAddComment,
     extraActions,
   } = props;
@@ -77,25 +77,26 @@ export function DecisionPanel(props: {
               >
                 Regenerate Selected
               </button>
-              <button
-                type="button"
-                className="primary-button"
-                onClick={onApprove}
-                disabled={isBusy || !context.stageSummary.canApprove}
-              >
-                Approve
-              </button>
-              <button
-                type="button"
-                className="danger-button"
-                onClick={onRequestChanges}
-                disabled={isBusy || !context.stageSummary.canRequestChanges}
-              >
-                Request Changes
-              </button>
-              <button type="button" className="ghost-button" onClick={onApproveAndNext} disabled={isBusy}>
-                Approve & Next
-              </button>
+              {showApproveDiscardActions ? (
+                <>
+                  <button
+                    type="button"
+                    className="danger-button"
+                    onClick={onDiscard}
+                    disabled={isBusy}
+                  >
+                    Discard
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button"
+                    onClick={onApprove}
+                    disabled={isBusy || !context.stageSummary.canApprove}
+                  >
+                    Approve
+                  </button>
+                </>
+              ) : null}
             </div>
             {extraActions}
           </section>

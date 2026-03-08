@@ -52,6 +52,74 @@ export interface ScriptPoolGenerationResult {
   recommendedIndex: number;
 }
 
+async function resolveScriptGenerationTopic(
+  config: ChannelConfig,
+  category?: Category,
+  topic?: string
+): Promise<{ scriptCategory: Category; selectedTopic: string }> {
+  const scriptCategory = category || getCategoryForDay(new Date());
+  let selectedTopic = topic;
+
+  if (!selectedTopic) {
+    console.log('🤖 AI가 시의성 있는 주제를 선정 중...');
+    selectedTopic = await selectTimlyTopic(
+      scriptCategory,
+      config.meta.targetLanguage,
+      config.meta.nativeLanguage,
+      3
+    );
+    console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
+  }
+
+  return { scriptCategory, selectedTopic };
+}
+
+export async function generateCliStyleScript(
+  config: ChannelConfig,
+  category?: Category,
+  topic?: string
+): Promise<Script> {
+  return generateScript(config, category, topic, {
+    usePipeline: true,
+    candidateCount: 1,
+    pipelineConfig: { candidateCount: 1 },
+  });
+}
+
+export async function generateCliStyleScriptPool(
+  config: ChannelConfig,
+  category: Category | undefined,
+  topic: string | undefined,
+  count: number
+): Promise<ScriptPoolGenerationResult> {
+  const { scriptCategory, selectedTopic } = await resolveScriptGenerationTopic(config, category, topic);
+  const candidates: Script[] = [];
+  const targetCount = Math.max(1, count);
+
+  for (let index = 0; index < targetCount; index++) {
+    candidates.push(await generateCliStyleScript(config, scriptCategory, selectedTopic));
+  }
+
+  if (candidates.length === 1) {
+    return {
+      candidates,
+      recommendedIndex: 0,
+    };
+  }
+
+  const genAI = getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+  const bestScript = await selectBestScript(model, candidates, config.meta.nativeLanguage);
+  const recommendedIndex = candidates.findIndex(
+    (candidate) => JSON.stringify(candidate) === JSON.stringify(bestScript)
+  );
+
+  return {
+    candidates,
+    recommendedIndex: recommendedIndex >= 0 ? recommendedIndex : 0,
+  };
+}
+
 /**
  * Generate a script using Gemini API with candidate selection.
  *
@@ -97,21 +165,7 @@ export async function generateScript(
 
   const { usePipeline = false, candidateCount = 3, pipelineConfig } = options;
 
-  // Use provided category or get from current day
-  const scriptCategory = category || getCategoryForDay(new Date());
-
-  // If no topic provided, let AI select a timely topic
-  let selectedTopic = topic;
-  if (!selectedTopic) {
-    console.log('🤖 AI가 시의성 있는 주제를 선정 중...');
-    selectedTopic = await selectTimlyTopic(
-      scriptCategory,
-      config.meta.targetLanguage,
-      config.meta.nativeLanguage,
-      3 // Generate 3 topic candidates
-    );
-    console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
-  }
+  const { scriptCategory, selectedTopic } = await resolveScriptGenerationTopic(config, category, topic);
 
   // Debug: Show what we're generating
   console.log(
@@ -150,19 +204,11 @@ export async function generateScriptPool(
   options: GenerateScriptPoolOptions
 ): Promise<ScriptPoolGenerationResult> {
   const { count, usePipeline = true, pipelineConfig } = options;
-  const scriptCategory = category || getCategoryForDay(new Date());
-  let selectedTopic = topic;
-
-  if (!selectedTopic) {
-    console.log('🤖 AI가 시의성 있는 주제를 선정 중...');
-    selectedTopic = await selectTimlyTopic(
-      scriptCategory,
-      config.meta.targetLanguage,
-      config.meta.nativeLanguage,
-      3
-    );
-    console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
+  if (usePipeline && (pipelineConfig?.candidateCount ?? 1) === 1) {
+    return generateCliStyleScriptPool(config, category, topic, count);
   }
+
+  const { scriptCategory, selectedTopic } = await resolveScriptGenerationTopic(config, category, topic);
 
   const candidates: Script[] = [];
   const targetCount = Math.max(1, count);

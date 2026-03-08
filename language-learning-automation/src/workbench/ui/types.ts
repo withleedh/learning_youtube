@@ -313,6 +313,7 @@ export interface ReviewQueueItem {
   stage: EpisodeStage;
   workflowStatus: string;
   reviewStatus: string;
+  createdAt: string;
   updatedAt: string;
   nextAction: string;
   issueCounts: {

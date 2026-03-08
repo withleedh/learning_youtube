@@ -13,7 +13,7 @@ export function CandidateListPanel(props: {
   searchQuery: string;
   channelFilter: string;
   stageFilter: 'all' | 'topic' | 'script';
-  reviewFilter: 'all' | 'draft' | 'pending_review' | 'approved' | 'changes_requested' | 'completed';
+  reviewFilter: 'all' | 'draft' | 'pending_review' | 'approved' | 'completed';
   sortMode: 'review_ready' | 'updated_desc' | 'title_asc' | 'stage';
   isBusy: boolean;
   areAllFilteredCandidatesSelected: boolean;
@@ -22,14 +22,13 @@ export function CandidateListPanel(props: {
   onChannelFilterChange(value: string): void;
   onStageFilterChange(value: 'all' | 'topic' | 'script'): void;
   onReviewFilterChange(
-    value: 'all' | 'draft' | 'pending_review' | 'approved' | 'changes_requested' | 'completed'
+    value: 'all' | 'draft' | 'pending_review' | 'approved' | 'completed'
   ): void;
   onSortModeChange(value: 'review_ready' | 'updated_desc' | 'title_asc' | 'stage'): void;
   onSelectRecord(channelId: string, episodeId: string): void;
   onToggleCandidateSelection(channelId: string, episodeId: string): void;
   onToggleSelectFilteredCandidates(): void;
   onBulkApprove(): void;
-  onBulkRequestChanges(): void;
 }) {
   const {
     candidates,
@@ -53,7 +52,6 @@ export function CandidateListPanel(props: {
     onToggleCandidateSelection,
     onToggleSelectFilteredCandidates,
     onBulkApprove,
-    onBulkRequestChanges,
   } = props;
 
   return (
@@ -114,14 +112,12 @@ export function CandidateListPanel(props: {
                   | 'draft'
                   | 'pending_review'
                   | 'approved'
-                  | 'changes_requested'
                   | 'completed'
               );
             }}
           >
             <option value="all">All states</option>
             <option value="pending_review">Pending Review</option>
-            <option value="changes_requested">Changes Requested</option>
             <option value="approved">Approved</option>
             <option value="draft">Draft</option>
             <option value="completed">Completed</option>
@@ -166,14 +162,6 @@ export function CandidateListPanel(props: {
             onClick={onBulkApprove}
           >
             Bulk Approve
-          </button>
-          <button
-            type="button"
-            className="danger-button"
-            disabled={selectedCandidateKeys.length === 0 || isBusy}
-            onClick={onBulkRequestChanges}
-          >
-            Bulk Request Changes
           </button>
         </div>
       </div>

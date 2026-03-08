@@ -33,7 +33,6 @@ const HISTORY_FILE = path.join(process.cwd(), 'output', 'topic-history.json');
 const PATTERN_HISTORY_FILE = path.join(process.cwd(), 'output', 'pattern-history.json');
 const GEMINI_REQUEST_TIMEOUT_MS = 60_000;
 const GEMINI_REQUEST_MAX_RETRIES = 2;
-const WORKBENCH_TOPIC_POOL_BATCH_SIZE = 20;
 
 /**
  * Load topic history to avoid duplicates
@@ -123,14 +122,6 @@ async function recordTopicSelection(
   await savePatternToHistory(patternId, topic);
 }
 
-function appendRecentTopics(context: TopicSelectionContext, topics: string[]): void {
-  if (topics.length === 0) {
-    return;
-  }
-
-  context.recentTopics = [...context.recentTopics, ...topics].slice(-30);
-}
-
 function formatErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
@@ -193,7 +184,39 @@ async function selectTimelyTopicCandidate(
   candidateCount: number,
   context: TopicSelectionContext,
   persistSelection: boolean
-): Promise<{ topic: string; patternId: string }> {
+): Promise<{ topic: string; patternId: string; candidates: string[] }> {
+  const batch = await generateSharedTopicCandidateBatch(
+    model,
+    category,
+    targetLanguage,
+    nativeLanguage,
+    candidateCount,
+    context
+  );
+  const candidates = batch.candidates;
+  console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
+
+  console.log(`   🤖 최적 주제 선정 중...`);
+  const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
+  const patternId = inferPatternFromTopic(bestTopic) || batch.patternId;
+
+  rememberTopicSelection(context, bestTopic, patternId);
+
+  if (persistSelection) {
+    await recordTopicSelection(bestTopic, category, patternId);
+  }
+
+  return { topic: bestTopic, patternId, candidates };
+}
+
+async function generateSharedTopicCandidateBatch(
+  model: GeminiModel,
+  category: Category,
+  targetLanguage: string,
+  nativeLanguage: string,
+  candidateCount: number,
+  context: TopicSelectionContext
+): Promise<{ candidates: string[]; patternId: string }> {
   const patternSelection = selectPatternByWeight(category, context.recentPatternIds);
   console.log(
     `   🎯 선택된 패턴: ${patternSelection.pattern.id} (평균 ${patternSelection.pattern.avgViews.toLocaleString()} 조회수)`
@@ -219,19 +242,11 @@ async function selectTimelyTopicCandidate(
     patternSelection,
     combination
   );
-  console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
 
-  console.log(`   🤖 최적 주제 선정 중...`);
-  const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
-  const patternId = inferPatternFromTopic(bestTopic) || patternSelection.pattern.id;
-
-  rememberTopicSelection(context, bestTopic, patternId);
-
-  if (persistSelection) {
-    await recordTopicSelection(bestTopic, category, patternId);
-  }
-
-  return { topic: bestTopic, patternId };
+  return {
+    candidates,
+    patternId: patternSelection.pattern.id,
+  };
 }
 
 /**
@@ -244,6 +259,22 @@ export async function selectTimlyTopic(
   nativeLanguage: string = 'Korean',
   candidateCount: number = 3
 ): Promise<string> {
+  const selection = await generateCliStyleTopicSelection(
+    category,
+    targetLanguage,
+    nativeLanguage,
+    candidateCount
+  );
+
+  return selection.recommendedTopic;
+}
+
+export async function generateCliStyleTopicSelection(
+  category: Category,
+  targetLanguage: string = 'English',
+  nativeLanguage: string = 'Korean',
+  candidateCount: number = 3
+): Promise<{ category: Category; candidates: string[]; recommendedTopic: string; patternId: string }> {
   const apiKey = getGeminiApiKey();
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
@@ -258,7 +289,12 @@ export async function selectTimlyTopic(
     true
   );
 
-  return selection.topic;
+  return {
+    category,
+    candidates: selection.candidates,
+    recommendedTopic: selection.topic,
+    patternId: selection.patternId,
+  };
 }
 
 export interface TopicWorkbenchBundle {
@@ -295,53 +331,29 @@ export async function generateTopicWorkbenchBundle(
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
   const context = await loadTopicSelectionContext();
   const poolSize = Math.max(1, candidateCount);
-  const batchSize = Math.min(poolSize, WORKBENCH_TOPIC_POOL_BATCH_SIZE);
-  const totalBatches = Math.ceil(poolSize / batchSize);
-  const maxAttempts = Math.max(totalBatches * 3, 3);
   const candidates: string[] = [];
-  let attemptCount = 0;
-  let batchNumber = 0;
+  const totalBatches = poolSize;
 
-  while (candidates.length < poolSize && attemptCount < maxAttempts) {
-    attemptCount += 1;
-    batchNumber += 1;
-    const remaining = poolSize - candidates.length;
-    const requestCount = Math.min(batchSize, remaining);
-    const patternSelection = selectPatternByWeight(category, context.recentPatternIds);
-    const combination =
-      category === 'fairytale' ? generateTopicCombination(category, context.recentTopics) : null;
-    const acceptedCandidates = (
-      await generateTopicCandidatesWithPattern(
-        model,
-        category,
-        targetLanguage,
-        nativeLanguage,
-        context.recentTopics,
-        requestCount,
-        patternSelection,
-        combination
-      )
-    ).slice(0, requestCount);
-
-    if (acceptedCandidates.length === 0) {
-      continue;
-    }
-
-    candidates.push(...acceptedCandidates);
-    appendRecentTopics(context, acceptedCandidates);
+  for (let index = 0; index < poolSize; index++) {
+    const selection = await selectTimelyTopicCandidate(
+      model,
+      category,
+      targetLanguage,
+      nativeLanguage,
+      3,
+      context,
+      false
+    );
+    candidates.push(selection.topic);
 
     await options.onProgress?.({
       requestedCount: poolSize,
       generatedCount: candidates.length,
-      batchNumber: Math.min(batchNumber, totalBatches),
+      batchNumber: index + 1,
       totalBatches,
-      lastBatchCandidates: acceptedCandidates,
+      lastBatchCandidates: [selection.topic],
       phase: 'generating',
     });
-  }
-
-  if (candidates.length < poolSize) {
-    throw new Error(`Only generated ${candidates.length}/${poolSize} topic candidates`);
   }
 
   await options.onProgress?.({

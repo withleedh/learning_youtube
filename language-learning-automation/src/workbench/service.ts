@@ -67,7 +67,7 @@ export interface BulkCandidateReviewInput {
     channelId: string;
     candidateId: string;
   }>;
-  reviewStatus: Extract<ReviewStatus, 'approved' | 'changes_requested'>;
+  reviewStatus: Extract<ReviewStatus, 'approved' | 'pending_review' | 'changes_requested'>;
 }
 
 export interface BulkCandidateReviewResult {
@@ -227,6 +227,7 @@ export interface ReviewQueueItem {
   stage: EpisodeStage;
   workflowStatus: EpisodeRecord['workflowStatus'];
   reviewStatus: ReviewStatus;
+  createdAt: string;
   updatedAt: string;
   nextAction: string;
   issueCounts: NonNullable<WorkbenchRecordSummary['issueCounts']>;
@@ -301,26 +302,32 @@ export class WorkbenchService {
     return this.store.getDataRoot();
   }
 
-  public async listEpisodes(): Promise<WorkbenchRecordSummary[]> {
+  public async listEpisodes(channelId?: string): Promise<WorkbenchRecordSummary[]> {
     await this.store.ensureBaseDirs();
     const records = (await this.store.listEpisodes()).filter(
-      (record) => getRecordKind(record) === 'episode'
+      (record) =>
+        getRecordKind(record) === 'episode' &&
+        record.workflowStatus !== 'archived' &&
+        (!channelId || record.channelId === channelId)
     );
     return Promise.all(records.map((record) => this.toRecordSummary(record)));
   }
 
-  public async listCandidates(): Promise<WorkbenchRecordSummary[]> {
+  public async listCandidates(channelId?: string): Promise<WorkbenchRecordSummary[]> {
     await this.store.ensureBaseDirs();
     const records = (await this.store.listEpisodes()).filter(
-      (record) => getRecordKind(record) !== 'episode' && record.workflowStatus !== 'archived'
+      (record) =>
+        getRecordKind(record) !== 'episode' &&
+        record.workflowStatus !== 'archived' &&
+        (!channelId || record.channelId === channelId)
     );
     return Promise.all(records.map((record) => this.toRecordSummary(record)));
   }
 
-  public async listReviewQueue(): Promise<ReviewQueueItem[]> {
+  public async listReviewQueue(channelId?: string): Promise<ReviewQueueItem[]> {
     await this.store.ensureBaseDirs();
     const records = (await this.store.listEpisodes()).filter(
-      (record) => record.workflowStatus !== 'archived'
+      (record) => record.workflowStatus !== 'archived' && (!channelId || record.channelId === channelId)
     );
     const summaries = await Promise.all(records.map((record) => this.toRecordSummary(record)));
 
@@ -338,6 +345,7 @@ export class WorkbenchService {
         stage: summary.currentStage,
         workflowStatus: summary.workflowStatus,
         reviewStatus: summary.stageStates[summary.currentStage].reviewStatus,
+        createdAt: summary.createdAt,
         updatedAt: summary.updatedAt,
         nextAction: summary.nextAction ?? getNextActionLabel(summary),
         issueCounts: summary.issueCounts ?? { open: 0, stale: 0, comments: 0 },
@@ -426,7 +434,7 @@ export class WorkbenchService {
         const downstreamState = episode.stageStates[downstreamStage];
         return {
           stage: downstreamStage,
-          reviewStatus: downstreamState.reviewStatus,
+          reviewStatus: normalizeReviewStatus(downstreamState.reviewStatus),
           staleReasons: downstreamState.staleReasons ?? [],
           currentVersion: downstreamState.currentVersion,
           approvedVersion: downstreamState.approvedVersion,
@@ -467,6 +475,20 @@ export class WorkbenchService {
 
   public async createEpisode(input: CreateEpisodeInput): Promise<EpisodeRecord> {
     return this.createRecord('episode', input);
+  }
+
+  public async archiveRecord(channelId: string, episodeId: string): Promise<EpisodeRecord> {
+    const record = await this.store.getEpisode(channelId, episodeId);
+    if (record.workflowStatus === 'archived') {
+      return record;
+    }
+
+    const timestamp = nowIso();
+    record.workflowStatus = 'archived';
+    record.updatedAt = timestamp;
+    record.lastHumanActionAt = timestamp;
+    await this.store.saveEpisode(record);
+    return record;
   }
 
   public async createTopicCandidateBatch(
@@ -812,34 +834,38 @@ export class WorkbenchService {
   }
 
   private async toRecordSummary(record: EpisodeRecord): Promise<WorkbenchRecordSummary> {
-    const summary: WorkbenchRecordSummary = { ...record, kind: getRecordKind(record) };
-    const stage = record.currentStage;
-    const version = record.stageStates[stage].currentVersion;
+    const normalizedRecord = normalizeRecordReviewStatuses(record);
+    const summary: WorkbenchRecordSummary = {
+      ...normalizedRecord,
+      kind: getRecordKind(normalizedRecord),
+    };
+    const stage = normalizedRecord.currentStage;
+    const version = normalizedRecord.stageStates[stage].currentVersion;
     const comments = await this.store.listComments(record.channelId, record.id);
 
-    summary.nextAction = getNextActionLabel(record);
+    summary.nextAction = getNextActionLabel(normalizedRecord);
     summary.issueCounts = {
       open: comments.filter((comment) => comment.status === 'open').length,
-      stale: getVisibleStagesForRecord(record).filter(
-        (candidateStage) => record.stageStates[candidateStage].reviewStatus === 'stale'
+      stale: getVisibleStagesForRecord(normalizedRecord).filter(
+        (candidateStage) => normalizedRecord.stageStates[candidateStage].reviewStatus === 'stale'
       ).length,
       comments: comments.length,
     };
     summary.reviewTaskCounts = {
-      reviewable: getVisibleStagesForRecord(record).filter((candidateStage) => {
-        const state = record.stageStates[candidateStage];
+      reviewable: getVisibleStagesForRecord(normalizedRecord).filter((candidateStage) => {
+        const state = normalizedRecord.stageStates[candidateStage];
         return state.currentVersion > 0 && state.reviewStatus === 'pending_review';
       }).length,
-      blocked: getVisibleStagesForRecord(record).filter((candidateStage) =>
-        record.stageStates[candidateStage].blockedBy.some(
-          (dependency) => record.stageStates[dependency].approvedVersion === null
+      blocked: getVisibleStagesForRecord(normalizedRecord).filter((candidateStage) =>
+        normalizedRecord.stageStates[candidateStage].blockedBy.some(
+          (dependency) => normalizedRecord.stageStates[dependency].approvedVersion === null
         )
       ).length,
-      stale: getVisibleStagesForRecord(record).filter(
-        (candidateStage) => record.stageStates[candidateStage].reviewStatus === 'stale'
+      stale: getVisibleStagesForRecord(normalizedRecord).filter(
+        (candidateStage) => normalizedRecord.stageStates[candidateStage].reviewStatus === 'stale'
       ).length,
     };
-    summary.lineageLabel = getLineageLabel(record);
+    summary.lineageLabel = getLineageLabel(normalizedRecord);
 
     if (version <= 0) {
       return summary;
@@ -884,12 +910,13 @@ export class WorkbenchService {
     const nextVersion = stageState.currentVersion + 1;
     const timestamp = nowIso();
 
+    const normalizedReviewStatus = normalizeReviewStatus(input.reviewStatus ?? 'draft');
     const versionRecord: StageVersion = {
       id: createStageVersionId(input.stage, nextVersion),
       episodeId: episode.id,
       stage: input.stage,
       version: nextVersion,
-      reviewStatus: input.reviewStatus ?? 'draft',
+      reviewStatus: normalizedReviewStatus,
       createdAt: timestamp,
       updatedAt: timestamp,
       sourceVersionIds: input.sourceVersionIds ?? [],
@@ -921,15 +948,16 @@ export class WorkbenchService {
       input.version
     );
     const timestamp = nowIso();
+    const normalizedReviewStatus = normalizeReviewStatus(input.reviewStatus);
 
-    version.reviewStatus = input.reviewStatus;
+    version.reviewStatus = normalizedReviewStatus;
     version.updatedAt = timestamp;
 
     const stageState = episode.stageStates[input.stage];
-    stageState.reviewStatus = input.reviewStatus;
+    stageState.reviewStatus = normalizedReviewStatus;
     stageState.staleReasons = [];
 
-    if (input.reviewStatus === 'approved') {
+    if (normalizedReviewStatus === 'approved') {
       if (input.stage === 'topic') {
         const artifact = await this.persistApprovedTopicArtifact(
           input.channelId,
@@ -956,7 +984,7 @@ export class WorkbenchService {
       const nextStage = getNextAvailableStage(episode);
       episode.currentStage = nextStage;
       episode.workflowStatus = getWorkflowStatusAfterApproval(episode, nextStage);
-    } else if (input.reviewStatus === 'pending_review') {
+    } else if (normalizedReviewStatus === 'pending_review') {
       episode.workflowStatus = 'awaiting_review';
       episode.currentStage = input.stage;
     } else {
@@ -1000,7 +1028,11 @@ export class WorkbenchService {
     episodeId: string,
     stage: EpisodeStage
   ): Promise<StageVersion[]> {
-    return this.store.listStageVersions(channelId, episodeId, stage);
+    const versions = await this.store.listStageVersions(channelId, episodeId, stage);
+    return versions.map((version) => ({
+      ...version,
+      reviewStatus: normalizeReviewStatus(version.reviewStatus),
+    }));
   }
 
   public async listQueuedJobs(): Promise<WorkbenchJob[]> {
@@ -1033,6 +1065,7 @@ export class WorkbenchService {
 
     const stages = visibleStages.map((stage) => {
       const stageState = episode.stageStates[stage];
+      const reviewStatus = normalizeReviewStatus(stageState.reviewStatus);
       const stageJobs = jobs.filter((job) => job.stage === stage);
       const latestJob = stageJobs[0] ?? null;
       const queuedJobCount = stageJobs.filter((job) => job.status === 'queued').length;
@@ -1047,7 +1080,7 @@ export class WorkbenchService {
         stage,
         currentVersion: stageState.currentVersion,
         approvedVersion: stageState.approvedVersion,
-        reviewStatus: stageState.reviewStatus,
+        reviewStatus,
         blockedBy: stageState.blockedBy,
         staleReasons: stageState.staleReasons ?? [],
         isBlocked,
@@ -1057,11 +1090,8 @@ export class WorkbenchService {
         failedJobCount,
         completedJobCount,
         canGenerate: !isBlocked,
-        canApprove:
-          stageState.currentVersion > 0 && stageState.reviewStatus === 'pending_review',
-        canRequestChanges:
-          stageState.currentVersion > 0 &&
-          (stageState.reviewStatus === 'pending_review' || stageState.reviewStatus === 'approved'),
+        canApprove: stageState.currentVersion > 0 && reviewStatus === 'pending_review',
+        canRequestChanges: false,
       } satisfies StageWorkflowSummary;
     });
 
@@ -1573,6 +1603,19 @@ export class WorkbenchService {
     }
   }
 
+  public async tryGetStageVersionArtifact(
+    channelId: string,
+    episodeId: string,
+    stage: EpisodeStage,
+    version: number
+  ): Promise<StageVersionArtifact | null> {
+    try {
+      return await this.getStageVersionArtifact(channelId, episodeId, stage, version);
+    } catch {
+      return null;
+    }
+  }
+
   public async getApprovedShortsManifest(
     channelId: string,
     episodeId: string
@@ -1618,7 +1661,7 @@ export class WorkbenchService {
     }
   }
 
-  private async tryGetCurrentStageArtifact(
+  public async tryGetCurrentStageArtifact(
     channelId: string,
     episodeId: string,
     stage: EpisodeStage
@@ -1886,13 +1929,31 @@ function getWorkflowStatusAfterApproval(
   return nextStage === 'render' ? 'ready_for_render' : 'in_progress';
 }
 
+function normalizeReviewStatus(reviewStatus: ReviewStatus): ReviewStatus {
+  return reviewStatus === 'changes_requested' ? 'pending_review' : reviewStatus;
+}
+
+function normalizeRecordReviewStatuses(record: EpisodeRecord): EpisodeRecord {
+  return {
+    ...record,
+    stageStates: Object.fromEntries(
+      Object.entries(record.stageStates).map(([stage, state]) => [
+        stage,
+        {
+          ...state,
+          reviewStatus: normalizeReviewStatus(state.reviewStatus),
+        },
+      ])
+    ) as EpisodeRecord['stageStates'],
+  };
+}
+
 function getNextActionLabel(record: EpisodeRecord): string {
   const state = record.stageStates[record.currentStage];
+  const reviewStatus = normalizeReviewStatus(state.reviewStatus);
   switch (state.reviewStatus) {
     case 'pending_review':
       return 'Review and decide';
-    case 'changes_requested':
-      return 'Regenerate or edit';
     case 'approved':
       return getRecordKind(record) === 'topic_pool' && record.currentStage === 'topic'
         ? 'Create script pool'
@@ -1902,6 +1963,9 @@ function getNextActionLabel(record: EpisodeRecord): string {
     case 'stale':
       return 'Refresh stale stage';
     default:
+      if (reviewStatus === 'pending_review') {
+        return 'Review and decide';
+      }
       return state.currentVersion > 0 ? 'Inspect draft' : 'Generate first draft';
   }
 }
@@ -1945,17 +2009,15 @@ function compareReviewQueueItems(left: ReviewQueueItem, right: ReviewQueueItem):
 }
 
 function getReviewQueueRank(reviewStatus: ReviewStatus): number {
-  switch (reviewStatus) {
+  switch (normalizeReviewStatus(reviewStatus)) {
     case 'pending_review':
       return 0;
-    case 'changes_requested':
-      return 1;
     case 'stale':
-      return 2;
+      return 1;
     case 'draft':
-      return 3;
+      return 2;
     case 'approved':
-      return 4;
+      return 3;
   }
 }
 

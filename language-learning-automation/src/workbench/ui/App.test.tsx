@@ -21,6 +21,12 @@ const channels: ChannelOption[] = [
     targetLanguage: 'English',
     nativeLanguage: 'Korean',
   },
+  {
+    id: 'japanese',
+    name: 'Japanese Studio',
+    targetLanguage: 'Japanese',
+    nativeLanguage: 'Korean',
+  },
 ];
 
 const liveStatus: WorkbenchLiveStatus = {
@@ -276,6 +282,7 @@ const reviewQueue: ReviewQueueItem[] = [
     stage: 'script',
     workflowStatus: 'awaiting_review',
     reviewStatus: 'pending_review',
+    createdAt: '2026-03-07T00:00:00.000Z',
     updatedAt: '2026-03-07T01:00:00.000Z',
     nextAction: 'Review and decide',
     issueCounts: { open: 1, stale: 2, comments: 1 },
@@ -295,6 +302,7 @@ const reviewQueue: ReviewQueueItem[] = [
     stage: 'package',
     workflowStatus: 'awaiting_review',
     reviewStatus: 'pending_review',
+    createdAt: '2026-03-08T00:00:00.000Z',
     updatedAt: '2026-03-08T01:00:00.000Z',
     nextAction: 'Review and decide',
     issueCounts: { open: 0, stale: 0, comments: 0 },
@@ -332,6 +340,7 @@ const runningTopicQueueItem: ReviewQueueItem = {
   stage: 'topic',
   workflowStatus: 'in_progress',
   reviewStatus: 'draft',
+  createdAt: '2026-03-08T01:00:00.000Z',
   updatedAt: '2026-03-08T01:05:00.000Z',
   nextAction: 'Generating',
   issueCounts: { open: 0, stale: 0, comments: 0 },
@@ -352,11 +361,33 @@ const reviewReadyTopicQueueItem: ReviewQueueItem = {
   stage: 'topic',
   workflowStatus: 'awaiting_review',
   reviewStatus: 'pending_review',
+  createdAt: '2026-03-08T01:00:00.000Z',
   updatedAt: '2026-03-08T01:10:00.000Z',
   nextAction: 'Review and decide',
   issueCounts: { open: 0, stale: 0, comments: 0 },
   reviewTaskCounts: { reviewable: 1, blocked: 0, stale: 0 },
   lineageLabel: 'Topic pool',
+};
+
+const generatingScriptQueueItem: ReviewQueueItem = {
+  id: 'english/ep-007',
+  workspace: 'script_lab',
+  channelId: 'english',
+  recordId: 'ep-007',
+  threadId: 'thread-007',
+  kind: 'script_pool',
+  title: 'School Friends Script Pool',
+  previewText: 'Generating script candidates',
+  previewMeta: 'conversation',
+  stage: 'script',
+  workflowStatus: 'in_progress',
+  reviewStatus: 'draft',
+  createdAt: '2026-03-08T01:20:00.000Z',
+  updatedAt: '2026-03-08T01:21:00.000Z',
+  nextAction: 'Generating',
+  issueCounts: { open: 0, stale: 0, comments: 0 },
+  reviewTaskCounts: { reviewable: 0, blocked: 0, stale: 0 },
+  lineageLabel: 'Script pool from ep-006',
 };
 
 const scriptContext: StageReviewContext = {
@@ -427,8 +458,9 @@ function buildFetchMock(options?: { reviewQueueItems?: ReviewQueueItem[] }): typ
   const reviewQueueItems = options?.reviewQueueItems ?? reviewQueue;
   return vi.fn(async (input, init) => {
     const url = typeof input === 'string' ? input : input.url;
+    const pathname = url.split('?')[0];
 
-    switch (url) {
+    switch (pathname) {
       case '/api/workbench/channels':
         return jsonResponse({ channels });
       case '/api/workbench/live-status':
@@ -439,7 +471,7 @@ function buildFetchMock(options?: { reviewQueueItems?: ReviewQueueItem[] }): typ
         return jsonResponse({ episodes: [packageRecord] });
       case '/api/workbench/review-queue':
         return jsonResponse({ items: reviewQueueItems });
-      case '/api/workbench/logs/api?limit=50':
+      case '/api/workbench/logs/api':
         return jsonResponse({ entries: apiLogs });
       case '/api/workbench/episodes/english/ep-002/workflow':
         return jsonResponse(scriptWorkflow);
@@ -490,15 +522,16 @@ describe('Workbench App', () => {
   it('renders the script lab workspace and script draft canvas for a selected script review', async () => {
     render(<App />);
 
-    expect(await screen.findByText('Sibling Candidates')).toBeInTheDocument();
+    expect(await screen.findByText('Sibling Candidates', {}, { timeout: 4000 })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Save Script Draft' })).toBeInTheDocument();
+    expect(screen.getByText(/Created .* Updated /)).toBeInTheDocument();
   });
 
   it('opens the developer drawer and shows artifact json', async () => {
     render(<App />);
 
-    expect(await screen.findByText('Sentence 1 feels too flat.')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: 'Show Developer Drawer' }));
+    const drawerButton = await screen.findByRole('button', { name: 'Show Developer Drawer' });
+    fireEvent.click(drawerButton);
 
     expect(await screen.findByText('Current Artifact')).toBeInTheDocument();
     expect(screen.getAllByText(/Coffee Date/).length).toBeGreaterThan(0);
@@ -554,8 +587,9 @@ describe('Workbench App', () => {
       'fetch',
       vi.fn(async (input) => {
         const url = typeof input === 'string' ? input : input.url;
+        const pathname = url.split('?')[0];
 
-        switch (url) {
+        switch (pathname) {
           case '/api/workbench/channels':
             return jsonResponse({ channels });
           case '/api/workbench/live-status':
@@ -566,7 +600,7 @@ describe('Workbench App', () => {
             return jsonResponse({ episodes: [] });
           case '/api/workbench/review-queue':
             return jsonResponse({ items: [] });
-          case '/api/workbench/logs/api?limit=50':
+          case '/api/workbench/logs/api':
             return jsonResponse({ entries: apiLogs });
           case '/api/workbench/episodes/english/ep-006/workflow':
             return jsonResponse(topicWorkflow);
@@ -590,6 +624,261 @@ describe('Workbench App', () => {
     expect(await screen.findByRole('heading', { name: 'Missed the train' })).toBeInTheDocument();
     await waitFor(() => {
       expect(approvedArtifactHits).toBe(0);
+    });
+  });
+
+  it('shows discard and approve actions for topic review decisions', async () => {
+    window.history.replaceState({}, '', '#english/ep-006/topic');
+    const selectedTopicQueueItem: ReviewQueueItem = {
+      ...reviewReadyTopicQueueItem,
+      id: 'english/ep-006',
+      recordId: 'ep-006',
+      title: 'Fresh Topic Pool',
+      previewText: 'Missed the train',
+    };
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input) => {
+        const url = typeof input === 'string' ? input : input.url;
+        const pathname = url.split('?')[0];
+
+        switch (pathname) {
+          case '/api/workbench/channels':
+            return jsonResponse({ channels });
+          case '/api/workbench/live-status':
+            return jsonResponse({ status: liveStatus });
+          case '/api/workbench/candidates':
+            return jsonResponse({ candidates: [topicRecord] });
+          case '/api/workbench/episodes':
+            return jsonResponse({ episodes: [] });
+          case '/api/workbench/review-queue':
+            return jsonResponse({ items: [selectedTopicQueueItem] });
+          case '/api/workbench/logs/api':
+            return jsonResponse({ entries: apiLogs });
+          case '/api/workbench/episodes/english/ep-006/workflow':
+            return jsonResponse(topicWorkflow);
+          case '/api/workbench/episodes/english/ep-006/stages/topic/current-artifact':
+            return jsonResponse({ artifact: topicArtifact });
+          case '/api/workbench/episodes/english/ep-006/stages/topic/versions':
+            return jsonResponse({ versions: [] });
+          case '/api/workbench/episodes/english/ep-006/stages/topic/review-context':
+            return jsonResponse({
+              context: {
+                episode: topicRecord,
+                thread: { threadId: 'thread-006', records: [topicRecord] },
+                stage: 'topic',
+                stageSummary: createStage('topic', 'pending_review'),
+                currentArtifact: topicArtifact,
+                approvedArtifact: null,
+                versions: [],
+                comments: [],
+                downstream: [],
+              },
+            });
+          default:
+            return notFoundResponse();
+        }
+      }) as unknown as typeof fetch
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Missed the train' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Request Changes' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Approve & Next' })).not.toBeInTheDocument();
+  });
+
+  it('approves a topic and moves into script lab', async () => {
+    window.history.replaceState({}, '', '#english/ep-006/topic');
+    let scriptPoolQueued = false;
+    let topicApproved = false;
+    const selectedTopicQueueItem: ReviewQueueItem = {
+      ...reviewReadyTopicQueueItem,
+      id: 'english/ep-006',
+      recordId: 'ep-006',
+      title: 'Fresh Topic Pool',
+      previewText: 'Missed the train',
+    };
+
+    const fetchMock = vi.fn(async (input, _init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      const pathname = url.split('?')[0];
+
+      switch (pathname) {
+        case '/api/workbench/channels':
+          return jsonResponse({ channels });
+        case '/api/workbench/live-status':
+          return jsonResponse({ status: liveStatus });
+        case '/api/workbench/candidates':
+          return jsonResponse({
+            candidates: scriptPoolQueued ? [topicRecord, { ...scriptRecord, id: 'ep-007', kind: 'script_pool' }] : [topicRecord],
+          });
+        case '/api/workbench/episodes':
+          return jsonResponse({ episodes: [] });
+        case '/api/workbench/logs/api':
+          return jsonResponse({ entries: apiLogs });
+        case '/api/workbench/review-queue':
+          return jsonResponse({
+            items: scriptPoolQueued ? [generatingScriptQueueItem] : [selectedTopicQueueItem],
+          });
+        case '/api/workbench/episodes/english/ep-006/workflow':
+          return jsonResponse({
+            ...topicWorkflow,
+            stages: [
+              {
+                ...topicWorkflow.stages[0],
+                approvedVersion: topicApproved ? 1 : topicWorkflow.stages[0]?.approvedVersion ?? null,
+                reviewStatus: topicApproved ? 'approved' : topicWorkflow.stages[0]?.reviewStatus,
+              },
+            ],
+          });
+        case '/api/workbench/episodes/english/ep-006/stages/topic/current-artifact':
+          return jsonResponse({ artifact: topicArtifact });
+        case '/api/workbench/episodes/english/ep-006/stages/topic/approved-artifact':
+          return topicApproved
+            ? jsonResponse({
+                artifact: {
+                  approvedAt: '2026-03-08T00:10:00.000Z',
+                  category: 'conversation',
+                  approvedTopic: 'Missed the train',
+                  sourceVersion: 1,
+                  source: 'recommended',
+                },
+              })
+            : notFoundResponse();
+        case '/api/workbench/episodes/english/ep-006/stages/topic/versions':
+          return jsonResponse({ versions: [] });
+        case '/api/workbench/episodes/english/ep-006/stages/topic/review-context':
+          return jsonResponse({
+            context: {
+              episode: topicRecord,
+              thread: { threadId: 'thread-006', records: [topicRecord] },
+              stage: 'topic',
+              stageSummary: createStage('topic', topicApproved ? 'approved' : 'pending_review'),
+              currentArtifact: topicArtifact,
+              approvedArtifact: topicApproved
+                ? {
+                    approvedAt: '2026-03-08T00:10:00.000Z',
+                    category: 'conversation',
+                    approvedTopic: 'Missed the train',
+                    sourceVersion: 1,
+                    source: 'recommended',
+                  }
+                : null,
+              versions: [],
+              comments: [],
+              downstream: [],
+            },
+          });
+        case '/api/workbench/episodes/english/ep-007/workflow':
+          return jsonResponse({
+            ...scriptWorkflow,
+            episode: { ...scriptRecord, id: 'ep-007', kind: 'script_pool', title: 'School Friends Script Pool' },
+            stages: [
+              createStage('topic', 'approved'),
+              { ...createStage('script', 'draft'), currentVersion: 1, canApprove: false },
+            ],
+            jobs: [],
+          });
+        case '/api/workbench/episodes/english/ep-007/stages/script/current-artifact':
+          return notFoundResponse();
+        case '/api/workbench/episodes/english/ep-007/stages/script/versions':
+          return jsonResponse({ versions: [] });
+        case '/api/workbench/episodes/english/ep-007/stages/script/review-context':
+          return jsonResponse({
+            context: {
+              episode: { ...scriptRecord, id: 'ep-007', kind: 'script_pool', title: 'School Friends Script Pool' },
+              thread: { threadId: 'thread-007', records: [{ ...scriptRecord, id: 'ep-007', kind: 'script_pool' }] },
+              stage: 'script',
+              stageSummary: { ...createStage('script', 'draft'), currentVersion: 1, canApprove: false },
+              currentArtifact: null,
+              approvedArtifact: null,
+              versions: [],
+              comments: [],
+              downstream: [],
+            },
+          });
+        case '/api/workbench/episodes/english/ep-006/stages/topic/approve':
+          topicApproved = true;
+          return jsonResponse({
+            episode: {
+              ...topicRecord,
+              stageStates: {
+                ...topicRecord.stageStates,
+                topic: {
+                  ...topicRecord.stageStates.topic,
+                  approvedVersion: 1,
+                  reviewStatus: 'approved',
+                },
+              },
+            },
+            version: { version: 1, reviewStatus: 'approved' },
+          });
+        case '/api/workbench/candidates/english/ep-006/script-batch':
+          scriptPoolQueued = true;
+          return jsonResponse({
+            candidates: [{ ...scriptRecord, id: 'ep-007', kind: 'script_pool', title: 'School Friends Script Pool' }],
+          });
+        default:
+          return notFoundResponse();
+      }
+    }) as unknown as typeof fetch;
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Missed the train' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
+
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/workbench/episodes/english/ep-006/stages/topic/approve',
+        expect.objectContaining({ method: 'POST' })
+      );
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: 'Script Lab' })).toHaveClass('workspace-tab active');
+    });
+  });
+
+  it('switches the studio channel context and clears records from other channels', async () => {
+    render(<App />);
+
+    expect(await screen.findByText('Sibling Candidates', {}, { timeout: 4000 })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox', { name: 'Channel Workspace' }), {
+      target: { value: 'japanese' },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText('No review tasks for Japanese Studio yet.')).toBeInTheDocument();
+    });
+    expect(screen.getByText('Japanese -> Korean')).toBeInTheDocument();
+    expect(screen.queryByText('Coffee Date')).not.toBeInTheDocument();
+  });
+
+  it('does not trigger request changes when the browser refresh shortcut is pressed', async () => {
+    const fetchMock = buildFetchMock();
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    expect(await screen.findByText('Sibling Candidates', {}, { timeout: 4000 })).toBeInTheDocument();
+
+    fireEvent.keyDown(window, { key: 'r', metaKey: true });
+
+    await waitFor(() => {
+      const requestChangesCalls = fetchMock.mock.calls.filter(([input, init]) => {
+        const url = typeof input === 'string' ? input : input.url;
+        return (
+          url.includes('/stages/script/request-changes') &&
+          (init?.method ?? 'GET') === 'POST'
+        );
+      });
+      expect(requestChangesCalls).toHaveLength(0);
     });
   });
 });

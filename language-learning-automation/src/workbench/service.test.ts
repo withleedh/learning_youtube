@@ -346,9 +346,9 @@ describe('WorkbenchService', () => {
     expect(rejectResult.skipped).toHaveLength(0);
 
     const refreshedFirstAfterReject = await service.getEpisode('english', firstCandidate.id);
-    expect(refreshedFirstAfterReject.stageStates.topic.reviewStatus).toBe('changes_requested');
+    expect(refreshedFirstAfterReject.stageStates.topic.reviewStatus).toBe('pending_review');
     const refreshedSecond = await service.getEpisode('english', secondCandidate.id);
-    expect(refreshedSecond.stageStates.topic.reviewStatus).toBe('changes_requested');
+    expect(refreshedSecond.stageStates.topic.reviewStatus).toBe('pending_review');
   });
 
   it('creates stage versions and updates episode state', async () => {

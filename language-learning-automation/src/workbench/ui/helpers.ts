@@ -16,6 +16,7 @@ import type {
   TopicCandidatesArtifact,
   TtsManifest,
 } from './types';
+import type { Category } from '../../script/types';
 
 export type ScriptFieldTransform = 'csv' | 'words';
 export type ScriptFieldPrimitiveType = 'number';
@@ -39,6 +40,16 @@ export const defaultPayloads: Record<EpisodeStage, string> = {
   shorts: '{}',
   package: '{}',
 };
+
+export const workbenchCategoryOptions: Array<{ value: Category; label: string }> = [
+  { value: 'story', label: 'Story' },
+  { value: 'conversation', label: 'Conversation' },
+  { value: 'news', label: 'News' },
+  { value: 'announcement', label: 'Announcement' },
+  { value: 'travel_business', label: 'Travel & Business' },
+  { value: 'lesson', label: 'Lesson' },
+  { value: 'fairytale', label: 'Fairytale' },
+];
 
 export const emptyImpact: ScriptImpactSummary = {
   changedSentenceIds: [],
@@ -112,6 +123,24 @@ export function formatDate(value: string): string {
   } catch {
     return value;
   }
+}
+
+export function getCategoryLabel(category: string | null | undefined): string {
+  return workbenchCategoryOptions.find((option) => option.value === category)?.label ?? String(category ?? '');
+}
+
+export function getAutoCategoryForDate(date: Date): Category {
+  const dayOfWeek = date.getDay();
+  const categoryMap: Record<number, Category> = {
+    0: 'fairytale',
+    1: 'story',
+    2: 'conversation',
+    3: 'news',
+    4: 'announcement',
+    5: 'travel_business',
+    6: 'lesson',
+  };
+  return categoryMap[dayOfWeek];
 }
 
 export function getParsedScriptDraft(scriptDraftText: string): ScriptArtifact | null {

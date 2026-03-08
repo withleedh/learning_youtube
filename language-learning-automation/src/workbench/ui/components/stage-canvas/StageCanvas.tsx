@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { TopicCanvas } from './TopicCanvas';
 import { ScriptCanvas } from './ScriptCanvas';
 import { ImageCanvas } from './ImageCanvas';
@@ -13,10 +14,11 @@ type WorkbenchAppState = ReturnType<typeof useWorkbenchApp>;
 export function StageCanvas(props: {
   app: WorkbenchAppState;
   packageDraft: PackageManifest | null;
+  topicHeaderActions?: ReactNode;
   onUpdatePackageField<K extends keyof PackageManifest>(key: K, value: PackageManifest[K]): void;
   onSavePackageDraft(): void;
 }) {
-  const { app, packageDraft, onUpdatePackageField, onSavePackageDraft } = props;
+  const { app, packageDraft, topicHeaderActions, onUpdatePackageField, onSavePackageDraft } = props;
 
   switch (app.selectedStage) {
     case 'topic':
@@ -25,6 +27,7 @@ export function StageCanvas(props: {
           currentArtifact={app.currentArtifact}
           approvedArtifact={app.approvedArtifact}
           approvalText={app.topicApprovalText}
+          headerActions={topicHeaderActions}
           isBusy={app.isBusy}
           onSelectTopic={app.handleSetTopicApprovalText}
         />

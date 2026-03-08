@@ -44,7 +44,7 @@ const POLL_INTERVAL_MS = 2500;
 
 export function useWorkbenchApp() {
   const [availableChannels, setAvailableChannels] = useState<ChannelOption[]>([]);
-  const [createChannelId, setCreateChannelId] = useState('');
+  const [activeChannelId, setActiveChannelId] = useState('');
   const [topicBatchCount, setTopicBatchCount] = useState(20);
   const [topicBatchCategory, setTopicBatchCategory] = useState('');
   const [scriptBatchCount, setScriptBatchCount] = useState(5);
@@ -57,7 +57,7 @@ export function useWorkbenchApp() {
     'all'
   );
   const [candidateReviewFilter, setCandidateReviewFilter] = useState<
-    'all' | 'draft' | 'pending_review' | 'approved' | 'changes_requested' | 'completed'
+    'all' | 'draft' | 'pending_review' | 'approved' | 'completed'
   >('all');
   const [candidateSortMode, setCandidateSortMode] = useState<
     'review_ready' | 'updated_desc' | 'title_asc' | 'stage'
@@ -92,9 +92,13 @@ export function useWorkbenchApp() {
   const [dragOverPosition, setDragOverPosition] = useState<DragPosition>(null);
   const [highlightState, setHighlightState] = useState<HighlightState | null>(null);
   const noticeTimeoutRef = useRef<number | null>(null);
-  const loadChannelsRef = useRef<() => Promise<void>>(async () => {});
+  const loadChannelsRef = useRef<() => Promise<string>>(async () => '');
   const loadCollectionsRef = useRef<
-    (respectHash?: boolean, options?: LoadCollectionsOptions) => Promise<void>
+    (
+      respectHash?: boolean,
+      options?: LoadCollectionsOptions,
+      channelIdOverride?: string
+    ) => Promise<void>
   >(async () => {});
   const loadLiveStatusRef = useRef<(showErrors?: boolean) => Promise<WorkbenchLiveStatus | null>>(
     async () => null
@@ -106,8 +110,10 @@ export function useWorkbenchApp() {
   const scriptDraftDirtyRef = useRef(false);
   const scriptDraftServerTextRef = useRef('');
   const liveStatusRef = useRef<WorkbenchLiveStatus | null>(null);
+  const activeChannelIdRef = useRef('');
 
   const selectedStageInfo = workflow?.stages.find((stage) => stage.stage === selectedStage) ?? null;
+  const selectedChannel = availableChannels.find((channel) => channel.id === activeChannelId) ?? null;
   const parsedScriptDraft = getParsedScriptDraft(scriptDraftText);
   const currentScriptPoolArtifact = isScriptPoolArtifact(currentArtifact) ? currentArtifact : null;
   const approvedScriptArtifact = isScriptArtifact(approvedArtifact) ? approvedArtifact : null;
@@ -124,6 +130,10 @@ export function useWorkbenchApp() {
       const title = (candidate.previewText || candidate.title || candidate.id).toLowerCase();
       const query = candidateSearchQuery.trim().toLowerCase();
       if (query && !title.includes(query) && !candidate.channelId.toLowerCase().includes(query)) {
+        return false;
+      }
+
+      if (activeChannelId && candidate.channelId !== activeChannelId) {
         return false;
       }
 
@@ -145,19 +155,22 @@ export function useWorkbenchApp() {
   scriptDraftDirtyRef.current = isScriptDraftDirty;
   scriptDraftServerTextRef.current = scriptDraftServerText;
   liveStatusRef.current = liveStatus;
+  activeChannelIdRef.current = activeChannelId;
   loadChannelsRef.current = loadChannels;
   loadCollectionsRef.current = loadCollections;
   loadLiveStatusRef.current = loadLiveStatus;
   pollLiveDataRef.current = pollLiveData;
 
   useEffect(() => {
-    void loadChannelsRef.current().catch((error) => {
-      showNotice(error instanceof Error ? error.message : String(error));
-    });
-    void loadCollectionsRef.current(true).catch((error) => {
-      showNotice(error instanceof Error ? error.message : String(error));
-    });
-    void loadLiveStatusRef.current(false);
+    void (async () => {
+      try {
+        const initialChannelId = await loadChannelsRef.current();
+        await loadCollectionsRef.current(true, {}, initialChannelId);
+      } catch (error) {
+        showNotice(error instanceof Error ? error.message : String(error));
+      }
+    })();
+    void loadLiveStatusRef.current(false).catch(() => {});
 
     const onHashChange = () => {
       void loadCollectionsRef.current(true).catch((error) => {
@@ -193,22 +206,35 @@ export function useWorkbenchApp() {
     };
   }, []);
 
-  async function loadChannels(): Promise<void> {
+  async function loadChannels(): Promise<string> {
     try {
       const response = await fetchJson<{ channels: ChannelOption[] }>('/api/workbench/channels');
       const nextChannels = response.channels ?? [];
-      setAvailableChannels(nextChannels);
-      setCreateChannelId((current) => {
-        if (current && nextChannels.some((channel) => channel.id === current)) {
-          return current;
-        }
+      const hashSelection = parseHash();
+      const nextActiveChannelId =
+        (activeChannelIdRef.current &&
+        nextChannels.some((channel) => channel.id === activeChannelIdRef.current)
+          ? activeChannelIdRef.current
+          : '') ||
+        (hashSelection?.channelId &&
+        nextChannels.some((channel) => channel.id === hashSelection.channelId)
+          ? hashSelection.channelId
+          : '') ||
+        nextChannels[0]?.id ||
+        '';
 
-        return nextChannels[0]?.id ?? '';
-      });
+      setAvailableChannels(nextChannels);
+      setActiveChannelId(nextActiveChannelId);
+      setCandidateChannelFilter(nextActiveChannelId);
+      activeChannelIdRef.current = nextActiveChannelId;
+      return nextActiveChannelId;
     } catch (error) {
       setAvailableChannels([]);
-      setCreateChannelId('');
+      setActiveChannelId('');
+      setCandidateChannelFilter('');
+      activeChannelIdRef.current = '';
       showNotice(error instanceof Error ? error.message : String(error));
+      return '';
     }
   }
 
@@ -265,49 +291,45 @@ export function useWorkbenchApp() {
 
   async function loadCollections(
     respectHash = false,
-    options: LoadCollectionsOptions = {}
+    options: LoadCollectionsOptions = {},
+    channelIdOverride = activeChannelIdRef.current
   ): Promise<void> {
+    const channelQuery = channelIdOverride ? `?channelId=${encodeURIComponent(channelIdOverride)}` : '';
     const [candidatesResponse, episodesResponse] = await Promise.all([
-      fetchJson<{ candidates: EpisodeSummary[] }>('/api/workbench/candidates'),
-      fetchJson<{ episodes: EpisodeSummary[] }>('/api/workbench/episodes'),
+      fetchJson<{ candidates: EpisodeSummary[] }>(`/api/workbench/candidates${channelQuery}`),
+      fetchJson<{ episodes: EpisodeSummary[] }>(`/api/workbench/episodes${channelQuery}`),
     ]);
-    const nextCandidates = candidatesResponse.candidates ?? [];
-    const nextEpisodes = episodesResponse.episodes ?? [];
+    const nextCandidates = (candidatesResponse.candidates ?? []).filter(
+      (candidate) => !channelIdOverride || candidate.channelId === channelIdOverride
+    );
+    const nextEpisodes = (episodesResponse.episodes ?? []).filter(
+      (episode) => !channelIdOverride || episode.channelId === channelIdOverride
+    );
     setCandidates(nextCandidates);
     setSelectedCandidateKeys((current) =>
       current.filter((key) => nextCandidates.some((candidate) => getRecordKey(candidate) === key))
     );
     setEpisodes(nextEpisodes);
-    await syncSelectionFromHash(nextCandidates, nextEpisodes, respectHash, options);
+    await syncSelectionFromHash(nextCandidates, nextEpisodes, respectHash, options, channelIdOverride);
   }
 
   async function syncSelectionFromHash(
     nextCandidates: EpisodeSummary[],
     nextEpisodes: EpisodeSummary[],
     respectHash: boolean,
-    options: LoadCollectionsOptions = {}
+    options: LoadCollectionsOptions = {},
+    channelIdOverride = activeChannelIdRef.current
   ): Promise<void> {
     const nextRecords = [...nextCandidates, ...nextEpisodes];
     if (nextRecords.length === 0) {
-      setWorkflow(null);
-      setSelectedRecordKey(null);
-      setSelectedStage(null);
-      setCurrentArtifact(null);
-      setApprovedArtifact(null);
-      setScriptDraftText('');
-      setScriptDraftServerText('');
-      setHasScriptDraftRemoteUpdate(false);
-      setStageVersions([]);
-      setSelectedVersionNumber(null);
-      setSelectedVersionArtifact(null);
-      setSelectedVersionArtifactError('');
+      resetSelectionState();
       return;
     }
 
     const hashSelection = parseHash();
     const fallbackRecord = nextCandidates[0] ?? nextEpisodes[0];
     const selection =
-      respectHash && hashSelection
+      respectHash && hashSelection && (!channelIdOverride || hashSelection.channelId === channelIdOverride)
         ? nextRecords.find(
             (record) =>
               record.channelId === hashSelection.channelId &&
@@ -487,6 +509,27 @@ export function useWorkbenchApp() {
     });
   }
 
+  function resetSelectionState(clearCollections = false): void {
+    if (clearCollections) {
+      setCandidates([]);
+      setEpisodes([]);
+    }
+    setWorkflow(null);
+    setSelectedRecordKey(null);
+    setSelectedStage(null);
+    setCurrentArtifact(null);
+    setApprovedArtifact(null);
+    setArtifactError('');
+    setTopicApprovalText('');
+    setScriptDraftText('');
+    setScriptDraftServerText('');
+    setHasScriptDraftRemoteUpdate(false);
+    setStageVersions([]);
+    setSelectedVersionNumber(null);
+    setSelectedVersionArtifact(null);
+    setSelectedVersionArtifactError('');
+  }
+
   function showNotice(message: string): void {
     setNotice(message);
 
@@ -518,7 +561,7 @@ export function useWorkbenchApp() {
   async function handleCreateTopicCandidateBatch(event: FormEvent<HTMLFormElement>): Promise<void> {
     event.preventDefault();
 
-    if (!createChannelId) {
+    if (!activeChannelId) {
       showNotice('먼저 채널을 선택하세요.');
       return;
     }
@@ -529,7 +572,7 @@ export function useWorkbenchApp() {
         {
           method: 'POST',
           body: JSON.stringify({
-            channelId: createChannelId,
+            channelId: activeChannelId,
             count: topicBatchCount,
             category: topicBatchCategory || undefined,
           }),
@@ -577,7 +620,7 @@ export function useWorkbenchApp() {
     });
   }
 
-  async function handleApproveStage(): Promise<void> {
+  async function handleApproveStage(options: { followCurrentStage?: boolean } = {}): Promise<void> {
     if (!selectedStage || !selectedRecordKey || !selectedStageInfo) {
       return;
     }
@@ -600,7 +643,12 @@ export function useWorkbenchApp() {
 
       setTopicApprovalText('');
       showNotice(`${stageLabels[selectedStage]} approved.`);
-      await refreshSelectedRecord({ reloadCollections: true });
+      if (options.followCurrentStage) {
+        await loadCollections(false);
+        await selectRecord(channelId, episodeId, null);
+      } else {
+        await refreshSelectedRecord({ reloadCollections: true });
+      }
       await loadLiveStatus(false);
     });
   }
@@ -622,6 +670,23 @@ export function useWorkbenchApp() {
 
       showNotice(`${stageLabels[selectedStage]} marked as changes requested.`);
       await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
+    });
+  }
+
+  async function handleArchiveRecord(): Promise<void> {
+    if (!selectedRecordKey) {
+      return;
+    }
+
+    const [channelId, episodeId] = selectedRecordKey.split('/');
+    await withBusy(async () => {
+      await fetchJson(`/api/workbench/episodes/${channelId}/${episodeId}/archive`, {
+        method: 'POST',
+      });
+
+      showNotice('Record discarded.');
+      await loadCollections(true);
       await loadLiveStatus(false);
     });
   }
@@ -701,18 +766,26 @@ export function useWorkbenchApp() {
   }
 
   async function handleSpawnScriptCandidates(): Promise<void> {
-    if (!selectedRecordKey || workflow?.episode.kind !== 'topic_pool') {
-      return;
-    }
-
-    const topicStage = workflow.stages.find((stage) => stage.stage === 'topic') ?? null;
-    if (!topicStage?.approvedVersion) {
-      showNotice('먼저 topic을 승인해야 script candidates를 만들 수 있습니다.');
+    if (!selectedRecordKey) {
       return;
     }
 
     const [channelId, candidateId] = selectedRecordKey.split('/');
     await withBusy(async () => {
+      const latestWorkflow = await fetchJson<EpisodeWorkflow>(
+        `/api/workbench/episodes/${channelId}/${candidateId}/workflow`
+      );
+      if (latestWorkflow.episode.kind !== 'topic_pool') {
+        showNotice('Topic pool에서만 script candidates를 만들 수 있습니다.');
+        return;
+      }
+
+      const topicStage = latestWorkflow.stages.find((stage) => stage.stage === 'topic') ?? null;
+      if (!topicStage?.approvedVersion) {
+        showNotice('먼저 topic을 승인해야 script candidates를 만들 수 있습니다.');
+        return;
+      }
+
       const response = await fetchJson<{ candidates: EpisodeSummary[] }>(
         `/api/workbench/candidates/${channelId}/${candidateId}/script-batch`,
         {
@@ -740,18 +813,26 @@ export function useWorkbenchApp() {
   }
 
   async function handlePromoteCandidate(): Promise<void> {
-    if (!selectedRecordKey || workflow?.episode.kind !== 'script_pool') {
-      return;
-    }
-
-    const scriptStage = workflow.stages.find((stage) => stage.stage === 'script') ?? null;
-    if (!scriptStage?.approvedVersion) {
-      showNotice('승인된 script candidate만 episode로 승격할 수 있습니다.');
+    if (!selectedRecordKey) {
       return;
     }
 
     const [channelId, candidateId] = selectedRecordKey.split('/');
     await withBusy(async () => {
+      const latestWorkflow = await fetchJson<EpisodeWorkflow>(
+        `/api/workbench/episodes/${channelId}/${candidateId}/workflow`
+      );
+      if (latestWorkflow.episode.kind !== 'script_pool') {
+        showNotice('Script pool만 episode로 승격할 수 있습니다.');
+        return;
+      }
+
+      const scriptStage = latestWorkflow.stages.find((stage) => stage.stage === 'script') ?? null;
+      if (!scriptStage?.approvedVersion) {
+        showNotice('승인된 script candidate만 episode로 승격할 수 있습니다.');
+        return;
+      }
+
       const response = await fetchJson<{ episode: EpisodeSummary }>(
         `/api/workbench/candidates/${channelId}/${candidateId}/promote`,
         {
@@ -766,9 +847,7 @@ export function useWorkbenchApp() {
     });
   }
 
-  async function handleBulkCandidateReview(
-    reviewStatus: 'approved' | 'changes_requested'
-  ): Promise<void> {
+  async function handleBulkCandidateReview(reviewStatus: 'approved' | 'pending_review'): Promise<void> {
     const selectedItems = candidates
       .filter((candidate) => selectedCandidateKeys.includes(getRecordKey(candidate)))
       .map((candidate) => ({
@@ -1050,7 +1129,33 @@ export function useWorkbenchApp() {
     });
   }
 
+  async function handleSetActiveChannelId(nextChannelId: string): Promise<void> {
+    if (!nextChannelId || nextChannelId === activeChannelIdRef.current) {
+      return;
+    }
+
+    activeChannelIdRef.current = nextChannelId;
+    setActiveChannelId(nextChannelId);
+    setCandidateChannelFilter(nextChannelId);
+    setSelectedCandidateKeys([]);
+    resetSelectionState(true);
+    if (window.location.hash) {
+      history.replaceState({}, '', `${window.location.pathname}${window.location.search}`);
+    }
+
+    try {
+      await Promise.all([
+        loadCollections(false, {}, nextChannelId),
+        loadLiveStatus(false),
+      ]);
+      setLastLiveSyncAt(new Date().toISOString());
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    }
+  }
+
   return {
+    activeChannelId,
     availableChannels,
     areAllFilteredCandidatesSelected,
     artifactError,
@@ -1061,7 +1166,7 @@ export function useWorkbenchApp() {
     candidateSearchQuery,
     candidateSortMode,
     candidateStageFilter,
-    createChannelId,
+    createChannelId: activeChannelId,
     currentArtifact,
     currentScriptPoolArtifact,
     dragOverIndex,
@@ -1069,11 +1174,9 @@ export function useWorkbenchApp() {
     draggingSentenceIndex,
     episodes,
     handleApproveStage,
+    handleArchiveRecord,
     handleBulkApproveCandidates() {
       void handleBulkCandidateReview('approved');
-    },
-    handleBulkRequestChangesCandidates() {
-      void handleBulkCandidateReview('changes_requested');
     },
     handleCreateTopicCandidateBatch,
     handleGenerateStage,
@@ -1084,12 +1187,13 @@ export function useWorkbenchApp() {
     handleReloadScriptDraft: reloadScriptDraftFromServer,
     handleRequestChanges,
     handleSaveScriptDraft,
+    handleSetActiveChannelId,
     handleSetCandidateChannelFilter: setCandidateChannelFilter,
     handleSetCandidateReviewFilter: setCandidateReviewFilter,
     handleSetCandidateSearchQuery: setCandidateSearchQuery,
     handleSetCandidateSortMode: setCandidateSortMode,
     handleSetCandidateStageFilter: setCandidateStageFilter,
-    handleSetCreateChannelId: setCreateChannelId,
+    handleSetCreateChannelId: handleSetActiveChannelId,
     handleSetScriptBatchCategory: setScriptBatchCategory,
     handleSetScriptBatchCount(value: number) {
       setScriptBatchCount(Math.max(1, Math.min(50, Math.trunc(value || 1))));
@@ -1175,6 +1279,7 @@ export function useWorkbenchApp() {
     selectedVersionArtifactError,
     selectedVersionNumber,
     selectedRecordKey,
+    selectedChannel,
     selectedStage,
     selectedStageInfo,
     stageVersions,
@@ -1211,14 +1316,12 @@ function getCandidateReviewRank(reviewStatus: string): number {
   switch (reviewStatus) {
     case 'pending_review':
       return 0;
-    case 'changes_requested':
-      return 1;
     case 'approved':
-      return 2;
+      return 1;
     case 'draft':
-      return 3;
+      return 2;
     default:
-      return 4;
+      return 3;
   }
 }
 

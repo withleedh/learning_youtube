@@ -22,6 +22,7 @@ export function DeliveryPackPage(props: {
     <section className="workspace-layout">
       <ReviewQueuePane
         title="Delivery Pack"
+        channelLabel={app.selectedChannel?.name ?? app.activeChannelId}
         items={items}
         selectedId={studio.selectedQueueItem?.id ?? null}
         currentWorkspace={studio.workspace}
@@ -58,13 +59,10 @@ export function DeliveryPackPage(props: {
           void app.handleGenerateStage();
         }}
         onApprove={() => {
-          void app.handleApproveStage();
-        }}
-        onRequestChanges={() => {
-          void app.handleRequestChanges();
-        }}
-        onApproveAndNext={() => {
           void studio.handleApproveAndNext();
+        }}
+        onDiscard={() => {
+          void app.handleArchiveRecord();
         }}
         onAddComment={() => {
           void studio.addStageComment('decision');

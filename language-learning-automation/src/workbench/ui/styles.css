@@ -1134,6 +1134,28 @@ body {
   align-items: center;
 }
 
+.studio-channel-picker {
+  min-width: 260px;
+  display: grid;
+  gap: 6px;
+}
+
+.studio-channel-picker span,
+.studio-channel-picker small {
+  color: #5b5b54;
+}
+
+.studio-channel-picker span {
+  font-size: 0.78rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.studio-channel-picker small {
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
 .live-chip {
   border-radius: 999px;
   padding: 10px 14px;
@@ -1217,6 +1239,14 @@ body {
   padding: 8px 12px;
   background: rgba(28, 28, 26, 0.06);
   color: #4f4f47;
+}
+
+.canvas-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
 }
 
 .queue-list,

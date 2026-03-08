@@ -37,6 +37,27 @@ export function App() {
           </p>
         </div>
         <div className="studio-topbar-actions">
+          <label className="studio-channel-picker">
+            <span>Channel Workspace</span>
+            <select
+              aria-label="Channel Workspace"
+              value={app.activeChannelId}
+              onChange={(event) => {
+                void app.handleSetActiveChannelId(event.target.value);
+              }}
+            >
+              {app.availableChannels.map((channel) => (
+                <option key={channel.id} value={channel.id}>
+                  {channel.name}
+                </option>
+              ))}
+            </select>
+            <small>
+              {app.selectedChannel
+                ? `${app.selectedChannel.targetLanguage} -> ${app.selectedChannel.nativeLanguage}`
+                : 'Select a channel to isolate its workbench queue.'}
+            </small>
+          </label>
           <div className="live-chip">
             Jobs {app.liveStatus?.queuedJobs ?? 0} queued / {app.liveStatus?.runningJobs ?? 0} running
           </div>

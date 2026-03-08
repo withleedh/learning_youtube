@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { isApprovedTopicArtifact, isTopicCandidatesArtifact } from '../../helpers';
 
 function scoreTopic(topic: string) {
@@ -11,10 +12,11 @@ export function TopicCanvas(props: {
   currentArtifact: unknown;
   approvedArtifact: unknown;
   approvalText: string;
+  headerActions?: ReactNode;
   isBusy: boolean;
   onSelectTopic(topic: string): void;
 }) {
-  const { currentArtifact, approvedArtifact, approvalText, isBusy, onSelectTopic } = props;
+  const { currentArtifact, approvedArtifact, approvalText, headerActions, isBusy, onSelectTopic } = props;
 
   if (!isTopicCandidatesArtifact(currentArtifact)) {
     return <div className="empty-state">No topic candidates available yet.</div>;
@@ -36,7 +38,10 @@ export function TopicCanvas(props: {
           </p>
           <p className="queue-meta">Selected topic: {selectedTopic}</p>
         </div>
-        {approvedTopic ? <span className="status-chip status-approved">Approved topic saved</span> : null}
+        <div className="canvas-header-actions">
+          {approvedTopic ? <span className="status-chip status-approved">Approved topic saved</span> : null}
+          {headerActions}
+        </div>
       </div>
 
       <div className="topic-card-grid">

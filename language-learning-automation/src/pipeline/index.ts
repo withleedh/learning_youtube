@@ -1,7 +1,7 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { loadConfig, listChannels } from '../config/loader';
-import { generateScript, saveScript, createSampleScript } from '../script/generator';
+import { generateCliStyleScript, saveScript, createSampleScript } from '../script/generator';
 import { generateAllAudio, createMockAudioFiles } from '../tts/generator';
 import { IntroGenerator } from '../intro/generator';
 import {
@@ -95,10 +95,7 @@ export async function runPipeline(options: PipelineOptions): Promise<PipelineRes
       console.log('   ✓ Created sample script (mock mode)');
     } else {
       // Use multi-step pipeline by default for better quality scripts
-      script = await generateScript(config, category, topic, {
-        usePipeline: true,
-        candidateCount: 1, // Pipeline handles quality internally
-      });
+      script = await generateCliStyleScript(config, category, topic);
       console.log(`   ✓ Generated script: "${script.metadata.title.target}"`);
     }
 

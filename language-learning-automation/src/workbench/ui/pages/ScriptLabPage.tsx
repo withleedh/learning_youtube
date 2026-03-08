@@ -24,6 +24,7 @@ export function ScriptLabPage(props: {
     <section className="workspace-layout">
       <ReviewQueuePane
         title="Script Lab"
+        channelLabel={app.selectedChannel?.name ?? app.activeChannelId}
         items={items}
         selectedId={studio.selectedQueueItem?.id ?? null}
         currentWorkspace={studio.workspace}
@@ -80,29 +81,14 @@ export function ScriptLabPage(props: {
           void app.handleGenerateStage();
         }}
         onApprove={() => {
-          void app.handleApproveStage();
-        }}
-        onRequestChanges={() => {
-          void app.handleRequestChanges();
-        }}
-        onApproveAndNext={() => {
           void studio.handleApproveAndNext();
+        }}
+        onDiscard={() => {
+          void app.handleArchiveRecord();
         }}
         onAddComment={() => {
           void studio.addStageComment('issue');
         }}
-        extraActions={
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={() => {
-              void app.handlePromoteCandidate();
-            }}
-            disabled={app.isBusy}
-          >
-            Promote to Episode
-          </button>
-        }
       />
     </section>
   );

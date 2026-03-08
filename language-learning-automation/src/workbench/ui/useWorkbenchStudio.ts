@@ -13,10 +13,10 @@ import { useWorkbenchApp } from './useWorkbenchApp';
 type WorkbenchAppState = ReturnType<typeof useWorkbenchApp>;
 
 const actionableStatusesByWorkspace: Record<ReviewWorkspace, Set<ReviewQueueItem['reviewStatus']>> = {
-  topic_inbox: new Set(['pending_review', 'changes_requested']),
-  script_lab: new Set(['pending_review', 'changes_requested', 'approved']),
-  production_desk: new Set(['pending_review', 'changes_requested']),
-  delivery_pack: new Set(['pending_review', 'changes_requested']),
+  topic_inbox: new Set(['pending_review']),
+  script_lab: new Set(['draft', 'pending_review', 'approved']),
+  production_desk: new Set(['pending_review']),
+  delivery_pack: new Set(['pending_review']),
 };
 
 function filterActionableReviewQueue(items: ReviewQueueItem[]): ReviewQueueItem[] {
@@ -73,9 +73,56 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
     [reviewQueue]
   );
 
+  const loadReviewQueue = useCallback(async (): Promise<void> => {
+    try {
+      const channelQuery = app.activeChannelId
+        ? `?channelId=${encodeURIComponent(app.activeChannelId)}`
+        : '';
+      const response = await fetchJson<{ items: ReviewQueueItem[] }>(
+        `/api/workbench/review-queue${channelQuery}`
+      );
+      const filteredItems = filterActionableReviewQueue(response.items ?? []).filter(
+        (item) => !app.activeChannelId || item.channelId === app.activeChannelId
+      );
+      setReviewQueue(filteredItems);
+      setQueueLoadError('');
+    } catch (error) {
+      setReviewQueue([]);
+      setQueueLoadError(error instanceof Error ? error.message : String(error));
+    }
+  }, [app.activeChannelId]);
+
+  const loadApiLogs = useCallback(async (): Promise<void> => {
+    try {
+      const response = await fetchJson<{ entries: ApiRequestLogEntry[] }>(
+        '/api/workbench/logs/api?limit=50'
+      );
+      setApiLogs(response.entries ?? []);
+      setApiLogsError('');
+    } catch (error) {
+      setApiLogs([]);
+      setApiLogsError(error instanceof Error ? error.message : String(error));
+    }
+  }, []);
+
+  const loadReviewContext = useCallback(async (
+    recordKey: string,
+    stage: NonNullable<WorkbenchAppState['selectedStage']>
+  ) => {
+    const [channelId, recordId] = recordKey.split('/');
+    try {
+      const response = await fetchJson<{ context: StageReviewContext }>(
+        `/api/workbench/episodes/${channelId}/${recordId}/stages/${stage}/review-context`
+      );
+      setReviewContext(response.context);
+    } catch {
+      setReviewContext(null);
+    }
+  }, []);
+
   useEffect(() => {
     void loadReviewQueue();
-  }, [app.candidates, app.episodes]);
+  }, [app.activeChannelId, app.candidates, app.episodes, loadReviewQueue]);
 
   useEffect(() => {
     if (!app.selectedRecordKey || !app.selectedStage) {
@@ -85,7 +132,7 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
     }
 
     void loadReviewContext(app.selectedRecordKey, app.selectedStage);
-  }, [app.selectedRecordKey, app.selectedStage, app.workflow?.episode.updatedAt]);
+  }, [app.selectedRecordKey, app.selectedStage, app.workflow?.episode.updatedAt, loadReviewContext]);
 
   useEffect(() => {
     if (!selectedQueueItem) {
@@ -116,43 +163,7 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
     }
 
     void loadApiLogs();
-  }, [developerDrawerOpen]);
-
-  async function loadReviewQueue(): Promise<void> {
-    try {
-      const response = await fetchJson<{ items: ReviewQueueItem[] }>('/api/workbench/review-queue');
-      setReviewQueue(filterActionableReviewQueue(response.items ?? []));
-      setQueueLoadError('');
-    } catch (error) {
-      setReviewQueue([]);
-      setQueueLoadError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function loadApiLogs(): Promise<void> {
-    try {
-      const response = await fetchJson<{ entries: ApiRequestLogEntry[] }>(
-        '/api/workbench/logs/api?limit=50'
-      );
-      setApiLogs(response.entries ?? []);
-      setApiLogsError('');
-    } catch (error) {
-      setApiLogs([]);
-      setApiLogsError(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  async function loadReviewContext(recordKey: string, stage: NonNullable<WorkbenchAppState['selectedStage']>) {
-    const [channelId, recordId] = recordKey.split('/');
-    try {
-      const response = await fetchJson<{ context: StageReviewContext }>(
-        `/api/workbench/episodes/${channelId}/${recordId}/stages/${stage}/review-context`
-      );
-      setReviewContext(response.context);
-    } catch {
-      setReviewContext(null);
-    }
-  }
+  }, [developerDrawerOpen, loadApiLogs]);
 
   const selectQueueItem = useCallback(
     async (item: ReviewQueueItem): Promise<void> => {
@@ -243,6 +254,10 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
         return;
       }
 
+      if (event.metaKey || event.ctrlKey || event.altKey) {
+        return;
+      }
+
       if (event.key === 'j' || event.key === 'J') {
         event.preventDefault();
         void selectRelativeQueueItem(1);
@@ -252,18 +267,6 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
       if (event.key === 'k' || event.key === 'K') {
         event.preventDefault();
         void selectRelativeQueueItem(-1);
-        return;
-      }
-
-      if (event.key === 'a' || event.key === 'A') {
-        event.preventDefault();
-        void app.handleApproveStage();
-        return;
-      }
-
-      if (event.key === 'r' || event.key === 'R') {
-        event.preventDefault();
-        void app.handleRequestChanges();
         return;
       }
 
@@ -315,7 +318,7 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
         await app.handlePromoteCandidate();
         setWorkspace('production_desk');
       } else {
-        await app.handleApproveStage();
+        await app.handleApproveStage({ followCurrentStage: true });
       }
       await refreshStudio();
     } finally {

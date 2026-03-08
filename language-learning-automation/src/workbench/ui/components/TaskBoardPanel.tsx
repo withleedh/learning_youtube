@@ -61,7 +61,6 @@ export function TaskBoardPanel(props: {
   onToggleCandidateSelection(channelId: string, episodeId: string): void;
   onToggleSelectFilteredCandidates(): void;
   onBulkApprove(): void;
-  onBulkRequestChanges(): void;
 }) {
   const {
     candidates,
@@ -82,7 +81,6 @@ export function TaskBoardPanel(props: {
     onToggleCandidateSelection,
     onToggleSelectFilteredCandidates,
     onBulkApprove,
-    onBulkRequestChanges,
   } = props;
 
   const filteredEpisodes = filterEpisodes(episodes, searchQuery, channelFilter);
@@ -106,7 +104,7 @@ export function TaskBoardPanel(props: {
       items: candidates.filter(
         (candidate) =>
           (candidate.currentStage === 'topic' || candidate.currentStage === 'script') &&
-          ['pending_review', 'changes_requested'].includes(getCurrentReviewStatus(candidate))
+          getCurrentReviewStatus(candidate) === 'pending_review'
       ),
     },
     {
@@ -213,14 +211,6 @@ export function TaskBoardPanel(props: {
             onClick={onBulkApprove}
           >
             Bulk Approve
-          </button>
-          <button
-            type="button"
-            className="danger-button"
-            disabled={selectedCandidateKeys.length === 0 || isBusy}
-            onClick={onBulkRequestChanges}
-          >
-            Bulk Request Changes
           </button>
         </div>
       </div>

@@ -81,6 +81,36 @@ describe('WorkbenchServer', () => {
     expect(listBody.candidates).toHaveLength(1);
   });
 
+  it('archives a candidate record and hides it from candidate listings', async () => {
+    const batch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 2,
+      category: 'conversation',
+    });
+    const candidate = batch.candidates[0]!;
+
+    const archiveResponse = await fetch(
+      `${baseUrl}/api/workbench/episodes/english/${candidate.id}/archive`,
+      {
+        method: 'POST',
+      }
+    );
+    const archiveBody = (await archiveResponse.json()) as {
+      episode: { id: string; workflowStatus: string };
+    };
+
+    const listResponse = await fetch(`${baseUrl}/api/workbench/candidates?channelId=english`);
+    const listBody = (await listResponse.json()) as {
+      candidates: Array<{ id: string }>;
+    };
+
+    expect(archiveResponse.status).toBe(200);
+    expect(archiveBody.episode.id).toBe(candidate.id);
+    expect(archiveBody.episode.workflowStatus).toBe('archived');
+    expect(listResponse.status).toBe(200);
+    expect(listBody.candidates.some((item) => item.id === candidate.id)).toBe(false);
+  });
+
   it('writes mutation API calls to the workbench api log', async () => {
     const response = await fetch(`${baseUrl}/api/workbench/candidates/topic-batch`, {
       method: 'POST',
@@ -269,6 +299,7 @@ describe('WorkbenchServer', () => {
     };
 
     expect(htmlResponse.status).toBe(200);
+    expect(htmlResponse.headers.get('cache-control')).toBe('no-store');
     expect(html).toContain('Channel Workbench');
     expect(artifactResponse.status).toBe(200);
     expect(artifactBody.stage).toBe('topic');
@@ -326,6 +357,52 @@ describe('WorkbenchServer', () => {
     expect(artifactBody.stage).toBe('topic');
     expect(artifactBody.version).toBe(2);
     expect(artifactBody.artifact.recommendedTopic).toBe('Missed the train');
+  });
+
+  it('returns null for current-artifact while a stage version exists but the artifact is not written yet', async () => {
+    const episode = await service.createEpisode({ channelId: 'english' });
+    await service.createStageVersion({
+      channelId: 'english',
+      episodeId: episode.id,
+      stage: 'script',
+      reviewStatus: 'draft',
+    });
+
+    const response = await fetch(
+      `${baseUrl}/api/workbench/episodes/english/${episode.id}/stages/script/current-artifact`
+    );
+    const body = (await response.json()) as {
+      stage: string;
+      artifact: null;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.stage).toBe('script');
+    expect(body.artifact).toBeNull();
+  });
+
+  it('returns null for a stage version artifact while the version exists but the artifact is not written yet', async () => {
+    const episode = await service.createEpisode({ channelId: 'english' });
+    const version = await service.createStageVersion({
+      channelId: 'english',
+      episodeId: episode.id,
+      stage: 'script',
+      reviewStatus: 'draft',
+    });
+
+    const response = await fetch(
+      `${baseUrl}/api/workbench/episodes/english/${episode.id}/stages/script/versions/${version.version}/artifact`
+    );
+    const body = (await response.json()) as {
+      stage: string;
+      version: number;
+      artifact: null;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.stage).toBe('script');
+    expect(body.version).toBe(version.version);
+    expect(body.artifact).toBeNull();
   });
 
   it('approves a stage through the action endpoint and returns the approved artifact', async () => {
@@ -450,8 +527,8 @@ describe('WorkbenchServer', () => {
     };
 
     expect(response.status).toBe(200);
-    expect(body.version.reviewStatus).toBe('changes_requested');
-    expect(body.episode.stageStates.script.reviewStatus).toBe('changes_requested');
+    expect(body.version.reviewStatus).toBe('pending_review');
+    expect(body.episode.stageStates.script.reviewStatus).toBe('pending_review');
   });
 
   it('saves a script draft through the current artifact endpoint', async () => {
@@ -600,7 +677,7 @@ describe('WorkbenchServer', () => {
 
     const queueResponse = await fetch(`${baseUrl}/api/workbench/review-queue`);
     const queueBody = (await queueResponse.json()) as {
-      items: Array<{ workspace: string; threadId: string; lineageLabel: string }>;
+      items: Array<{ workspace: string; threadId: string; lineageLabel: string; createdAt: string; updatedAt: string }>;
     };
 
     const threadResponse = await fetch(
@@ -614,6 +691,8 @@ describe('WorkbenchServer', () => {
     expect(queueBody.items.some((item) => item.workspace === 'script_lab')).toBe(true);
     expect(queueBody.items.every((item) => item.threadId === sourceCandidate.threadId)).toBe(true);
     expect(queueBody.items.some((item) => item.lineageLabel.includes(sourceCandidate.id))).toBe(true);
+    expect(queueBody.items.every((item) => typeof item.createdAt === 'string')).toBe(true);
+    expect(queueBody.items.every((item) => typeof item.updatedAt === 'string')).toBe(true);
     expect(threadResponse.status).toBe(200);
     expect(threadBody.thread.threadId).toBe(sourceCandidate.threadId);
     expect(threadBody.thread.records).toHaveLength(2);

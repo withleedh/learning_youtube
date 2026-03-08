@@ -3,6 +3,11 @@ import { DecisionPanel } from '../components/DecisionPanel';
 import { IssueList } from '../components/IssueList';
 import { LineagePanel } from '../components/LineagePanel';
 import { StageCanvas } from '../components/stage-canvas/StageCanvas';
+import {
+  getAutoCategoryForDate,
+  getCategoryLabel,
+  workbenchCategoryOptions,
+} from '../helpers';
 import type { PackageManifest } from '../types';
 import { useWorkbenchApp } from '../useWorkbenchApp';
 import { useWorkbenchStudio } from '../useWorkbenchStudio';
@@ -17,8 +22,43 @@ export function TopicInboxPage(props: {
   packageDraft: PackageManifest | null;
 }) {
   const { app, studio, items, packageDraft } = props;
-  const selectedChannel =
-    app.availableChannels.find((channel) => channel.id === app.createChannelId) ?? null;
+  const selectedChannel = app.selectedChannel;
+  const resolvedTopicCategory = app.topicBatchCategory || getAutoCategoryForDate(new Date());
+  const topicDecisionContext = studio.reviewContext?.stage === 'topic' ? studio.reviewContext : null;
+  const topicDecisionBusy = app.isBusy || studio.isStudioBusy;
+  const topicHeaderActions = (
+    <div className="canvas-header-actions">
+      {topicDecisionContext ? (
+        <span className={`status-badge status-${topicDecisionContext.stageSummary.reviewStatus}`}>
+          {topicDecisionContext.stageSummary.reviewStatus}
+        </span>
+      ) : null}
+      <button
+        type="button"
+        className="danger-button"
+        onClick={() => {
+          void app.handleArchiveRecord();
+        }}
+        disabled={!topicDecisionContext || topicDecisionBusy}
+      >
+        Discard
+      </button>
+      <button
+        type="button"
+        className="primary-button"
+        onClick={() => {
+          void studio.handleApproveAndNext();
+        }}
+        disabled={
+          !topicDecisionContext ||
+          topicDecisionBusy ||
+          !topicDecisionContext.stageSummary.canApprove
+        }
+      >
+        Approve
+      </button>
+    </div>
+  );
 
   return (
     <>
@@ -27,21 +67,6 @@ export function TopicInboxPage(props: {
           className="workspace-create-form"
           onSubmit={(event) => void app.handleCreateTopicCandidateBatch(event)}
         >
-          <label>
-            <span>Channel</span>
-            <select
-              value={app.createChannelId}
-              onChange={(event) => {
-                app.handleSetCreateChannelId(event.target.value);
-              }}
-            >
-              {app.availableChannels.map((channel) => (
-                <option key={channel.id} value={channel.id}>
-                  {channel.name}
-                </option>
-              ))}
-            </select>
-          </label>
           <label>
             <span>Topics per pool</span>
             <input
@@ -63,9 +88,11 @@ export function TopicInboxPage(props: {
               }}
             >
               <option value="">Auto category</option>
-              <option value="conversation">Conversation</option>
-              <option value="news">News</option>
-              <option value="travel_business">Travel & Business</option>
+              {workbenchCategoryOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
           <button type="submit" className="primary-button" disabled={app.isBusy}>
@@ -73,27 +100,36 @@ export function TopicInboxPage(props: {
           </button>
         </form>
         {selectedChannel ? (
-          <p className="queue-meta">
-            {selectedChannel.targetLanguage} {'->'} {selectedChannel.nativeLanguage}
-          </p>
+          <div>
+            <p className="queue-meta">
+              {selectedChannel.targetLanguage} {'->'} {selectedChannel.nativeLanguage}
+            </p>
+            <p className="queue-meta">
+              {app.topicBatchCategory
+                ? `Selected category: ${getCategoryLabel(resolvedTopicCategory)}`
+                : `Auto category resolves to ${getCategoryLabel(resolvedTopicCategory)} today`}
+            </p>
+          </div>
         ) : null}
       </section>
 
       <section className="workspace-layout">
-      <ReviewQueuePane
-        title="Topic Inbox"
-        items={items}
-        selectedId={studio.selectedQueueItem?.id ?? null}
-        currentWorkspace={studio.workspace}
-        workspaceCounts={studio.workspaceCounts}
-        loadError={studio.queueLoadError}
-        onSelect={studio.selectQueueItem}
-      />
+        <ReviewQueuePane
+          title="Topic Inbox"
+          channelLabel={selectedChannel?.name ?? app.activeChannelId}
+          items={items}
+          selectedId={studio.selectedQueueItem?.id ?? null}
+          currentWorkspace={studio.workspace}
+          workspaceCounts={studio.workspaceCounts}
+          loadError={studio.queueLoadError}
+          onSelect={studio.selectQueueItem}
+        />
 
         <main className="canvas-column">
           <StageCanvas
             app={app}
             packageDraft={packageDraft}
+            topicHeaderActions={topicHeaderActions}
             onUpdatePackageField={studio.updatePackageField}
             onSavePackageDraft={() => {
               void studio.savePackageDraft();
@@ -112,35 +148,21 @@ export function TopicInboxPage(props: {
           isBusy={app.isBusy || studio.isStudioBusy}
           commentText={studio.commentText}
           renderTimestampMs={studio.renderTimestampMs}
+          showApproveDiscardActions={false}
           onCommentTextChange={studio.setCommentText}
           onRenderTimestampMsChange={studio.setRenderTimestampMs}
           onGenerate={() => {
             void app.handleGenerateStage();
           }}
           onApprove={() => {
-            void app.handleApproveStage();
-          }}
-          onRequestChanges={() => {
-            void app.handleRequestChanges();
-          }}
-          onApproveAndNext={() => {
             void studio.handleApproveAndNext();
+          }}
+          onDiscard={() => {
+            void app.handleArchiveRecord();
           }}
           onAddComment={() => {
             void studio.addStageComment('decision');
           }}
-          extraActions={
-            <button
-              type="button"
-              className="secondary-button"
-              onClick={() => {
-                void app.handleSpawnScriptCandidates();
-              }}
-              disabled={app.isBusy}
-            >
-              Approve & Create Script Pool
-            </button>
-          }
         />
       </section>
     </>

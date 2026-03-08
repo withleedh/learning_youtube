@@ -119,23 +119,28 @@ function createDefaultAdapters(): WorkbenchWorkerAdapters {
     },
     async generateScript(input) {
       const { loadConfig } = await import('../config/loader');
-      const { generateScript } = await import('../script/generator');
+      const { generateCliStyleScript } = await import('../script/generator');
       const config = await loadConfig(input.channelId);
+      if (input.usePipeline) {
+        return generateCliStyleScript(config, input.category, input.topic);
+      }
+
+      const { generateScript } = await import('../script/generator');
       return generateScript(config, input.category, input.topic, {
-        usePipeline: input.usePipeline,
+        usePipeline: false,
         candidateCount: 1,
-        pipelineConfig: { candidateCount: 1 },
       });
     },
     async generateScriptPool(input) {
       const { loadConfig } = await import('../config/loader');
-      const { generateScriptPool } = await import('../script/generator');
+      const { generateCliStyleScriptPool, generateScriptPool } = await import('../script/generator');
       const config = await loadConfig(input.channelId);
-      const result = await generateScriptPool(config, input.category, input.topic, {
-        count: input.candidateCount,
-        usePipeline: input.usePipeline,
-        pipelineConfig: { candidateCount: 1 },
-      });
+      const result = input.usePipeline
+        ? await generateCliStyleScriptPool(config, input.category, input.topic, input.candidateCount)
+        : await generateScriptPool(config, input.category, input.topic, {
+            count: input.candidateCount,
+            usePipeline: false,
+          });
 
       return {
         category: input.category,
