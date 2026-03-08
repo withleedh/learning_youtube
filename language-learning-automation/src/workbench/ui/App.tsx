@@ -90,7 +90,7 @@ export function App() {
       </nav>
 
       {studio.workspace === 'topic_inbox' ? (
-        <TopicInboxPage app={app} studio={studio} items={topicInbox.items} packageDraft={studio.packageDraft} />
+        <TopicInboxPage app={app} studio={studio} items={topicInbox.items} />
       ) : null}
 
       {studio.workspace === 'script_lab' ? (

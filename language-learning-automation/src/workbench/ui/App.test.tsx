@@ -579,6 +579,79 @@ describe('Workbench App', () => {
     expect(screen.queryByText('Running Topic Pool')).not.toBeInTheDocument();
   });
 
+  it('keeps a selected running topic batch focused in the generating topics section instead of jumping to another review item', async () => {
+    window.history.replaceState({}, '', '#english/ep-004/topic');
+    const runningTopicRecord: EpisodeSummary = {
+      ...topicRecord,
+      id: 'ep-004',
+      title: 'Running Topic Pool',
+      previewText: 'Generating fresh topics',
+      workflowStatus: 'in_progress',
+      updatedAt: '2026-03-08T01:05:00.000Z',
+    };
+    const runningTopicWorkflow: EpisodeWorkflow = {
+      ...topicWorkflow,
+      episode: runningTopicRecord,
+      stages: [{ ...createStage('topic', 'draft'), canApprove: false }],
+    };
+    let reviewReadyWorkflowHits = 0;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input) => {
+        const url = typeof input === 'string' ? input : input.url;
+        const pathname = url.split('?')[0];
+
+        switch (pathname) {
+          case '/api/workbench/channels':
+            return jsonResponse({ channels });
+          case '/api/workbench/live-status':
+            return jsonResponse({ status: liveStatus });
+          case '/api/workbench/candidates':
+            return jsonResponse({ candidates: [runningTopicRecord, topicRecord] });
+          case '/api/workbench/episodes':
+            return jsonResponse({ episodes: [] });
+          case '/api/workbench/review-queue':
+            return jsonResponse({ items: [reviewReadyTopicQueueItem] });
+          case '/api/workbench/logs/api':
+            return jsonResponse({ entries: apiLogs });
+          case '/api/workbench/episodes/english/ep-004/workflow':
+            return jsonResponse(runningTopicWorkflow);
+          case '/api/workbench/episodes/english/ep-004/stages/topic/current-artifact':
+            return jsonResponse({ artifact: null });
+          case '/api/workbench/episodes/english/ep-004/stages/topic/versions':
+            return jsonResponse({ versions: [] });
+          case '/api/workbench/episodes/english/ep-004/stages/topic/review-context':
+            return jsonResponse({
+              context: {
+                episode: runningTopicRecord,
+                thread: { threadId: 'thread-004', records: [runningTopicRecord] },
+                stage: 'topic',
+                stageSummary: { ...createStage('topic', 'draft'), canApprove: false },
+                currentArtifact: null,
+                approvedArtifact: null,
+                versions: [],
+                comments: [],
+                downstream: [],
+              },
+            });
+          case '/api/workbench/episodes/english/ep-005/workflow':
+            reviewReadyWorkflowHits += 1;
+            return jsonResponse(topicWorkflow);
+          default:
+            return notFoundResponse();
+        }
+      }) as unknown as typeof fetch
+    );
+
+    render(<App />);
+
+    expect(await screen.findByRole('heading', { name: 'Generating Topics' })).toBeInTheDocument();
+    expect(screen.getByText('Running Topic Pool')).toBeInTheDocument();
+    expect(screen.getByText('Review Topic Pool')).toBeInTheDocument();
+    expect(reviewReadyWorkflowHits).toBe(0);
+  });
+
   it('does not fetch approved-artifact for a topic stage before approval exists', async () => {
     window.history.replaceState({}, '', '#english/ep-006/topic');
     let approvedArtifactHits = 0;
@@ -621,13 +694,14 @@ describe('Workbench App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Missed the train' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Generated Topics' })).toBeInTheDocument();
+    expect(screen.getByText('No generated topics yet. Generate topics to start reviewing.')).toBeInTheDocument();
     await waitFor(() => {
       expect(approvedArtifactHits).toBe(0);
     });
   });
 
-  it('shows discard and approve actions for topic review decisions', async () => {
+  it('shows a per-topic approve action without the legacy decision panel controls', async () => {
     window.history.replaceState({}, '', '#english/ep-006/topic');
     const selectedTopicQueueItem: ReviewQueueItem = {
       ...reviewReadyTopicQueueItem,
@@ -684,9 +758,9 @@ describe('Workbench App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Missed the train' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Discard' })).toBeInTheDocument();
+    expect(await screen.findByText('Fresh Topic Pool')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Approve' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Discard' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Request Changes' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Approve & Next' })).not.toBeInTheDocument();
   });
@@ -746,6 +820,13 @@ describe('Workbench App', () => {
               downstream: [],
             },
           });
+        case '/api/workbench/episodes/english/ep-006/stages/topic/approve':
+          return jsonResponse({
+            stage: {
+              ...createStage('topic', 'approved'),
+              approvedVersion: 1,
+            },
+          });
         case '/api/workbench/episodes/english/ep-007/workflow':
           return jsonResponse({
             ...scriptWorkflow,
@@ -788,7 +869,7 @@ describe('Workbench App', () => {
 
     render(<App />);
 
-    expect(await screen.findByRole('heading', { name: 'Missed the train' })).toBeInTheDocument();
+    expect(await screen.findByText('Fresh Topic Pool')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Approve' }));
 
     await waitFor(() => {
@@ -810,7 +891,7 @@ describe('Workbench App', () => {
     });
   });
 
-  it('clears lineage immediately when switching topic inbox selection', async () => {
+  it('switches the selected topic card immediately when clicking another topic', async () => {
     window.history.replaceState({}, '', '#english/ep-006/topic');
     const selectedTopicQueueItem: ReviewQueueItem = {
       ...reviewReadyTopicQueueItem,
@@ -911,8 +992,12 @@ describe('Workbench App', () => {
 
     fireEvent.click(screen.getByRole('button', { name: /Station Topic Pool/i }));
 
+    const firstCard = screen.getByText('Fresh Topic Pool').closest('.topic-list-row');
+    const secondCard = screen.getByText('Station Topic Pool').closest('.topic-list-row');
+
     await waitFor(() => {
-      expect(screen.getByText('No thread selected.')).toBeInTheDocument();
+      expect(firstCard).not.toHaveClass('active');
+      expect(secondCard).toHaveClass('active');
     });
 
     resolveSecondReviewContext?.(
@@ -932,7 +1017,7 @@ describe('Workbench App', () => {
     );
 
     await waitFor(() => {
-      expect(screen.queryByText('No thread selected.')).not.toBeInTheDocument();
+      expect(secondCard).toHaveClass('active');
     });
     expect(screen.getAllByText('Station Topic Pool').length).toBeGreaterThan(0);
   });

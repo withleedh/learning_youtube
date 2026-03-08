@@ -209,7 +209,7 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
   );
 
   useEffect(() => {
-    if (reviewQueue.length === 0 || selectedQueueItem) {
+    if (reviewQueue.length === 0 || selectedQueueItem || app.selectedRecordKey) {
       return;
     }
 

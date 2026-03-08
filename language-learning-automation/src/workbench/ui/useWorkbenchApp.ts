@@ -328,9 +328,43 @@ export function useWorkbenchApp() {
     }
 
     const hashSelection = parseHash();
+    const currentSelection = selectedRecordKeyRef.current
+      ? nextRecords.find(
+          (record) => `${record.channelId}/${record.id}` === selectedRecordKeyRef.current
+        ) ?? null
+      : null;
+    const hashSelectionKey = hashSelection
+      ? `${hashSelection.channelId}/${hashSelection.episodeId}`
+      : null;
+    const shouldHonorHashSelection =
+      respectHash &&
+      hashSelection &&
+      (!channelIdOverride || hashSelection.channelId === channelIdOverride) &&
+      hashSelectionKey !== selectedRecordKeyRef.current;
+
+    if (currentSelection && !shouldHonorHashSelection) {
+      const selectedStageStillValid =
+        !selectedStageRef.current ||
+        workflow?.stages.some((stage) => stage.stage === selectedStageRef.current);
+      const needsSelectedRecordRefresh =
+        workflow?.episode.id !== currentSelection.id ||
+        workflow?.episode.updatedAt !== currentSelection.updatedAt ||
+        !selectedStageStillValid;
+
+      if (needsSelectedRecordRefresh) {
+        await selectRecord(
+          currentSelection.channelId,
+          currentSelection.id,
+          selectedStageRef.current,
+          options
+        );
+      }
+      return;
+    }
+
     const fallbackRecord = nextCandidates[0] ?? nextEpisodes[0];
     const selection =
-      respectHash && hashSelection && (!channelIdOverride || hashSelection.channelId === channelIdOverride)
+      shouldHonorHashSelection
         ? nextRecords.find(
             (record) =>
               record.channelId === hashSelection.channelId &&
@@ -596,7 +630,7 @@ export function useWorkbenchApp() {
       );
 
       const firstCandidate = response.candidates[0] ?? null;
-      showNotice(`Topic pool queued with ${Math.max(1, Math.min(200, topicBatchCount))} candidates.`);
+      showNotice(`Queued generation for ${Math.max(1, Math.min(200, topicBatchCount))} topics.`);
       await loadCollections(false);
       await loadLiveStatus(false);
       if (firstCandidate) {
@@ -880,6 +914,85 @@ export function useWorkbenchApp() {
       await loadLiveStatus(false);
       await selectRecord(response.episode.channelId, response.episode.id);
     });
+  }
+
+  async function handleApproveTopicCandidate(
+    channelId: string,
+    episodeId: string
+  ): Promise<boolean> {
+    let didSucceed = false;
+
+    await withBusy(async () => {
+      const latestWorkflow = await fetchJson<EpisodeWorkflow>(
+        `/api/workbench/episodes/${channelId}/${episodeId}/workflow`
+      );
+      if (
+        latestWorkflow.episode.kind !== 'topic_pool' &&
+        latestWorkflow.episode.kind !== 'topic_candidate'
+      ) {
+        showNotice('Topic candidate만 승인할 수 있습니다.');
+        return;
+      }
+
+      const topicStage = latestWorkflow.stages.find((stage) => stage.stage === 'topic') ?? null;
+      if (!topicStage?.currentVersion || topicStage.reviewStatus !== 'pending_review') {
+        showNotice('승인 가능한 topic candidate가 아닙니다.');
+        return;
+      }
+
+      const currentArtifactResponse = await tryFetchJson<{ artifact: unknown }>(
+        `/api/workbench/episodes/${channelId}/${episodeId}/stages/topic/current-artifact`
+      );
+      const artifact = currentArtifactResponse?.artifact ?? null;
+      const approvedTopic =
+        topicApprovalText.trim() ||
+        (isTopicCandidatesArtifact(artifact) ? artifact.recommendedTopic : '') ||
+        latestWorkflow.episode.title ||
+        latestWorkflow.episode.previewText ||
+        '';
+
+      if (!approvedTopic) {
+        showNotice('승인할 topic을 찾지 못했습니다.');
+        return;
+      }
+
+      await fetchJson(`/api/workbench/episodes/${channelId}/${episodeId}/stages/topic/approve`, {
+        method: 'POST',
+        body: JSON.stringify({
+          version: topicStage.currentVersion,
+          approvedTopic,
+        }),
+      });
+
+      const response = await fetchJson<{ candidates: EpisodeSummary[] }>(
+        `/api/workbench/candidates/${channelId}/${episodeId}/script-batch`,
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            count: Math.max(1, Math.min(50, scriptBatchCount)),
+            category: scriptBatchCategory || undefined,
+            usePipeline: scriptBatchUsePipeline,
+            approvedTopic,
+          }),
+        }
+      );
+
+      const firstCandidate = response.candidates[0] ?? null;
+      setTopicApprovalText('');
+      showNotice(
+        firstCandidate
+          ? `"${approvedTopic}" topic approved. Script generation started.`
+          : `"${approvedTopic}" topic approved.`
+      );
+      await loadCollections(false);
+      await loadLiveStatus(false);
+      if (firstCandidate) {
+        await selectRecord(firstCandidate.channelId, firstCandidate.id);
+      }
+      didSucceed = true;
+    });
+
+    return didSucceed;
   }
 
   async function handleBulkCandidateReview(reviewStatus: 'approved' | 'pending_review'): Promise<void> {
@@ -1216,6 +1329,7 @@ export function useWorkbenchApp() {
     handleCreateTopicCandidateBatch,
     handleGenerateStage,
     handleLoadScriptPoolCandidate,
+    handleApproveTopicCandidate,
     handlePromoteCandidate,
     handleRefreshArtifacts,
     handleRefreshClick,
