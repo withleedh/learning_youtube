@@ -3,7 +3,8 @@
   "version": "1.0.0",
   "description": "다채널 언어 학습 영상 자동화 시스템",
   "scripts": {
-    "start": "remotion studio",
+    "start": "tsx src/workbench/start.ts",
+    "studio": "remotion studio",
     "start:comparison": "remotion studio src/ComparisonRoot.tsx",
     "start:survival": "remotion studio src/SurvivalRoot.tsx",
     "build": "remotion render Main out/video.mp4",
@@ -16,7 +17,11 @@
     "lint:fix": "eslint src --ext .ts,.tsx --fix",
     "format": "prettier --write \"src/**/*.{ts,tsx}\"",
     "pipeline": "tsx src/pipeline/cli.ts",
-    "pipeline:all": "tsx src/pipeline/cli.ts --all"
+    "pipeline:all": "tsx src/pipeline/cli.ts --all",
+    "workbench:start": "tsx src/workbench/start.ts",
+    "workbench:server": "tsx src/workbench/run-server.ts",
+    "workbench:worker": "tsx src/workbench/run-worker.ts",
+    "workbench:ui:build": "tsx src/workbench/ui-build.ts"
   },
   "dependencies": {
     "@andresaya/edge-tts": "^1.8.0",
@@ -45,6 +50,7 @@
     "@typescript-eslint/eslint-plugin": "^6.0.0",
     "@typescript-eslint/parser": "^6.0.0",
     "@vitest/coverage-v8": "^1.0.0",
+    "esbuild": "^0.25.0",
     "eslint": "^8.0.0",
     "eslint-plugin-react": "^7.33.0",
     "eslint-plugin-react-hooks": "^4.6.0",

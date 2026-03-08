@@ -148,6 +148,54 @@ export async function selectTimlyTopic(
   return bestTopic;
 }
 
+export interface TopicWorkbenchBundle {
+  category: Category;
+  candidates: string[];
+  recommendedTopic: string;
+}
+
+/**
+ * Generate reviewable topic candidates for the admin workbench without mutating topic history.
+ */
+export async function generateTopicWorkbenchBundle(
+  category: Category,
+  targetLanguage: string = 'English',
+  nativeLanguage: string = 'Korean',
+  candidateCount: number = 3
+): Promise<TopicWorkbenchBundle> {
+  const apiKey = getGeminiApiKey();
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+
+  const history = await loadTopicHistory();
+  const recentTopics = history.slice(-30).map((h) => h.topic);
+
+  const patternHistory = await loadPatternHistory();
+  const recentPatternIds = patternHistory.slice(-14).map((h) => h.patternId);
+  const patternSelection = selectPatternByWeight(category, recentPatternIds);
+  const combination =
+    category === 'fairytale' ? generateTopicCombination(category, recentTopics) : null;
+
+  const candidates = await generateTopicCandidatesWithPattern(
+    model,
+    category,
+    targetLanguage,
+    nativeLanguage,
+    recentTopics,
+    candidateCount,
+    patternSelection,
+    combination
+  );
+
+  const recommendedTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
+
+  return {
+    category,
+    candidates,
+    recommendedTopic,
+  };
+}
+
 /**
  * Legacy function for backward compatibility
  */

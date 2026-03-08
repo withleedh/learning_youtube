@@ -2,6 +2,9 @@
 
 다채널 언어 학습 영상 자동화 시스템
 
+> 기본 운영 진입점은 CLI가 아니라 `npm start` 로 여는 Workbench 입니다.
+> 이 문서는 batch/backfill 용 CLI 커맨드를 정리합니다.
+
 ## 📺 채널 목록
 
 | Channel ID       | 타겟            | 설명               |
@@ -14,7 +17,13 @@
 
 ## 🚀 자주 쓰는 커맨드
 
-### 전체 파이프라인 (스크립트 생성 + TTS + 이미지 + 렌더링)
+### Workbench 실행 (권장)
+
+```bash
+npm start
+```
+
+### 전체 파이프라인 (내부 batch 용)
 
 ```bash
 # 특정 채널 실행
@@ -54,7 +63,7 @@ npx tsx scripts/generate-thumbnail.ts <channelId> <outputFolder>
 ### Remotion Studio (프리뷰)
 
 ```bash
-npm run start
+npm run studio
 ```
 
 ### 주제 히스토리 확인

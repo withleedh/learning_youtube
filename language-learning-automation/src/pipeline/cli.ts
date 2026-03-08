@@ -17,7 +17,13 @@ const VALID_CATEGORIES: Category[] = [
 
 function printUsage() {
   console.log(`
-Language Learning Video Automation Pipeline
+Language Learning Video Automation Pipeline (Internal Batch Tool)
+
+Primary entry point:
+  npm start
+  -> launches the approval-first Workbench UI and background worker
+
+Use this CLI for batch runs, backfills, and internal debugging.
 
 Usage:
   npx tsx src/pipeline/cli.ts --channel <channelId> [options]
