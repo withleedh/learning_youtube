@@ -27,13 +27,16 @@ describe('workbench workflow model', () => {
     expect(stageStates.tts.blockedBy).toEqual(['script']);
     expect(stageStates.render.blockedBy).toEqual(['image', 'tts']);
     expect(stageStates.shorts.blockedBy).toEqual(['render']);
+    expect(stageStates.package.blockedBy).toEqual(['shorts']);
   });
 
   it('returns next and downstream stages in the correct order', () => {
     expect(getNextStage('topic')).toBe('script');
-    expect(getNextStage('shorts')).toBeNull();
-    expect(getDownstreamStages('script')).toEqual(['image', 'tts', 'render', 'shorts']);
-    expect(getDownstreamStages('shorts')).toEqual([]);
+    expect(getNextStage('shorts')).toBe('package');
+    expect(getNextStage('package')).toBeNull();
+    expect(getDownstreamStages('script')).toEqual(['image', 'tts', 'render', 'shorts', 'package']);
+    expect(getDownstreamStages('shorts')).toEqual(['package']);
+    expect(getDownstreamStages('package')).toEqual([]);
   });
 
   it('validates an episode record shape', () => {

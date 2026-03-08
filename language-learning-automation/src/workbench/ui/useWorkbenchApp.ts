@@ -9,10 +9,12 @@ import {
   emptyImpact,
   fetchJson,
   formatIdList,
+  getEditableScriptFromArtifact,
   getDropPosition,
   getParsedScriptDraft,
   getScriptImpactSummary,
   isScriptArtifact,
+  isScriptPoolArtifact,
   normalizeScriptDraftStructure,
   parseHash,
   setHash,
@@ -28,10 +30,17 @@ import type {
   EpisodeWorkflow,
   HighlightState,
   ScriptArtifact,
+  StageWorkflowSummary,
   StageVersionRecord,
+  WorkbenchLiveStatus,
 } from './types';
 
 type DragPosition = 'before' | 'after' | null;
+type LoadCollectionsOptions = {
+  preserveLocalScriptDraft?: boolean;
+};
+
+const POLL_INTERVAL_MS = 2500;
 
 export function useWorkbenchApp() {
   const [availableChannels, setAvailableChannels] = useState<ChannelOption[]>([]);
@@ -42,6 +51,18 @@ export function useWorkbenchApp() {
   const [scriptBatchCategory, setScriptBatchCategory] = useState('');
   const [scriptBatchUsePipeline, setScriptBatchUsePipeline] = useState(true);
   const [candidates, setCandidates] = useState<EpisodeSummary[]>([]);
+  const [candidateSearchQuery, setCandidateSearchQuery] = useState('');
+  const [candidateChannelFilter, setCandidateChannelFilter] = useState('');
+  const [candidateStageFilter, setCandidateStageFilter] = useState<'all' | 'topic' | 'script'>(
+    'all'
+  );
+  const [candidateReviewFilter, setCandidateReviewFilter] = useState<
+    'all' | 'draft' | 'pending_review' | 'approved' | 'changes_requested' | 'completed'
+  >('all');
+  const [candidateSortMode, setCandidateSortMode] = useState<
+    'review_ready' | 'updated_desc' | 'title_asc' | 'stage'
+  >('review_ready');
+  const [selectedCandidateKeys, setSelectedCandidateKeys] = useState<string[]>([]);
   const [episodes, setEpisodes] = useState<EpisodeSummary[]>([]);
   const [workflow, setWorkflow] = useState<EpisodeWorkflow | null>(null);
   const [selectedRecordKey, setSelectedRecordKey] = useState<string | null>(null);
@@ -57,40 +78,118 @@ export function useWorkbenchApp() {
   const [payloads, setPayloads] = useState<Record<EpisodeStage, string>>(defaultPayloads);
   const [topicApprovalText, setTopicApprovalText] = useState('');
   const [scriptDraftText, setScriptDraftText] = useState('');
+  const [scriptDraftServerText, setScriptDraftServerText] = useState('');
   const [scriptEditorMode, setScriptEditorMode] = useState<'cards' | 'json'>('cards');
+  const [hasScriptDraftRemoteUpdate, setHasScriptDraftRemoteUpdate] = useState(false);
   const [isBusy, setIsBusy] = useState(false);
+  const [liveStatus, setLiveStatus] = useState<WorkbenchLiveStatus | null>(null);
+  const [lastLiveSyncAt, setLastLiveSyncAt] = useState<string | null>(null);
+  const [isDocumentVisible, setIsDocumentVisible] = useState(
+    typeof document === 'undefined' ? true : document.visibilityState !== 'hidden'
+  );
   const [draggingSentenceIndex, setDraggingSentenceIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
   const [dragOverPosition, setDragOverPosition] = useState<DragPosition>(null);
   const [highlightState, setHighlightState] = useState<HighlightState | null>(null);
   const noticeTimeoutRef = useRef<number | null>(null);
   const loadChannelsRef = useRef<() => Promise<void>>(async () => {});
-  const loadCollectionsRef = useRef<(respectHash?: boolean) => Promise<void>>(async () => {});
+  const loadCollectionsRef = useRef<
+    (respectHash?: boolean, options?: LoadCollectionsOptions) => Promise<void>
+  >(async () => {});
+  const loadLiveStatusRef = useRef<(showErrors?: boolean) => Promise<WorkbenchLiveStatus | null>>(
+    async () => null
+  );
+  const pollLiveDataRef = useRef<() => Promise<void>>(async () => {});
+  const isPollingRef = useRef(false);
+  const selectedRecordKeyRef = useRef<string | null>(null);
+  const selectedStageRef = useRef<EpisodeStage | null>(null);
+  const scriptDraftDirtyRef = useRef(false);
+  const scriptDraftServerTextRef = useRef('');
+  const liveStatusRef = useRef<WorkbenchLiveStatus | null>(null);
 
   const selectedStageInfo = workflow?.stages.find((stage) => stage.stage === selectedStage) ?? null;
   const parsedScriptDraft = getParsedScriptDraft(scriptDraftText);
+  const currentScriptPoolArtifact = isScriptPoolArtifact(currentArtifact) ? currentArtifact : null;
   const approvedScriptArtifact = isScriptArtifact(approvedArtifact) ? approvedArtifact : null;
+  const isScriptDraftDirty =
+    selectedStage === 'script' &&
+    scriptDraftText.trim().length > 0 &&
+    scriptDraftText !== scriptDraftServerText;
   const scriptImpact =
     selectedStage === 'script'
       ? getScriptImpactSummary(parsedScriptDraft, approvedScriptArtifact)
       : emptyImpact;
+  const filteredCandidates = candidates
+    .filter((candidate) => {
+      const title = (candidate.previewText || candidate.title || candidate.id).toLowerCase();
+      const query = candidateSearchQuery.trim().toLowerCase();
+      if (query && !title.includes(query) && !candidate.channelId.toLowerCase().includes(query)) {
+        return false;
+      }
+
+      if (candidateChannelFilter && candidate.channelId !== candidateChannelFilter) {
+        return false;
+      }
+
+      return true;
+    })
+    .sort((left, right) => compareCandidates(left, right, candidateSortMode));
+  const bulkEligibleFilteredCandidates = filteredCandidates.filter(isBulkReviewableCandidate);
+  const areAllFilteredCandidatesSelected =
+    bulkEligibleFilteredCandidates.length > 0 &&
+    bulkEligibleFilteredCandidates.every((candidate) =>
+      selectedCandidateKeys.includes(getRecordKey(candidate))
+    );
+  selectedRecordKeyRef.current = selectedRecordKey;
+  selectedStageRef.current = selectedStage;
+  scriptDraftDirtyRef.current = isScriptDraftDirty;
+  scriptDraftServerTextRef.current = scriptDraftServerText;
+  liveStatusRef.current = liveStatus;
   loadChannelsRef.current = loadChannels;
   loadCollectionsRef.current = loadCollections;
+  loadLiveStatusRef.current = loadLiveStatus;
+  pollLiveDataRef.current = pollLiveData;
 
   useEffect(() => {
-    void loadChannelsRef.current();
-    void loadCollectionsRef.current(true);
+    void loadChannelsRef.current().catch((error) => {
+      showNotice(error instanceof Error ? error.message : String(error));
+    });
+    void loadCollectionsRef.current(true).catch((error) => {
+      showNotice(error instanceof Error ? error.message : String(error));
+    });
+    void loadLiveStatusRef.current(false);
 
     const onHashChange = () => {
-      void loadCollectionsRef.current(true);
+      void loadCollectionsRef.current(true).catch((error) => {
+        showNotice(error instanceof Error ? error.message : String(error));
+      });
+    };
+    const onVisibilityChange = () => {
+      const nextVisible = document.visibilityState !== 'hidden';
+      setIsDocumentVisible(nextVisible);
+      if (nextVisible) {
+        void pollLiveDataRef.current();
+      }
     };
 
     window.addEventListener('hashchange', onHashChange);
+    document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       window.removeEventListener('hashchange', onHashChange);
+      document.removeEventListener('visibilitychange', onVisibilityChange);
       if (noticeTimeoutRef.current !== null) {
         window.clearTimeout(noticeTimeoutRef.current);
       }
+    };
+  }, []);
+
+  useEffect(() => {
+    const intervalId = window.setInterval(() => {
+      void pollLiveDataRef.current();
+    }, POLL_INTERVAL_MS);
+
+    return () => {
+      window.clearInterval(intervalId);
     };
   }, []);
 
@@ -113,7 +212,61 @@ export function useWorkbenchApp() {
     }
   }
 
-  async function loadCollections(respectHash = false): Promise<void> {
+  async function loadLiveStatus(showErrors = true): Promise<WorkbenchLiveStatus | null> {
+    try {
+      const response = await fetchJson<{ status: WorkbenchLiveStatus }>('/api/workbench/live-status');
+      setLiveStatus(response.status);
+      return response.status;
+    } catch (error) {
+      if (showErrors) {
+        showNotice(error instanceof Error ? error.message : String(error));
+      }
+      return null;
+    }
+  }
+
+  async function pollLiveData(): Promise<void> {
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+      return;
+    }
+
+    if (isPollingRef.current) {
+      return;
+    }
+
+    isPollingRef.current = true;
+    try {
+      const previousStatus = liveStatusRef.current;
+      const nextStatus = await loadLiveStatus(false);
+      if (!nextStatus) {
+        return;
+      }
+
+      const hadActiveJobs = (previousStatus?.activeJobCount ?? 0) > 0;
+      const hasActiveJobs = nextStatus.activeJobCount > 0;
+      const didStatusChange =
+        nextStatus.lastUpdatedAt !== previousStatus?.lastUpdatedAt ||
+        nextStatus.activeJobCount !== previousStatus?.activeJobCount ||
+        nextStatus.runningJobs !== previousStatus?.runningJobs ||
+        nextStatus.queuedJobs !== previousStatus?.queuedJobs;
+
+      if (!hasActiveJobs && !hadActiveJobs && !didStatusChange) {
+        return;
+      }
+
+      await loadCollectionsRef.current(true, { preserveLocalScriptDraft: true });
+      setLastLiveSyncAt(new Date().toISOString());
+    } catch {
+      // Polling is best-effort. Manual actions still surface errors explicitly.
+    } finally {
+      isPollingRef.current = false;
+    }
+  }
+
+  async function loadCollections(
+    respectHash = false,
+    options: LoadCollectionsOptions = {}
+  ): Promise<void> {
     const [candidatesResponse, episodesResponse] = await Promise.all([
       fetchJson<{ candidates: EpisodeSummary[] }>('/api/workbench/candidates'),
       fetchJson<{ episodes: EpisodeSummary[] }>('/api/workbench/episodes'),
@@ -121,14 +274,18 @@ export function useWorkbenchApp() {
     const nextCandidates = candidatesResponse.candidates ?? [];
     const nextEpisodes = episodesResponse.episodes ?? [];
     setCandidates(nextCandidates);
+    setSelectedCandidateKeys((current) =>
+      current.filter((key) => nextCandidates.some((candidate) => getRecordKey(candidate) === key))
+    );
     setEpisodes(nextEpisodes);
-    await syncSelectionFromHash(nextCandidates, nextEpisodes, respectHash);
+    await syncSelectionFromHash(nextCandidates, nextEpisodes, respectHash, options);
   }
 
   async function syncSelectionFromHash(
     nextCandidates: EpisodeSummary[],
     nextEpisodes: EpisodeSummary[],
-    respectHash: boolean
+    respectHash: boolean,
+    options: LoadCollectionsOptions = {}
   ): Promise<void> {
     const nextRecords = [...nextCandidates, ...nextEpisodes];
     if (nextRecords.length === 0) {
@@ -137,6 +294,9 @@ export function useWorkbenchApp() {
       setSelectedStage(null);
       setCurrentArtifact(null);
       setApprovedArtifact(null);
+      setScriptDraftText('');
+      setScriptDraftServerText('');
+      setHasScriptDraftRemoteUpdate(false);
       setStageVersions([]);
       setSelectedVersionNumber(null);
       setSelectedVersionArtifact(null);
@@ -164,13 +324,14 @@ export function useWorkbenchApp() {
       return;
     }
 
-    await selectRecord(record.channelId, record.id, preferredStage);
+    await selectRecord(record.channelId, record.id, preferredStage, options);
   }
 
   async function selectRecord(
     channelId: string,
     episodeId: string,
-    preferredStage: EpisodeStage | null = null
+    preferredStage: EpisodeStage | null = null,
+    options: LoadCollectionsOptions = {}
   ): Promise<void> {
     const nextWorkflow = await fetchJson<EpisodeWorkflow>(
       `/api/workbench/episodes/${channelId}/${episodeId}/workflow`
@@ -179,29 +340,50 @@ export function useWorkbenchApp() {
       preferredStage && nextWorkflow.stages.some((stage) => stage.stage === preferredStage)
         ? preferredStage
         : nextWorkflow.episode.currentStage;
+    const nextRecordKey = `${channelId}/${episodeId}`;
+    const isSameSelection =
+      selectedRecordKeyRef.current === nextRecordKey && selectedStageRef.current === nextSelectedStage;
 
-    setSelectedRecordKey(`${channelId}/${episodeId}`);
+    if (!isSameSelection || nextSelectedStage !== 'topic') {
+      setTopicApprovalText('');
+    }
+
+    setSelectedRecordKey(nextRecordKey);
     setWorkflow(nextWorkflow);
     setSelectedStage(nextSelectedStage);
     setHash(channelId, episodeId, nextSelectedStage);
-    await loadStageArtifacts(channelId, episodeId, nextSelectedStage);
+    await loadStageArtifacts(
+      channelId,
+      episodeId,
+      nextSelectedStage,
+      nextWorkflow.stages.find((stage) => stage.stage === nextSelectedStage) ?? null,
+      options
+    );
   }
 
   async function loadStageArtifacts(
     channelId: string,
     episodeId: string,
-    stage: EpisodeStage
+    stage: EpisodeStage,
+    stageSummary: StageWorkflowSummary | null = null,
+    options: LoadCollectionsOptions = {}
   ): Promise<void> {
     setArtifactError('');
 
     try {
+      const shouldFetchCurrentArtifact = (stageSummary?.currentVersion ?? 1) > 0;
+      const shouldFetchApprovedArtifact = stageSummary?.approvedVersion != null;
       const [currentArtifactResponse, approvedArtifactResponse] = await Promise.all([
-        tryFetchJson<{ artifact: unknown }>(
-          `/api/workbench/episodes/${channelId}/${episodeId}/stages/${stage}/current-artifact`
-        ),
-        tryFetchJson<{ artifact: unknown }>(
-          `/api/workbench/episodes/${channelId}/${episodeId}/stages/${stage}/approved-artifact`
-        ),
+        shouldFetchCurrentArtifact
+          ? tryFetchJson<{ artifact: unknown }>(
+              `/api/workbench/episodes/${channelId}/${episodeId}/stages/${stage}/current-artifact`
+            )
+          : Promise.resolve(null),
+        shouldFetchApprovedArtifact
+          ? tryFetchJson<{ artifact: unknown }>(
+              `/api/workbench/episodes/${channelId}/${episodeId}/stages/${stage}/approved-artifact`
+            )
+          : Promise.resolve(null),
       ]);
 
       const nextCurrentArtifact = currentArtifactResponse?.artifact ?? null;
@@ -210,12 +392,32 @@ export function useWorkbenchApp() {
       setApprovedArtifact(nextApprovedArtifact);
       await loadStageVersions(channelId, episodeId, stage);
 
-      if (stage === 'script' && isScriptArtifact(nextCurrentArtifact)) {
-        setScriptDraftText(JSON.stringify(nextCurrentArtifact, null, 2));
+      const nextEditableScript =
+        stage === 'script' ? getEditableScriptFromArtifact(nextCurrentArtifact) : null;
+
+      if (stage === 'script' && nextEditableScript) {
+        const nextServerDraftText = JSON.stringify(nextEditableScript, null, 2);
+        const isSameSelectedRecord =
+          selectedRecordKeyRef.current === `${channelId}/${episodeId}` &&
+          selectedStageRef.current === 'script';
+        const shouldPreserveLocalDraft =
+          options.preserveLocalScriptDraft && isSameSelectedRecord && scriptDraftDirtyRef.current;
+
+        setScriptDraftServerText(nextServerDraftText);
+        if (shouldPreserveLocalDraft) {
+          setHasScriptDraftRemoteUpdate(nextServerDraftText !== scriptDraftServerTextRef.current);
+        } else {
+          setScriptDraftText(nextServerDraftText);
+          setHasScriptDraftRemoteUpdate(false);
+        }
       }
     } catch (error) {
       setCurrentArtifact(null);
       setApprovedArtifact(null);
+      if (stage === 'script') {
+        setScriptDraftServerText('');
+        setHasScriptDraftRemoteUpdate(false);
+      }
       setStageVersions([]);
       setSelectedVersionNumber(null);
       setSelectedVersionArtifact(null);
@@ -265,19 +467,24 @@ export function useWorkbenchApp() {
     }
   }
 
-  async function refreshSelectedRecord(options?: { reloadCollections?: boolean }): Promise<void> {
+  async function refreshSelectedRecord(options?: {
+    reloadCollections?: boolean;
+    preserveLocalScriptDraft?: boolean;
+  }): Promise<void> {
     if (!selectedRecordKey) {
-      await loadCollections(true);
+      await loadCollections(true, { preserveLocalScriptDraft: options?.preserveLocalScriptDraft });
       return;
     }
 
     if (options?.reloadCollections) {
-      await loadCollections(true);
+      await loadCollections(true, { preserveLocalScriptDraft: options.preserveLocalScriptDraft });
       return;
     }
 
     const [channelId, episodeId] = selectedRecordKey.split('/');
-    await selectRecord(channelId, episodeId, selectedStage);
+    await selectRecord(channelId, episodeId, selectedStage, {
+      preserveLocalScriptDraft: options?.preserveLocalScriptDraft,
+    });
   }
 
   function showNotice(message: string): void {
@@ -330,8 +537,9 @@ export function useWorkbenchApp() {
       );
 
       const firstCandidate = response.candidates[0] ?? null;
-      showNotice(`${response.candidates.length} topic candidates queued.`);
+      showNotice(`Topic pool queued with ${Math.max(1, Math.min(200, topicBatchCount))} candidates.`);
       await loadCollections(false);
+      await loadLiveStatus(false);
       if (firstCandidate) {
         await selectRecord(firstCandidate.channelId, firstCandidate.id);
       }
@@ -365,6 +573,7 @@ export function useWorkbenchApp() {
 
       showNotice(`${stageLabels[selectedStage]} generation queued.`);
       await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
     });
   }
 
@@ -392,6 +601,7 @@ export function useWorkbenchApp() {
       setTopicApprovalText('');
       showNotice(`${stageLabels[selectedStage]} approved.`);
       await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
     });
   }
 
@@ -412,6 +622,7 @@ export function useWorkbenchApp() {
 
       showNotice(`${stageLabels[selectedStage]} marked as changes requested.`);
       await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
     });
   }
 
@@ -447,6 +658,7 @@ export function useWorkbenchApp() {
         `${label} regeneration queued on ${stageLabels[stageName]} v${String(stageInfo.currentVersion).padStart(3, '0')}.`
       );
       await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
     });
   }
 
@@ -473,11 +685,23 @@ export function useWorkbenchApp() {
 
       showNotice('Script draft saved. Downstream stages were marked stale where needed.');
       await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
     });
   }
 
+  function handleLoadScriptPoolCandidate(index: number): void {
+    const candidate = currentScriptPoolArtifact?.candidates[index];
+    if (!candidate) {
+      return;
+    }
+
+    setScriptDraftText(JSON.stringify(candidate, null, 2));
+    setHasScriptDraftRemoteUpdate(false);
+    showNotice(`Loaded script candidate ${index + 1} into the editor.`);
+  }
+
   async function handleSpawnScriptCandidates(): Promise<void> {
-    if (!selectedRecordKey || workflow?.episode.kind !== 'candidate') {
+    if (!selectedRecordKey || workflow?.episode.kind !== 'topic_pool') {
       return;
     }
 
@@ -502,8 +726,13 @@ export function useWorkbenchApp() {
       );
 
       const firstCandidate = response.candidates[0] ?? null;
-      showNotice(`${response.candidates.length} script candidates queued.`);
+      showNotice(
+        firstCandidate
+          ? `Script pool queued with ${Math.max(1, Math.min(50, scriptBatchCount))} candidates.`
+          : 'Script pool queued.'
+      );
       await loadCollections(false);
+      await loadLiveStatus(false);
       if (firstCandidate) {
         await selectRecord(firstCandidate.channelId, firstCandidate.id);
       }
@@ -511,7 +740,7 @@ export function useWorkbenchApp() {
   }
 
   async function handlePromoteCandidate(): Promise<void> {
-    if (!selectedRecordKey || workflow?.episode.kind !== 'candidate') {
+    if (!selectedRecordKey || workflow?.episode.kind !== 'script_pool') {
       return;
     }
 
@@ -532,7 +761,71 @@ export function useWorkbenchApp() {
 
       showNotice(`Episode ${response.episode.id} created from candidate ${candidateId}.`);
       await loadCollections(false);
+      await loadLiveStatus(false);
       await selectRecord(response.episode.channelId, response.episode.id);
+    });
+  }
+
+  async function handleBulkCandidateReview(
+    reviewStatus: 'approved' | 'changes_requested'
+  ): Promise<void> {
+    const selectedItems = candidates
+      .filter((candidate) => selectedCandidateKeys.includes(getRecordKey(candidate)))
+      .map((candidate) => ({
+        channelId: candidate.channelId,
+        candidateId: candidate.id,
+      }));
+    if (selectedItems.length === 0) {
+      showNotice('먼저 bulk action을 적용할 candidate를 선택하세요.');
+      return;
+    }
+
+    await withBusy(async () => {
+      const result = await fetchJson<{
+        processed: Array<{ candidateId: string }>;
+        skipped: Array<{ candidateId: string; reason: string }>;
+      }>('/api/workbench/candidates/bulk-review', {
+        method: 'POST',
+        body: JSON.stringify({
+          items: selectedItems,
+          reviewStatus,
+        }),
+      });
+
+      showNotice(
+        `${result.processed.length} candidates marked ${reviewStatus}.${result.skipped.length > 0 ? ` ${result.skipped.length} skipped.` : ''}`
+      );
+      await refreshSelectedRecord({ reloadCollections: true });
+      await loadLiveStatus(false);
+    });
+  }
+
+  function handleToggleCandidateSelection(channelId: string, candidateId: string): void {
+    const key = `${channelId}/${candidateId}`;
+    setSelectedCandidateKeys((current) =>
+      current.includes(key) ? current.filter((item) => item !== key) : [...current, key]
+    );
+  }
+
+  function handleToggleSelectFilteredCandidates(): void {
+    const filteredKeys = bulkEligibleFilteredCandidates.map(getRecordKey);
+    if (filteredKeys.length === 0) {
+      return;
+    }
+
+    setSelectedCandidateKeys((current) => {
+      const currentSet = new Set(current);
+      const allSelected = filteredKeys.every((key) => currentSet.has(key));
+
+      if (allSelected) {
+        return current.filter((key) => !filteredKeys.includes(key));
+      }
+
+      for (const key of filteredKeys) {
+        currentSet.add(key);
+      }
+
+      return [...currentSet];
     });
   }
 
@@ -546,6 +839,17 @@ export function useWorkbenchApp() {
     mutator(nextDraft);
     normalizeScriptDraftStructure(nextDraft);
     setScriptDraftText(JSON.stringify(nextDraft, null, 2));
+  }
+
+  function reloadScriptDraftFromServer(): void {
+    if (!scriptDraftServerText) {
+      showNotice('현재 불러올 수 있는 서버 script draft가 없습니다.');
+      return;
+    }
+
+    setScriptDraftText(scriptDraftServerText);
+    setHasScriptDraftRemoteUpdate(false);
+    showNotice('Server script draft로 다시 맞췄습니다.');
   }
 
   function handleScriptFieldChange(
@@ -684,7 +988,16 @@ export function useWorkbenchApp() {
   }
 
   async function handleRefreshClick(): Promise<void> {
-    await Promise.all([loadChannels(), refreshSelectedRecord({ reloadCollections: true })]);
+    try {
+      await Promise.all([
+        loadChannels(),
+        refreshSelectedRecord({ reloadCollections: true, preserveLocalScriptDraft: true }),
+        loadLiveStatus(false),
+      ]);
+      setLastLiveSyncAt(new Date().toISOString());
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function handleRefreshArtifacts(): Promise<void> {
@@ -693,7 +1006,18 @@ export function useWorkbenchApp() {
     }
 
     const [channelId, episodeId] = selectedRecordKey.split('/');
-    await loadStageArtifacts(channelId, episodeId, selectedStage);
+    const stageSummary = workflow?.stages.find((entry) => entry.stage === selectedStage) ?? null;
+    try {
+      await Promise.all([
+        loadStageArtifacts(channelId, episodeId, selectedStage, stageSummary, {
+          preserveLocalScriptDraft: true,
+        }),
+        loadLiveStatus(false),
+      ]);
+      setLastLiveSyncAt(new Date().toISOString());
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function handleSelectStageVersion(version: number): Promise<void> {
@@ -702,39 +1026,69 @@ export function useWorkbenchApp() {
     }
 
     const [channelId, episodeId] = selectedRecordKey.split('/');
-    await loadSelectedStageVersionArtifact(channelId, episodeId, selectedStage, version);
+    try {
+      await loadSelectedStageVersionArtifact(channelId, episodeId, selectedStage, version);
+    } catch (error) {
+      showNotice(error instanceof Error ? error.message : String(error));
+    }
   }
 
   function handleSelectStage(stage: EpisodeStage): void {
     setSelectedStage(stage);
+    if (stage !== 'topic') {
+      setTopicApprovalText('');
+    }
     if (!selectedRecordKey) {
       return;
     }
 
     const [channelId, episodeId] = selectedRecordKey.split('/');
     setHash(channelId, episodeId, stage);
-    void loadStageArtifacts(channelId, episodeId, stage);
+    const stageSummary = workflow?.stages.find((entry) => entry.stage === stage) ?? null;
+    void loadStageArtifacts(channelId, episodeId, stage, stageSummary).catch((error) => {
+      showNotice(error instanceof Error ? error.message : String(error));
+    });
   }
 
   return {
     availableChannels,
+    areAllFilteredCandidatesSelected,
     artifactError,
     approvedArtifact,
     candidates,
+    candidateChannelFilter,
+    candidateReviewFilter,
+    candidateSearchQuery,
+    candidateSortMode,
+    candidateStageFilter,
     createChannelId,
     currentArtifact,
+    currentScriptPoolArtifact,
     dragOverIndex,
     dragOverPosition,
     draggingSentenceIndex,
     episodes,
     handleApproveStage,
+    handleBulkApproveCandidates() {
+      void handleBulkCandidateReview('approved');
+    },
+    handleBulkRequestChangesCandidates() {
+      void handleBulkCandidateReview('changes_requested');
+    },
     handleCreateTopicCandidateBatch,
     handleGenerateStage,
+    handleLoadScriptPoolCandidate,
     handlePromoteCandidate,
     handleRefreshArtifacts,
     handleRefreshClick,
+    handleReloadScriptDraft: reloadScriptDraftFromServer,
     handleRequestChanges,
     handleSaveScriptDraft,
+    handleSetCandidateChannelFilter: setCandidateChannelFilter,
+    handleSetCandidateReviewFilter: setCandidateReviewFilter,
+    handleSetCandidateSearchQuery: setCandidateSearchQuery,
+    handleSetCandidateSortMode: setCandidateSortMode,
+    handleSetCandidateStageFilter: setCandidateStageFilter,
     handleSetCreateChannelId: setCreateChannelId,
     handleSetScriptBatchCategory: setScriptBatchCategory,
     handleSetScriptBatchCount(value: number) {
@@ -769,6 +1123,9 @@ export function useWorkbenchApp() {
     handleSetScriptEditorMode: setScriptEditorMode,
     handleSetHighlightState: setHighlightState,
     handleSpawnScriptCandidates,
+    handleToggleCandidateSelection,
+    handleToggleSelectFilteredCandidates,
+    filteredCandidates,
     handleRegenerateImpactedScenes() {
       void handleStageTargetedGeneration(
         'image',
@@ -798,10 +1155,16 @@ export function useWorkbenchApp() {
       );
     },
     handleSelectStageVersion,
+    hasScriptDraftRemoteUpdate,
+    isDocumentVisible,
     isBusy,
+    isScriptDraftDirty,
+    lastLiveSyncAt,
+    liveStatus,
     notice,
     parsedScriptDraft,
     payloadText: selectedStage ? payloads[selectedStage] : '{}',
+    selectedCandidateKeys,
     scriptBatchCategory,
     scriptBatchCount,
     scriptBatchUsePipeline,
@@ -820,5 +1183,71 @@ export function useWorkbenchApp() {
     topicApprovalText,
     workflow,
     highlightState,
+    bulkEligibleCandidateCount: bulkEligibleFilteredCandidates.length,
   };
+}
+
+function getRecordKey(record: EpisodeSummary): string {
+  return `${record.channelId}/${record.id}`;
+}
+
+function getRecordCurrentReviewStatus(record: EpisodeSummary): string {
+  return record.stageStates?.[record.currentStage]?.reviewStatus ?? 'draft';
+}
+
+function isBulkReviewableCandidate(record: EpisodeSummary): boolean {
+  if (record.kind === 'episode') {
+    return false;
+  }
+
+  if (record.currentStage !== 'topic' && record.currentStage !== 'script') {
+    return false;
+  }
+
+  return (record.stageStates?.[record.currentStage]?.currentVersion ?? 0) > 0;
+}
+
+function getCandidateReviewRank(reviewStatus: string): number {
+  switch (reviewStatus) {
+    case 'pending_review':
+      return 0;
+    case 'changes_requested':
+      return 1;
+    case 'approved':
+      return 2;
+    case 'draft':
+      return 3;
+    default:
+      return 4;
+  }
+}
+
+function compareCandidates(
+  left: EpisodeSummary,
+  right: EpisodeSummary,
+  sortMode: 'review_ready' | 'updated_desc' | 'title_asc' | 'stage'
+): number {
+  if (sortMode === 'updated_desc') {
+    return right.updatedAt.localeCompare(left.updatedAt);
+  }
+
+  if (sortMode === 'title_asc') {
+    return (
+      (left.title || left.id).localeCompare(right.title || right.id, 'ko') ||
+      right.updatedAt.localeCompare(left.updatedAt)
+    );
+  }
+
+  if (sortMode === 'stage') {
+    return (
+      left.currentStage.localeCompare(right.currentStage) ||
+      right.updatedAt.localeCompare(left.updatedAt)
+    );
+  }
+
+  return (
+    getCandidateReviewRank(getRecordCurrentReviewStatus(left)) -
+      getCandidateReviewRank(getRecordCurrentReviewStatus(right)) ||
+    right.updatedAt.localeCompare(left.updatedAt)
+  );
 }

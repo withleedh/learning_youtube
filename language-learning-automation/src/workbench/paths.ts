@@ -76,12 +76,28 @@ export function getEpisodeReviewDir(dataRoot: string, channelId: string, episode
   return path.join(getEpisodeRoot(dataRoot, channelId, episodeId), 'reviews');
 }
 
+export function getEpisodeCommentsPath(
+  dataRoot: string,
+  channelId: string,
+  episodeId: string
+): string {
+  return path.join(getEpisodeReviewDir(dataRoot, channelId, episodeId), 'comments.json');
+}
+
 export function getEpisodeJobsDir(dataRoot: string, channelId: string, episodeId: string): string {
   return path.join(getEpisodeRoot(dataRoot, channelId, episodeId), 'jobs');
 }
 
 export function getEpisodeIndexPath(dataRoot: string): string {
   return path.join(dataRoot, 'episodes', 'index.json');
+}
+
+export function getWorkbenchLogsDir(dataRoot: string): string {
+  return path.join(dataRoot, 'logs');
+}
+
+export function getWorkbenchApiLogPath(dataRoot: string): string {
+  return path.join(getWorkbenchLogsDir(dataRoot), 'workbench-api.ndjson');
 }
 
 export function getJobPath(

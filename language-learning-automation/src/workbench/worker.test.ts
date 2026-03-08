@@ -58,6 +58,8 @@ describe('WorkbenchWorker', () => {
 
     expect(refreshed.stageStates.topic.reviewStatus).toBe('pending_review');
     expect(jobs[0].status).toBe('completed');
+    expect(jobs[0].progress?.current).toBe(3);
+    expect(jobs[0].progress?.total).toBe(3);
     expect(candidates.recommendedTopic).toBe('Missed the train');
     expect(candidates.candidates).toHaveLength(3);
   });
@@ -1025,6 +1027,18 @@ function createFakeAdapters(overrides: {
 }): WorkbenchWorkerAdapters {
   return {
     async generateTopicBundle(input) {
+      if (input.onProgress) {
+        await input.onProgress({
+          requestedCount: input.candidateCount,
+          generatedCount: input.candidateCount,
+          batchNumber: 1,
+          totalBatches: 1,
+          lastBatchCandidates:
+            overrides.topicBundle?.candidates ?? ['Topic A', 'Topic B', 'Topic C'],
+          phase: 'generating',
+        });
+      }
+
       return (
         overrides.topicBundle ?? {
           category: input.category,

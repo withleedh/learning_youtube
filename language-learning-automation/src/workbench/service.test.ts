@@ -3,7 +3,21 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+const recordApprovedTopicMock = vi.fn();
+
+vi.mock('../script/topic-selector', async () => {
+  const actual = await vi.importActual<typeof import('../script/topic-selector')>(
+    '../script/topic-selector'
+  );
+
+  return {
+    ...actual,
+    recordApprovedTopic: recordApprovedTopicMock,
+  };
+});
+
 import { WorkbenchService } from './service';
 import { WorkbenchStore } from './store';
 
@@ -16,6 +30,7 @@ describe('WorkbenchService', () => {
     dataRoot = await mkdtemp(path.join(os.tmpdir(), 'workbench-service-'));
     store = new WorkbenchStore(dataRoot);
     service = new WorkbenchService(store);
+    recordApprovedTopicMock.mockReset();
   });
 
   afterEach(async () => {
@@ -47,12 +62,68 @@ describe('WorkbenchService', () => {
     const episodes = await service.listEpisodes();
     const candidateWorkflow = await service.getEpisodeWorkflow('english', result.candidates[0].id);
 
-    expect(result.candidates).toHaveLength(3);
-    expect(result.jobs).toHaveLength(3);
-    expect(candidates).toHaveLength(3);
+    expect(result.candidates).toHaveLength(1);
+    expect(result.jobs).toHaveLength(1);
+    expect(candidates).toHaveLength(1);
     expect(episodes).toHaveLength(0);
-    expect(candidateWorkflow.episode.kind).toBe('candidate');
-    expect(candidateWorkflow.stages.map((stage) => stage.stage)).toEqual(['topic', 'script']);
+    expect(candidateWorkflow.episode.kind).toBe('topic_pool');
+    expect(candidateWorkflow.stages.map((stage) => stage.stage)).toEqual(['topic']);
+  });
+
+  it('records approved topics into shared history flow when a topic pool is approved', async () => {
+    const { candidates } = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 3,
+      category: 'conversation',
+    });
+    const candidate = candidates[0];
+
+    await store.saveStageArtifactJson('english', candidate.id, 'topic', 1, 'candidates.json', {
+      generatedAt: '2026-03-08T00:00:00.000Z',
+      category: 'conversation',
+      candidates: ['Missed the train', 'Coffee date', 'New coworker'],
+      recommendedTopic: 'Coffee date',
+    });
+
+    await service.updateStageReviewStatus({
+      channelId: 'english',
+      episodeId: candidate.id,
+      stage: 'topic',
+      version: 1,
+      reviewStatus: 'approved',
+    });
+
+    expect(recordApprovedTopicMock).toHaveBeenCalledWith('Coffee date', 'conversation');
+  });
+
+  it('summarizes live job activity across candidates and episodes', async () => {
+    const candidateBatch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 2,
+      category: 'conversation',
+    });
+    const episode = await service.createEpisode({ channelId: 'english' });
+    const episodeJob = await service.createJob({
+      channelId: 'english',
+      episodeId: episode.id,
+      stage: 'topic',
+      version: 1,
+    });
+
+    await service.updateJob({
+      ...episodeJob,
+      status: 'running',
+      updatedAt: '2026-03-08T12:00:00.000Z',
+    });
+
+    const status = await service.getLiveStatus();
+
+    expect(status.queuedJobs).toBe(1);
+    expect(status.runningJobs).toBe(1);
+    expect(status.activeJobCount).toBe(2);
+    expect(status.activeRecordCount).toBe(2);
+    expect(status.lastUpdatedAt).toBe('2026-03-08T12:00:00.000Z');
+    expect(candidateBatch.jobs).toHaveLength(1);
   });
 
   it('promotes an approved script candidate into a production episode and archives the source candidate', async () => {
@@ -61,9 +132,9 @@ describe('WorkbenchService', () => {
       count: 1,
       category: 'conversation',
     });
-    const candidate = topicBatch.candidates[0];
+    const topicPool = topicBatch.candidates[0];
 
-    await store.saveStageArtifactJson('english', candidate.id, 'topic', 1, 'candidates.json', {
+    await store.saveStageArtifactJson('english', topicPool.id, 'topic', 1, 'candidates.json', {
       generatedAt: '2026-03-07T00:00:00.000Z',
       category: 'conversation',
       candidates: ['Coffee date'],
@@ -71,11 +142,20 @@ describe('WorkbenchService', () => {
     });
     await service.updateStageReviewStatus({
       channelId: 'english',
-      episodeId: candidate.id,
+      episodeId: topicPool.id,
       stage: 'topic',
       version: 1,
       reviewStatus: 'approved',
     });
+
+    const scriptPoolBatch = await service.createScriptCandidateBatch({
+      channelId: 'english',
+      sourceCandidateId: topicPool.id,
+      count: 3,
+      category: 'conversation',
+      usePipeline: true,
+    });
+    const candidate = scriptPoolBatch.candidates[0];
 
     const scriptVersion = await service.createStageVersion({
       channelId: 'english',
@@ -140,7 +220,8 @@ describe('WorkbenchService', () => {
     const promotedWorkflow = await service.getEpisodeWorkflow('english', result.episode.id);
     const archivedCandidate = await service.getEpisode('english', candidate.id);
 
-    expect(remainingCandidates).toHaveLength(0);
+    expect(remainingCandidates).toHaveLength(1);
+    expect(remainingCandidates[0]?.id).toBe(topicPool.id);
     expect(episodes).toHaveLength(1);
     expect(promotedWorkflow.episode.kind).toBe('episode');
     expect(promotedWorkflow.stages.map((stage) => stage.stage)).toEqual([
@@ -150,9 +231,124 @@ describe('WorkbenchService', () => {
       'tts',
       'render',
       'shorts',
+      'package',
     ]);
     expect(result.episode.currentStage).toBe('image');
+    expect(result.episode.threadId).toBe(topicPool.threadId);
+    expect(result.episode.parentRecordId).toBe(candidate.id);
+    expect(result.episode.originCandidateId).toBe(topicPool.id);
     expect(archivedCandidate.workflowStatus).toBe('archived');
+  });
+
+  it('builds a shared thread and review queue across topic and script candidates', async () => {
+    const topicBatch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 1,
+      category: 'conversation',
+    });
+    const sourceCandidate = topicBatch.candidates[0];
+
+    await store.saveStageArtifactJson('english', sourceCandidate.id, 'topic', 1, 'candidates.json', {
+      generatedAt: '2026-03-07T00:00:00.000Z',
+      category: 'conversation',
+      candidates: ['Coffee date'],
+      recommendedTopic: 'Coffee date',
+    });
+    await service.updateStageReviewStatus({
+      channelId: 'english',
+      episodeId: sourceCandidate.id,
+      stage: 'topic',
+      version: 1,
+      reviewStatus: 'approved',
+    });
+
+    const firstScriptBatch = await service.createScriptCandidateBatch({
+      channelId: 'english',
+      sourceCandidateId: sourceCandidate.id,
+      count: 2,
+      category: 'conversation',
+      usePipeline: true,
+    });
+    const secondScriptBatch = await service.createScriptCandidateBatch({
+      channelId: 'english',
+      sourceCandidateId: sourceCandidate.id,
+      count: 3,
+      category: 'conversation',
+      usePipeline: true,
+    });
+
+    const queue = await service.listReviewQueue();
+    const thread = await service.getThreadSummary(sourceCandidate.threadId ?? sourceCandidate.id);
+    const scriptItems = queue.filter((item) => item.workspace === 'script_lab');
+
+    expect(scriptItems).toHaveLength(2);
+    expect(new Set(scriptItems.map((item) => item.threadId))).toEqual(
+      new Set([sourceCandidate.threadId])
+    );
+    expect(scriptItems.every((item) => item.lineageLabel.includes(sourceCandidate.id))).toBe(true);
+    expect(thread.records).toHaveLength(3);
+    expect(thread.records.map((record) => record.id)).toContain(sourceCandidate.id);
+    expect(thread.records.filter((record) => record.kind === 'script_pool')).toHaveLength(2);
+    expect(firstScriptBatch.candidates[0]?.parentRecordId).toBe(sourceCandidate.id);
+    expect(secondScriptBatch.candidates[0]?.parentRecordId).toBe(sourceCandidate.id);
+  });
+
+  it('bulk-approves and bulk-rejects candidate review stages while skipping invalid records', async () => {
+    const firstBatch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 1,
+      category: 'conversation',
+    });
+    const secondBatch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 1,
+      category: 'conversation',
+    });
+    const firstCandidate = firstBatch.candidates[0]!;
+    const secondCandidate = secondBatch.candidates[0]!;
+
+    for (const candidate of [firstCandidate, secondCandidate]) {
+      await store.saveStageArtifactJson('english', candidate.id, 'topic', 1, 'candidates.json', {
+        generatedAt: '2026-03-07T00:00:00.000Z',
+        category: 'conversation',
+        candidates: ['Coffee date'],
+        recommendedTopic: 'Coffee date',
+      });
+      await service.updateStageReviewStatus({
+        channelId: 'english',
+        episodeId: candidate.id,
+        stage: 'topic',
+        version: 1,
+        reviewStatus: 'pending_review',
+      });
+    }
+
+    const approveResult = await service.bulkReviewCandidates({
+      items: [{ channelId: 'english', candidateId: firstCandidate.id }],
+      reviewStatus: 'approved',
+    });
+
+    expect(approveResult.processed).toHaveLength(1);
+
+    const refreshedFirst = await service.getEpisode('english', firstCandidate.id);
+    expect(refreshedFirst.currentStage).toBe('topic');
+    expect(refreshedFirst.workflowStatus).toBe('completed');
+
+    const rejectResult = await service.bulkReviewCandidates({
+      items: [
+        { channelId: 'english', candidateId: firstCandidate.id },
+        { channelId: 'english', candidateId: secondCandidate.id },
+      ],
+      reviewStatus: 'changes_requested',
+    });
+
+    expect(rejectResult.processed).toHaveLength(2);
+    expect(rejectResult.skipped).toHaveLength(0);
+
+    const refreshedFirstAfterReject = await service.getEpisode('english', firstCandidate.id);
+    expect(refreshedFirstAfterReject.stageStates.topic.reviewStatus).toBe('changes_requested');
+    const refreshedSecond = await service.getEpisode('english', secondCandidate.id);
+    expect(refreshedSecond.stageStates.topic.reviewStatus).toBe('changes_requested');
   });
 
   it('creates stage versions and updates episode state', async () => {
@@ -1001,5 +1197,110 @@ describe('WorkbenchService', () => {
     expect(topicStage?.canApprove).toBe(false);
     expect(scriptStage?.isBlocked).toBe(true);
     expect(scriptStage?.canGenerate).toBe(false);
+  });
+
+  it('returns stage review context comments and saves package drafts', async () => {
+    const episode = await service.createEpisode({ channelId: 'english' });
+
+    const scriptVersion = await service.createStageVersion({
+      channelId: 'english',
+      episodeId: episode.id,
+      stage: 'script',
+      reviewStatus: 'pending_review',
+    });
+    await store.saveStageArtifactJson(
+      'english',
+      episode.id,
+      'script',
+      scriptVersion.version,
+      'generated-script.json',
+      {
+        channelId: 'english',
+        date: '2026-03-07',
+        category: 'conversation',
+        metadata: {
+          topic: 'Coffee date',
+          style: 'casual',
+          title: {
+            target: 'Coffee Date',
+            native: '커피 데이트',
+          },
+          characters: [
+            {
+              id: 'M',
+              name: 'James',
+              gender: 'male',
+              ethnicity: 'American',
+              role: 'friend',
+            },
+          ],
+        },
+        sentences: [
+          {
+            id: 1,
+            speaker: 'M',
+            target: 'Do you want coffee?',
+            targetBlank: 'Do you want ______?',
+            blankAnswer: 'coffee',
+            native: '커피 마실래?',
+            words: [{ word: 'coffee', meaning: '커피' }],
+          },
+        ],
+      }
+    );
+    await service.createComment({
+      channelId: 'english',
+      recordId: episode.id,
+      stage: 'script',
+      version: scriptVersion.version,
+      text: 'Sentence 1 needs a stronger hook.',
+      anchor: {
+        kind: 'sentence',
+        sentenceId: 1,
+        label: 'Sentence 1',
+      },
+    });
+
+    const scriptContext = await service.getStageReviewContext('english', episode.id, 'script');
+
+    expect(scriptContext.stageSummary.reviewStatus).toBe('pending_review');
+    expect(scriptContext.comments).toHaveLength(1);
+    expect(scriptContext.comments[0]?.anchor?.kind).toBe('sentence');
+    expect(scriptContext.thread.records[0]?.id).toBe(episode.id);
+
+    const savedPackage = await service.savePackageDraft({
+      channelId: 'english',
+      episodeId: episode.id,
+      manifest: {
+        generatedAt: '2026-03-08T00:00:00.000Z',
+        titleCandidates: [
+          { id: 'title-1', value: 'Coffee Date English Practice', source: 'manual' },
+        ],
+        selectedTitle: 'Coffee Date English Practice',
+        description: 'Practice a coffee shop conversation in English.',
+        pinnedComment: 'Which cafe phrase do you use most often?',
+        thumbnailCandidates: [
+          {
+            id: 'thumb-1',
+            path: '/tmp/thumb-1.png',
+            label: 'Primary thumbnail',
+            source: 'manual',
+          },
+        ],
+        selectedThumbnailPath: '/tmp/thumb-1.png',
+        uploadInfoPath: '/tmp/upload_info.txt',
+        uploadInfoText: 'Title: Coffee Date English Practice',
+        exportItems: [{ id: 'render', label: 'Video', path: '/tmp/video.mp4' }],
+      },
+    });
+    const packageContext = await service.getStageReviewContext('english', episode.id, 'package');
+
+    expect(savedPackage.version.version).toBe(1);
+    expect(savedPackage.episode.currentStage).toBe('package');
+    expect(savedPackage.artifact.selectedTitle).toBe('Coffee Date English Practice');
+    expect(packageContext.currentArtifact).toMatchObject({
+      selectedTitle: 'Coffee Date English Practice',
+      selectedThumbnailPath: '/tmp/thumb-1.png',
+    });
   });
 });

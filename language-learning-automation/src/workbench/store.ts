@@ -2,13 +2,16 @@ import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   episodeRecordSchema,
+  reviewCommentSchema,
   stageVersionSchema,
   workbenchJobSchema,
   type EpisodeRecord,
+  type ReviewComment,
   type StageVersion,
   type WorkbenchJob,
 } from './types';
 import {
+  getEpisodeCommentsPath,
   getEpisodeIndexPath,
   getEpisodeMetaPath,
   getJobPath,
@@ -147,14 +150,17 @@ export class WorkbenchStore {
   }
 
   public async listQueuedJobs(): Promise<WorkbenchJob[]> {
+    return (await this.listAllJobs())
+      .filter((job) => job.status === 'queued')
+      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+  }
+
+  public async listAllJobs(): Promise<WorkbenchJob[]> {
     const jobs = await Promise.all(
       (await this.readIndex()).map(async (entry) => this.listJobs(entry.channelId, entry.episodeId))
     );
 
-    return jobs
-      .flat()
-      .filter((job) => job.status === 'queued')
-      .sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+    return jobs.flat().sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   public async saveStageArtifactJson(
@@ -193,6 +199,33 @@ export class WorkbenchStore {
       filename
     );
     return JSON.parse(await fs.readFile(artifactPath, 'utf-8')) as T;
+  }
+
+  public async listComments(channelId: string, episodeId: string): Promise<ReviewComment[]> {
+    const commentsPath = getEpisodeCommentsPath(this.dataRoot, channelId, episodeId);
+
+    try {
+      const raw = JSON.parse(await fs.readFile(commentsPath, 'utf-8')) as unknown;
+      if (!Array.isArray(raw)) {
+        return [];
+      }
+
+      return raw
+        .map((entry) => reviewCommentSchema.parse(entry))
+        .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+    } catch {
+      return [];
+    }
+  }
+
+  public async saveComments(
+    channelId: string,
+    episodeId: string,
+    comments: ReviewComment[]
+  ): Promise<void> {
+    const commentsPath = getEpisodeCommentsPath(this.dataRoot, channelId, episodeId);
+    await fs.mkdir(path.dirname(commentsPath), { recursive: true });
+    await fs.writeFile(commentsPath, JSON.stringify(comments, null, 2), 'utf-8');
   }
 
   private async readIndex(): Promise<Array<{ channelId: string; episodeId: string }>> {

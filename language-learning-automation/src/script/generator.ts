@@ -41,6 +41,17 @@ export interface GenerateScriptOptions {
   pipelineConfig?: Partial<PipelineConfig>;
 }
 
+export interface GenerateScriptPoolOptions {
+  count: number;
+  usePipeline?: boolean;
+  pipelineConfig?: Partial<PipelineConfig>;
+}
+
+export interface ScriptPoolGenerationResult {
+  candidates: Script[];
+  recommendedIndex: number;
+}
+
 /**
  * Generate a script using Gemini API with candidate selection.
  *
@@ -130,6 +141,69 @@ export async function generateScript(
   // Single-Shot Mode (Legacy - Requirement 5.3)
   // =========================================================================
   return generateScriptSingleShot(config, scriptCategory, selectedTopic, candidateCount);
+}
+
+export async function generateScriptPool(
+  config: ChannelConfig,
+  category: Category | undefined,
+  topic: string | undefined,
+  options: GenerateScriptPoolOptions
+): Promise<ScriptPoolGenerationResult> {
+  const { count, usePipeline = true, pipelineConfig } = options;
+  const scriptCategory = category || getCategoryForDay(new Date());
+  let selectedTopic = topic;
+
+  if (!selectedTopic) {
+    console.log('🤖 AI가 시의성 있는 주제를 선정 중...');
+    selectedTopic = await selectTimlyTopic(
+      scriptCategory,
+      config.meta.targetLanguage,
+      config.meta.nativeLanguage,
+      3
+    );
+    console.log(`   ✓ 선정된 주제: "${selectedTopic}"`);
+  }
+
+  const candidates: Script[] = [];
+  const targetCount = Math.max(1, count);
+
+  for (let index = 0; index < targetCount; index++) {
+    candidates.push(
+      await generateScript(config, scriptCategory, selectedTopic, {
+        usePipeline,
+        candidateCount: 1,
+        pipelineConfig: usePipeline
+          ? {
+              candidateCount: pipelineConfig?.candidateCount ?? 1,
+              ...pipelineConfig,
+            }
+          : undefined,
+      })
+    );
+  }
+
+  if (candidates.length === 0) {
+    throw new Error('Failed to generate any valid script candidates');
+  }
+
+  if (candidates.length === 1) {
+    return {
+      candidates,
+      recommendedIndex: 0,
+    };
+  }
+
+  const genAI = getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+  const bestScript = await selectBestScript(model, candidates, config.meta.nativeLanguage);
+  const recommendedIndex = candidates.findIndex(
+    (candidate) => JSON.stringify(candidate) === JSON.stringify(bestScript)
+  );
+
+  return {
+    candidates,
+    recommendedIndex: recommendedIndex >= 0 ? recommendedIndex : 0,
+  };
 }
 
 /**

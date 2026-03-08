@@ -23,7 +23,10 @@ export function ArtifactBlock(props: {
     <div>
       <p className="artifact-label">{props.label}</p>
       <ArtifactPreview stage={props.stage} artifact={props.artifact} />
-      <pre className="json-view">{JSON.stringify(props.artifact, null, 2)}</pre>
+      <details className="artifact-raw-details">
+        <summary>Raw JSON</summary>
+        <pre className="json-view">{JSON.stringify(props.artifact, null, 2)}</pre>
+      </details>
     </div>
   );
 }
@@ -35,13 +38,23 @@ function ArtifactPreview(props: { stage: EpisodeStage; artifact: unknown }) {
     case 'topic':
       if (isTopicCandidatesArtifact(artifact)) {
         return (
-          <div className="artifact-preview-grid">
-            {artifact.candidates.map((candidate) => (
-              <span key={candidate} className="topic-pill">
-                {candidate}
-              </span>
-            ))}
-          </div>
+          <>
+            <div className="review-stat-row">
+              <span className="code-pill">{artifact.category}</span>
+              <span className="code-pill">{artifact.candidates.length} candidates</span>
+              <span className="status-badge status-approved">recommended</span>
+            </div>
+            <div className="artifact-preview-grid">
+              {artifact.candidates.map((candidate) => (
+                <article
+                  key={candidate}
+                  className={`artifact-preview topic-preview-card ${candidate === artifact.recommendedTopic ? 'recommended' : ''}`.trim()}
+                >
+                  <p className="topic-review-title">{candidate}</p>
+                </article>
+              ))}
+            </div>
+          </>
         );
       }
 
@@ -69,7 +82,7 @@ function ArtifactPreview(props: { stage: EpisodeStage; artifact: unknown }) {
             {artifact.metadata.title.native} · {artifact.metadata.topic}
           </p>
           <div className="stage-script-list">
-            {artifact.sentences.slice(0, 4).map((sentence) => (
+            {artifact.sentences.slice(0, 8).map((sentence) => (
               <div key={sentence.id} className="stage-script-line">
                 <strong>{sentence.target}</strong>
                 <span className="panel-note">{sentence.native}</span>

@@ -8,16 +8,24 @@ import {
   episodeStageOrder,
   getDownstreamStages,
   imageStageManifestSchema,
+  packageManifestSchema,
   renderStageManifestSchema,
+  reviewCommentSchema,
+  scriptPoolArtifactSchema,
   shortsStageManifestSchema,
   ttsStageManifestSchema,
   topicCandidatesArtifactSchema,
+  type PackageManifest,
   type EpisodeRecord,
   type EpisodeStage,
+  type ReviewAnchor,
+  type ReviewComment,
   type ReviewStatus,
+  type ReviewWorkspace,
   type ApprovedTopicArtifact,
   type ImageStageManifest,
   type RenderStageManifest,
+  type ScriptPoolArtifact,
   type ShortsStageManifest,
   type StageGenerationPayload,
   type StageVersion,
@@ -30,6 +38,9 @@ import {
 export interface CreateEpisodeInput {
   channelId: string;
   title?: string;
+  threadId?: string;
+  parentRecordId?: string;
+  originCandidateId?: string;
 }
 
 export interface CreateTopicCandidateBatchInput {
@@ -49,6 +60,29 @@ export interface CreateScriptCandidateBatchInput {
 export interface PromoteCandidateToEpisodeInput {
   channelId: string;
   candidateId: string;
+}
+
+export interface BulkCandidateReviewInput {
+  items: Array<{
+    channelId: string;
+    candidateId: string;
+  }>;
+  reviewStatus: Extract<ReviewStatus, 'approved' | 'changes_requested'>;
+}
+
+export interface BulkCandidateReviewResult {
+  processed: Array<{
+    channelId: string;
+    candidateId: string;
+    stage: EpisodeStage;
+    version: number;
+    reviewStatus: ReviewStatus;
+  }>;
+  skipped: Array<{
+    channelId: string;
+    candidateId: string;
+    reason: string;
+  }>;
 }
 
 export interface CreateStageVersionInput {
@@ -109,6 +143,7 @@ export interface StageWorkflowSummary {
   approvedVersion: number | null;
   reviewStatus: ReviewStatus;
   blockedBy: EpisodeStage[];
+  staleReasons: string[];
   isBlocked: boolean;
   latestJob: WorkbenchJob | null;
   queuedJobCount: number;
@@ -133,21 +168,111 @@ export interface WorkbenchChannelOption {
   nativeLanguage: string;
 }
 
+export interface WorkbenchRecordSummary extends EpisodeRecord {
+  previewText?: string;
+  previewMeta?: string;
+  nextAction?: string;
+  issueCounts?: {
+    open: number;
+    stale: number;
+    comments: number;
+  };
+  reviewTaskCounts?: {
+    reviewable: number;
+    blocked: number;
+    stale: number;
+  };
+  lineageLabel?: string;
+}
+
+export interface WorkbenchLiveStatus {
+  queuedJobs: number;
+  runningJobs: number;
+  failedJobs: number;
+  completedJobs: number;
+  activeJobCount: number;
+  activeRecordCount: number;
+  lastUpdatedAt: string | null;
+}
+
 export type ApprovedStageArtifact =
   | ApprovedTopicArtifact
   | Script
   | ImageStageManifest
   | TtsStageManifest
   | RenderStageManifest
-  | ShortsStageManifest;
+  | ShortsStageManifest
+  | PackageManifest;
 
 export type StageVersionArtifact =
   | TopicCandidatesArtifact
   | Script
+  | ScriptPoolArtifact
   | ImageStageManifest
   | TtsStageManifest
   | RenderStageManifest
-  | ShortsStageManifest;
+  | ShortsStageManifest
+  | PackageManifest;
+
+export interface ReviewQueueItem {
+  id: string;
+  workspace: ReviewWorkspace;
+  channelId: string;
+  recordId: string;
+  threadId: string;
+  kind: WorkbenchRecordKind;
+  title: string;
+  previewText?: string;
+  previewMeta?: string;
+  stage: EpisodeStage;
+  workflowStatus: EpisodeRecord['workflowStatus'];
+  reviewStatus: ReviewStatus;
+  updatedAt: string;
+  nextAction: string;
+  issueCounts: NonNullable<WorkbenchRecordSummary['issueCounts']>;
+  reviewTaskCounts: NonNullable<WorkbenchRecordSummary['reviewTaskCounts']>;
+  lineageLabel: string;
+}
+
+export interface ThreadSummary {
+  threadId: string;
+  records: WorkbenchRecordSummary[];
+}
+
+export interface StageReviewContext {
+  episode: WorkbenchRecordSummary;
+  thread: ThreadSummary;
+  stage: EpisodeStage;
+  stageSummary: StageWorkflowSummary;
+  currentArtifact: StageVersionArtifact | null;
+  approvedArtifact: ApprovedStageArtifact | null;
+  versions: StageVersion[];
+  comments: ReviewComment[];
+  downstream: Array<{
+    stage: EpisodeStage;
+    reviewStatus: ReviewStatus;
+    staleReasons: string[];
+    currentVersion: number;
+    approvedVersion: number | null;
+  }>;
+}
+
+export interface CreateReviewCommentInput {
+  channelId: string;
+  recordId: string;
+  stage: EpisodeStage;
+  version?: number;
+  text: string;
+  kind?: ReviewComment['kind'];
+  status?: ReviewComment['status'];
+  anchor?: ReviewAnchor;
+}
+
+export interface SavePackageDraftInput {
+  channelId: string;
+  episodeId: string;
+  manifest: unknown;
+}
 
 function nowIso(): string {
   return new Date().toISOString();
@@ -165,6 +290,10 @@ function createJobId(stage: EpisodeStage): string {
   return `job_${stage}_${randomUUID().replace(/-/g, '').slice(0, 10)}`;
 }
 
+function createThreadId(): string {
+  return `thread_${randomUUID().replace(/-/g, '').slice(0, 12)}`;
+}
+
 export class WorkbenchService {
   constructor(private readonly store: WorkbenchStore = new WorkbenchStore()) {}
 
@@ -172,16 +301,138 @@ export class WorkbenchService {
     return this.store.getDataRoot();
   }
 
-  public async listEpisodes(): Promise<EpisodeRecord[]> {
+  public async listEpisodes(): Promise<WorkbenchRecordSummary[]> {
     await this.store.ensureBaseDirs();
-    return (await this.store.listEpisodes()).filter((record) => getRecordKind(record) === 'episode');
+    const records = (await this.store.listEpisodes()).filter(
+      (record) => getRecordKind(record) === 'episode'
+    );
+    return Promise.all(records.map((record) => this.toRecordSummary(record)));
   }
 
-  public async listCandidates(): Promise<EpisodeRecord[]> {
+  public async listCandidates(): Promise<WorkbenchRecordSummary[]> {
     await this.store.ensureBaseDirs();
-    return (await this.store.listEpisodes()).filter(
-      (record) => getRecordKind(record) === 'candidate' && record.workflowStatus !== 'archived'
+    const records = (await this.store.listEpisodes()).filter(
+      (record) => getRecordKind(record) !== 'episode' && record.workflowStatus !== 'archived'
     );
+    return Promise.all(records.map((record) => this.toRecordSummary(record)));
+  }
+
+  public async listReviewQueue(): Promise<ReviewQueueItem[]> {
+    await this.store.ensureBaseDirs();
+    const records = (await this.store.listEpisodes()).filter(
+      (record) => record.workflowStatus !== 'archived'
+    );
+    const summaries = await Promise.all(records.map((record) => this.toRecordSummary(record)));
+
+    return summaries
+      .map((summary) => ({
+        id: `${summary.channelId}/${summary.id}`,
+        workspace: getWorkspaceForSummary(summary),
+        channelId: summary.channelId,
+        recordId: summary.id,
+        threadId: summary.threadId ?? summary.id,
+        kind: getRecordKind(summary),
+        title: summary.title ?? summary.previewText ?? summary.id,
+        previewText: summary.previewText,
+        previewMeta: summary.previewMeta,
+        stage: summary.currentStage,
+        workflowStatus: summary.workflowStatus,
+        reviewStatus: summary.stageStates[summary.currentStage].reviewStatus,
+        updatedAt: summary.updatedAt,
+        nextAction: summary.nextAction ?? getNextActionLabel(summary),
+        issueCounts: summary.issueCounts ?? { open: 0, stale: 0, comments: 0 },
+        reviewTaskCounts: summary.reviewTaskCounts ?? { reviewable: 0, blocked: 0, stale: 0 },
+        lineageLabel: summary.lineageLabel ?? getLineageLabel(summary),
+      }))
+      .sort(compareReviewQueueItems);
+  }
+
+  public async getThreadSummary(threadId: string): Promise<ThreadSummary> {
+    await this.store.ensureBaseDirs();
+    const records = (await this.store.listEpisodes()).filter(
+      (record) => (record.threadId ?? record.id) === threadId
+    );
+    const summaries = await Promise.all(records.map((record) => this.toRecordSummary(record)));
+
+    return {
+      threadId,
+      records: summaries.sort((left, right) => left.createdAt.localeCompare(right.createdAt)),
+    };
+  }
+
+  public async listComments(channelId: string, recordId: string): Promise<ReviewComment[]> {
+    return this.store.listComments(channelId, recordId);
+  }
+
+  public async createComment(input: CreateReviewCommentInput): Promise<ReviewComment> {
+    const timestamp = nowIso();
+    const comment = reviewCommentSchema.parse({
+      id: `comment_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
+      channelId: input.channelId,
+      recordId: input.recordId,
+      stage: input.stage,
+      version: input.version,
+      kind: input.kind ?? 'issue',
+      status: input.status ?? 'open',
+      text: input.text,
+      anchor: input.anchor,
+      createdAt: timestamp,
+      updatedAt: timestamp,
+    });
+
+    const comments = await this.store.listComments(input.channelId, input.recordId);
+    comments.unshift(comment);
+    await this.store.saveComments(input.channelId, input.recordId, comments);
+
+    const episode = await this.store.getEpisode(input.channelId, input.recordId);
+    episode.lastHumanActionAt = timestamp;
+    episode.updatedAt = timestamp;
+    await this.store.saveEpisode(episode);
+
+    return comment;
+  }
+
+  public async getStageReviewContext(
+    channelId: string,
+    episodeId: string,
+    stage: EpisodeStage
+  ): Promise<StageReviewContext> {
+    const episode = await this.store.getEpisode(channelId, episodeId);
+    const summary = await this.toRecordSummary(episode);
+    const workflow = await this.getEpisodeWorkflow(channelId, episodeId);
+    const stageSummary = workflow.stages.find((candidate) => candidate.stage === stage);
+    if (!stageSummary) {
+      throw new Error(`Stage ${stage} is not available for record ${episodeId}`);
+    }
+
+    const [currentArtifact, approvedArtifact, versions, comments, thread] = await Promise.all([
+      this.tryGetCurrentStageArtifact(channelId, episodeId, stage),
+      this.tryGetApprovedStageArtifact(channelId, episodeId, stage),
+      this.listStageVersions(channelId, episodeId, stage),
+      this.listComments(channelId, episodeId),
+      this.getThreadSummary(summary.threadId ?? summary.id),
+    ]);
+
+    return {
+      episode: summary,
+      thread,
+      stage,
+      stageSummary,
+      currentArtifact,
+      approvedArtifact,
+      versions,
+      comments: comments.filter((comment) => comment.stage === stage),
+      downstream: getDownstreamStagesForRecord(episode, stage).map((downstreamStage) => {
+        const downstreamState = episode.stageStates[downstreamStage];
+        return {
+          stage: downstreamStage,
+          reviewStatus: downstreamState.reviewStatus,
+          staleReasons: downstreamState.staleReasons ?? [],
+          currentVersion: downstreamState.currentVersion,
+          approvedVersion: downstreamState.approvedVersion,
+        };
+      }),
+    };
   }
 
   public async listChannelOptions(): Promise<WorkbenchChannelOption[]> {
@@ -221,34 +472,29 @@ export class WorkbenchService {
   public async createTopicCandidateBatch(
     input: CreateTopicCandidateBatchInput
   ): Promise<{ candidates: EpisodeRecord[]; jobs: WorkbenchJob[] }> {
-    const candidates: EpisodeRecord[] = [];
-    const jobs: WorkbenchJob[] = [];
+    const pool = await this.createRecord('topic_pool', { channelId: input.channelId });
+    const { job } = await this.enqueueStageGeneration({
+      channelId: pool.channelId,
+      episodeId: pool.id,
+      stage: 'topic',
+      payload: {
+        category: input.category,
+        candidateCount: input.count,
+      },
+      notes: `Topic pool generation (${input.count} candidates)`,
+    });
 
-    for (let index = 0; index < input.count; index++) {
-      const candidate = await this.createRecord('candidate', { channelId: input.channelId });
-      const { job } = await this.enqueueStageGeneration({
-        channelId: candidate.channelId,
-        episodeId: candidate.id,
-        stage: 'topic',
-        payload: {
-          category: input.category,
-          candidateCount: 1,
-        },
-        notes: 'Topic pool candidate generation',
-      });
-
-      candidates.push(await this.getEpisode(candidate.channelId, candidate.id));
-      jobs.push(job);
-    }
-
-    return { candidates, jobs };
+    return {
+      candidates: [await this.getEpisode(pool.channelId, pool.id)],
+      jobs: [job],
+    };
   }
 
   public async createScriptCandidateBatch(
     input: CreateScriptCandidateBatchInput
   ): Promise<{ candidates: EpisodeRecord[]; jobs: WorkbenchJob[] }> {
     const sourceCandidate = await this.getEpisode(input.channelId, input.sourceCandidateId);
-    assertCandidateRecord(sourceCandidate, input.sourceCandidateId);
+    assertTopicPoolRecord(sourceCandidate, input.sourceCandidateId);
 
     const approvedTopic = await this.getApprovedTopic(input.channelId, input.sourceCandidateId);
     const sourceTopicVersionNumber = sourceCandidate.stageStates.topic.approvedVersion;
@@ -270,75 +516,78 @@ export class WorkbenchService {
       'candidates.json'
     );
 
-    const candidates: EpisodeRecord[] = [];
-    const jobs: WorkbenchJob[] = [];
+    const candidate = await this.createRecord('script_pool', {
+      channelId: input.channelId,
+      threadId: sourceCandidate.threadId ?? sourceCandidate.id,
+      parentRecordId: sourceCandidate.id,
+      originCandidateId: sourceCandidate.originCandidateId ?? sourceCandidate.id,
+    });
+    const timestamp = nowIso();
+    const clonedTopicVersion: StageVersion = {
+      id: createStageVersionId('topic', 1),
+      episodeId: candidate.id,
+      stage: 'topic',
+      version: 1,
+      reviewStatus: 'approved',
+      createdAt: timestamp,
+      updatedAt: timestamp,
+      sourceVersionIds: [sourceTopicVersion.id],
+      notes: `Cloned from topic pool ${sourceCandidate.id}`,
+    };
 
-    for (let index = 0; index < input.count; index++) {
-      const candidate = await this.createRecord('candidate', { channelId: input.channelId });
-      const timestamp = nowIso();
-      const clonedTopicVersion: StageVersion = {
-        id: createStageVersionId('topic', 1),
-        episodeId: candidate.id,
-        stage: 'topic',
-        version: 1,
-        reviewStatus: 'approved',
-        createdAt: timestamp,
-        updatedAt: timestamp,
-        sourceVersionIds: [sourceTopicVersion.id],
-        notes: `Cloned from candidate ${sourceCandidate.id}`,
-      };
+    candidate.stageStates.topic.currentVersion = 1;
+    candidate.stageStates.topic.approvedVersion = 1;
+    candidate.stageStates.topic.reviewStatus = 'approved';
+    candidate.stageStates.topic.staleReasons = [];
+    candidate.currentStage = 'script';
+    candidate.workflowStatus = 'in_progress';
+    candidate.title = approvedTopic.approvedTopic;
+    candidate.titleSource = 'topic_auto';
+    candidate.updatedAt = timestamp;
+    candidate.lastHumanActionAt = timestamp;
 
-      candidate.stageStates.topic.currentVersion = 1;
-      candidate.stageStates.topic.approvedVersion = 1;
-      candidate.stageStates.topic.reviewStatus = 'approved';
-      candidate.currentStage = 'script';
-      candidate.workflowStatus = 'in_progress';
-      candidate.title = approvedTopic.approvedTopic;
-      candidate.titleSource = 'topic_auto';
-      candidate.updatedAt = timestamp;
+    await this.store.saveStageVersion(candidate.channelId, candidate.id, clonedTopicVersion);
+    await this.store.saveStageArtifactJson(
+      candidate.channelId,
+      candidate.id,
+      'topic',
+      1,
+      'candidates.json',
+      topicCandidatesArtifact
+    );
+    await this.store.saveStageArtifactJson(
+      candidate.channelId,
+      candidate.id,
+      'topic',
+      1,
+      'approved.json',
+      approvedTopic
+    );
+    await this.store.saveEpisode(candidate);
 
-      await this.store.saveStageVersion(candidate.channelId, candidate.id, clonedTopicVersion);
-      await this.store.saveStageArtifactJson(
-        candidate.channelId,
-        candidate.id,
-        'topic',
-        1,
-        'candidates.json',
-        topicCandidatesArtifact
-      );
-      await this.store.saveStageArtifactJson(
-        candidate.channelId,
-        candidate.id,
-        'topic',
-        1,
-        'approved.json',
-        approvedTopic
-      );
-      await this.store.saveEpisode(candidate);
+    const { job } = await this.enqueueStageGeneration({
+      channelId: candidate.channelId,
+      episodeId: candidate.id,
+      stage: 'script',
+      payload: {
+        category: input.category,
+        usePipeline: input.usePipeline ?? true,
+        candidateCount: input.count,
+      },
+      notes: `Script pool generation (${input.count} candidates) from topic pool ${sourceCandidate.id}`,
+    });
 
-      const { job } = await this.enqueueStageGeneration({
-        channelId: candidate.channelId,
-        episodeId: candidate.id,
-        stage: 'script',
-        payload: {
-          category: input.category,
-          usePipeline: input.usePipeline ?? true,
-        },
-        notes: `Spawned from topic candidate ${sourceCandidate.id}`,
-      });
-
-      candidates.push(await this.getEpisode(candidate.channelId, candidate.id));
-      jobs.push(job);
-    }
-
-    return { candidates, jobs };
+    return {
+      candidates: [await this.getEpisode(candidate.channelId, candidate.id)],
+      jobs: [job],
+    };
   }
 
   public async promoteCandidateToEpisode(
     input: PromoteCandidateToEpisodeInput
   ): Promise<{ episode: EpisodeRecord }> {
     const candidate = await this.getEpisode(input.channelId, input.candidateId);
-    assertCandidateRecord(candidate, input.candidateId);
+    assertScriptPoolRecord(candidate, input.candidateId);
 
     const approvedTopic = await this.getApprovedTopic(input.channelId, input.candidateId);
     const approvedScript = await this.getApprovedScript(input.channelId, input.candidateId);
@@ -370,6 +619,9 @@ export class WorkbenchService {
 
     const episode = await this.createRecord('episode', {
       channelId: input.channelId,
+      threadId: candidate.threadId ?? candidate.id,
+      parentRecordId: candidate.id,
+      originCandidateId: candidate.originCandidateId ?? candidate.id,
       title: candidate.title ?? getPreferredEpisodeTitle(approvedScript),
     });
     const timestamp = nowIso();
@@ -379,10 +631,13 @@ export class WorkbenchService {
     episode.stageStates.topic.currentVersion = 1;
     episode.stageStates.topic.approvedVersion = 1;
     episode.stageStates.topic.reviewStatus = 'approved';
+    episode.stageStates.topic.staleReasons = [];
     episode.stageStates.script.currentVersion = 1;
     episode.stageStates.script.approvedVersion = 1;
     episode.stageStates.script.reviewStatus = 'approved';
+    episode.stageStates.script.staleReasons = [];
     episode.updatedAt = timestamp;
+    episode.lastHumanActionAt = timestamp;
 
     const topicVersion: StageVersion = {
       id: createStageVersionId('topic', 1),
@@ -445,9 +700,87 @@ export class WorkbenchService {
 
     candidate.workflowStatus = 'archived';
     candidate.updatedAt = timestamp;
+    candidate.lastHumanActionAt = timestamp;
     await this.store.saveEpisode(candidate);
 
     return { episode };
+  }
+
+  public async bulkReviewCandidates(
+    input: BulkCandidateReviewInput
+  ): Promise<BulkCandidateReviewResult> {
+    const processed: BulkCandidateReviewResult['processed'] = [];
+    const skipped: BulkCandidateReviewResult['skipped'] = [];
+
+    for (const item of input.items) {
+      try {
+        const candidate = await this.getEpisode(item.channelId, item.candidateId);
+        if (getRecordKind(candidate) === 'episode') {
+          throw new Error(`Record ${item.candidateId} is not a review pool`);
+        }
+
+        const stage = candidate.currentStage;
+        if (!isCandidateReviewStage(stage)) {
+          skipped.push({
+            channelId: item.channelId,
+            candidateId: item.candidateId,
+            reason: `Current stage ${stage} is not reviewable in the candidate funnel`,
+          });
+          continue;
+        }
+
+        const stageState = candidate.stageStates[stage];
+        if (stageState.currentVersion <= 0) {
+          skipped.push({
+            channelId: item.channelId,
+            candidateId: item.candidateId,
+            reason: `Stage ${stage} has no generated version`,
+          });
+          continue;
+        }
+
+        const canApply =
+          input.reviewStatus === 'approved'
+            ? stageState.reviewStatus === 'pending_review'
+            : stageState.reviewStatus === 'pending_review' ||
+              stageState.reviewStatus === 'approved';
+        if (!canApply) {
+          skipped.push({
+            channelId: item.channelId,
+            candidateId: item.candidateId,
+            reason: `Stage ${stage} is ${stageState.reviewStatus} and cannot be marked ${input.reviewStatus}`,
+          });
+          continue;
+        }
+
+        const result = await this.updateStageReviewStatus({
+          channelId: item.channelId,
+          episodeId: item.candidateId,
+          stage,
+          version: stageState.currentVersion,
+          reviewStatus: input.reviewStatus,
+        });
+
+        processed.push({
+          channelId: item.channelId,
+          candidateId: item.candidateId,
+          stage,
+          version: result.version.version,
+          reviewStatus: result.version.reviewStatus,
+        });
+      } catch (error) {
+        skipped.push({
+          channelId: item.channelId,
+          candidateId: item.candidateId,
+          reason: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+
+    return {
+      processed,
+      skipped,
+    };
   }
 
   private async createRecord(
@@ -456,21 +789,92 @@ export class WorkbenchService {
   ): Promise<EpisodeRecord> {
     await this.store.ensureBaseDirs();
     const timestamp = nowIso();
+    const threadId = input.threadId ?? createThreadId();
     const record: EpisodeRecord = {
       id: createEpisodeId(),
       channelId: input.channelId,
       kind,
+      threadId,
+      parentRecordId: input.parentRecordId,
+      originCandidateId: input.originCandidateId,
       title: input.title,
       titleSource: input.title ? 'manual' : undefined,
       workflowStatus: 'draft',
       currentStage: 'topic',
       createdAt: timestamp,
       updatedAt: timestamp,
+      lastHumanActionAt: timestamp,
       stageStates: createInitialStageStates(),
     };
 
     await this.store.saveEpisode(record);
     return record;
+  }
+
+  private async toRecordSummary(record: EpisodeRecord): Promise<WorkbenchRecordSummary> {
+    const summary: WorkbenchRecordSummary = { ...record, kind: getRecordKind(record) };
+    const stage = record.currentStage;
+    const version = record.stageStates[stage].currentVersion;
+    const comments = await this.store.listComments(record.channelId, record.id);
+
+    summary.nextAction = getNextActionLabel(record);
+    summary.issueCounts = {
+      open: comments.filter((comment) => comment.status === 'open').length,
+      stale: getVisibleStagesForRecord(record).filter(
+        (candidateStage) => record.stageStates[candidateStage].reviewStatus === 'stale'
+      ).length,
+      comments: comments.length,
+    };
+    summary.reviewTaskCounts = {
+      reviewable: getVisibleStagesForRecord(record).filter((candidateStage) => {
+        const state = record.stageStates[candidateStage];
+        return state.currentVersion > 0 && state.reviewStatus === 'pending_review';
+      }).length,
+      blocked: getVisibleStagesForRecord(record).filter((candidateStage) =>
+        record.stageStates[candidateStage].blockedBy.some(
+          (dependency) => record.stageStates[dependency].approvedVersion === null
+        )
+      ).length,
+      stale: getVisibleStagesForRecord(record).filter(
+        (candidateStage) => record.stageStates[candidateStage].reviewStatus === 'stale'
+      ).length,
+    };
+    summary.lineageLabel = getLineageLabel(record);
+
+    if (version <= 0) {
+      return summary;
+    }
+
+    try {
+      if (stage === 'topic') {
+        const artifact = topicCandidatesArtifactSchema.parse(
+          await this.store.readStageArtifactJson<unknown>(
+            record.channelId,
+            record.id,
+            'topic',
+            version,
+            'candidates.json'
+          )
+        );
+        summary.previewText = artifact.recommendedTopic;
+        summary.previewMeta = `${artifact.category} · ${artifact.candidates.length} candidates`;
+        return summary;
+      }
+
+      if (stage === 'script') {
+        const artifact = await this.getStageVersionArtifact(record.channelId, record.id, 'script', version);
+        const currentScript = getEditableScriptFromStageArtifact(artifact);
+        summary.previewText = getPreferredEpisodeTitle(currentScript);
+        summary.previewMeta =
+          'candidates' in artifact
+            ? `${currentScript.category} · ${currentScript.metadata.topic} · ${artifact.candidates.length} candidates`
+            : `${currentScript.category} · ${currentScript.metadata.topic}`;
+      }
+    } catch {
+      return summary;
+    }
+
+    return summary;
   }
 
   public async createStageVersion(input: CreateStageVersionInput): Promise<StageVersion> {
@@ -494,6 +898,7 @@ export class WorkbenchService {
 
     stageState.currentVersion = nextVersion;
     stageState.reviewStatus = versionRecord.reviewStatus;
+    stageState.staleReasons = [];
     episode.currentStage = input.stage;
     episode.workflowStatus =
       versionRecord.reviewStatus === 'pending_review' ? 'awaiting_review' : 'in_progress';
@@ -522,6 +927,7 @@ export class WorkbenchService {
 
     const stageState = episode.stageStates[input.stage];
     stageState.reviewStatus = input.reviewStatus;
+    stageState.staleReasons = [];
 
     if (input.reviewStatus === 'approved') {
       if (input.stage === 'topic') {
@@ -531,6 +937,8 @@ export class WorkbenchService {
           input.version,
           input.approvedTopic
         );
+        const { recordApprovedTopic } = await import('../script/topic-selector');
+        await recordApprovedTopic(artifact.approvedTopic, artifact.category);
         this.applyAutoTopicTitle(episode, artifact.approvedTopic);
       } else if (input.stage === 'script') {
         const approvedScript = await this.persistApprovedScriptArtifact(
@@ -543,12 +951,7 @@ export class WorkbenchService {
 
       stageState.approvedVersion = input.version;
 
-      for (const downstreamStage of getDownstreamStagesForRecord(episode, input.stage)) {
-        const downstreamState = episode.stageStates[downstreamStage];
-        if (downstreamState.currentVersion > 0 || downstreamState.approvedVersion !== null) {
-          downstreamState.reviewStatus = 'stale';
-        }
-      }
+      this.markExistingDownstreamStagesStale(episode, input.stage);
 
       const nextStage = getNextAvailableStage(episode);
       episode.currentStage = nextStage;
@@ -562,6 +965,7 @@ export class WorkbenchService {
     }
 
     episode.updatedAt = timestamp;
+    episode.lastHumanActionAt = timestamp;
 
     await this.store.saveStageVersion(input.channelId, input.episodeId, version);
     await this.store.saveEpisode(episode);
@@ -603,6 +1007,22 @@ export class WorkbenchService {
     return this.store.listQueuedJobs();
   }
 
+  public async getLiveStatus(): Promise<WorkbenchLiveStatus> {
+    const jobs = await this.store.listAllJobs();
+    const activeJobs = jobs.filter((job) => job.status === 'queued' || job.status === 'running');
+
+    return {
+      queuedJobs: jobs.filter((job) => job.status === 'queued').length,
+      runningJobs: jobs.filter((job) => job.status === 'running').length,
+      failedJobs: jobs.filter((job) => job.status === 'failed').length,
+      completedJobs: jobs.filter((job) => job.status === 'completed').length,
+      activeJobCount: activeJobs.length,
+      activeRecordCount: new Set(activeJobs.map((job) => `${job.channelId}/${job.episodeId}`))
+        .size,
+      lastUpdatedAt: jobs[0]?.updatedAt ?? null,
+    };
+  }
+
   public async getEpisodeWorkflow(
     channelId: string,
     episodeId: string
@@ -629,6 +1049,7 @@ export class WorkbenchService {
         approvedVersion: stageState.approvedVersion,
         reviewStatus: stageState.reviewStatus,
         blockedBy: stageState.blockedBy,
+        staleReasons: stageState.staleReasons ?? [],
         isBlocked,
         latestJob,
         queuedJobCount,
@@ -687,8 +1108,10 @@ export class WorkbenchService {
   public async saveScriptDraft(input: SaveScriptDraftInput): Promise<SaveScriptDraftResult> {
     const nextScript = scriptSchema.parse(input.script);
     let episode = await this.store.getEpisode(input.channelId, input.episodeId);
+    const recordKind = getRecordKind(episode);
     let targetVersion: StageVersion;
     let previousScript: Script | null = null;
+    let previousArtifact: StageVersionArtifact | null = null;
 
     if (episode.stageStates.script.currentVersion <= 0) {
       targetVersion = await this.createStageVersion({
@@ -708,7 +1131,8 @@ export class WorkbenchService {
         notes: 'Forked for manual script edits',
       });
       targetVersion = forked.version;
-      previousScript = scriptSchema.parse(forked.sourceArtifact);
+      previousArtifact = forked.sourceArtifact;
+      previousScript = getEditableScriptFromStageArtifact(forked.sourceArtifact);
       episode = await this.store.getEpisode(input.channelId, input.episodeId);
     } else {
       targetVersion = await this.store.getStageVersion(
@@ -717,14 +1141,13 @@ export class WorkbenchService {
         'script',
         episode.stageStates.script.currentVersion
       );
-      previousScript = scriptSchema.parse(
-        await this.getStageVersionArtifact(
-          input.channelId,
-          input.episodeId,
-          'script',
-          targetVersion.version
-        )
+      previousArtifact = await this.getStageVersionArtifact(
+        input.channelId,
+        input.episodeId,
+        'script',
+        targetVersion.version
       );
+      previousScript = getEditableScriptFromStageArtifact(previousArtifact);
     }
 
     const timestamp = nowIso();
@@ -733,10 +1156,12 @@ export class WorkbenchService {
     targetVersion.reviewStatus = 'pending_review';
     targetVersion.updatedAt = timestamp;
     episode.stageStates.script.reviewStatus = 'pending_review';
+    episode.stageStates.script.staleReasons = [];
     episode.currentStage = 'script';
     episode.workflowStatus = 'awaiting_review';
     this.applyAutoScriptTitle(episode, nextScript);
     episode.updatedAt = timestamp;
+    episode.lastHumanActionAt = timestamp;
     this.markExistingDownstreamStagesStale(episode, 'script');
 
     await this.store.saveStageArtifactJson(
@@ -745,7 +1170,9 @@ export class WorkbenchService {
       'script',
       targetVersion.version,
       'generated-script.json',
-      nextScript
+      recordKind === 'script_pool'
+        ? buildScriptPoolArtifact(previousArtifact, nextScript)
+        : nextScript
     );
     await this.store.saveStageVersion(input.channelId, input.episodeId, targetVersion);
     await this.store.saveEpisode(episode);
@@ -755,6 +1182,73 @@ export class WorkbenchService {
       version: targetVersion,
       artifact: nextScript,
       impact,
+    };
+  }
+
+  public async savePackageDraft(input: SavePackageDraftInput): Promise<{
+    episode: EpisodeRecord;
+    version: StageVersion;
+    artifact: PackageManifest;
+  }> {
+    const nextManifest = packageManifestSchema.parse(input.manifest);
+    let episode = await this.store.getEpisode(input.channelId, input.episodeId);
+    let targetVersion: StageVersion;
+
+    if (episode.stageStates.package.currentVersion <= 0) {
+      targetVersion = await this.createStageVersion({
+        channelId: input.channelId,
+        episodeId: input.episodeId,
+        stage: 'package',
+        reviewStatus: 'draft',
+        notes: 'Manual package draft',
+      });
+      episode = await this.store.getEpisode(input.channelId, input.episodeId);
+    } else if (
+      episode.stageStates.package.currentVersion === episode.stageStates.package.approvedVersion
+    ) {
+      const forked = await this.forkCurrentStageVersion({
+        channelId: input.channelId,
+        episodeId: input.episodeId,
+        stage: 'package',
+        reviewStatus: 'draft',
+        notes: 'Forked for manual package edits',
+      });
+      targetVersion = forked.version;
+      episode = await this.store.getEpisode(input.channelId, input.episodeId);
+    } else {
+      targetVersion = await this.store.getStageVersion(
+        input.channelId,
+        input.episodeId,
+        'package',
+        episode.stageStates.package.currentVersion
+      );
+    }
+
+    const timestamp = nowIso();
+    targetVersion.reviewStatus = 'pending_review';
+    targetVersion.updatedAt = timestamp;
+    episode.stageStates.package.reviewStatus = 'pending_review';
+    episode.stageStates.package.staleReasons = [];
+    episode.currentStage = 'package';
+    episode.workflowStatus = 'awaiting_review';
+    episode.updatedAt = timestamp;
+    episode.lastHumanActionAt = timestamp;
+
+    await this.store.saveStageArtifactJson(
+      input.channelId,
+      input.episodeId,
+      'package',
+      targetVersion.version,
+      'manifest.json',
+      nextManifest
+    );
+    await this.store.saveStageVersion(input.channelId, input.episodeId, targetVersion);
+    await this.store.saveEpisode(episode);
+
+    return {
+      episode,
+      version: targetVersion,
+      artifact: nextManifest,
     };
   }
 
@@ -828,6 +1322,7 @@ export class WorkbenchService {
     version.reviewStatus = 'draft';
     version.updatedAt = timestamp;
     stageState.reviewStatus = 'draft';
+    stageState.staleReasons = [];
     episode.currentStage = input.stage;
     episode.workflowStatus = 'in_progress';
     episode.updatedAt = timestamp;
@@ -953,6 +1448,28 @@ export class WorkbenchService {
     return renderStageManifestSchema.parse(raw);
   }
 
+  public async getApprovedPackageManifest(
+    channelId: string,
+    episodeId: string
+  ): Promise<PackageManifest> {
+    const episode = await this.store.getEpisode(channelId, episodeId);
+    const approvedVersion = episode.stageStates.package.approvedVersion;
+
+    if (!approvedVersion) {
+      throw new Error(`No approved package manifest found for episode ${episodeId}`);
+    }
+
+    const raw = await this.store.readStageArtifactJson<unknown>(
+      channelId,
+      episodeId,
+      'package',
+      approvedVersion,
+      'manifest.json'
+    );
+
+    return packageManifestSchema.parse(raw);
+  }
+
   public async getCurrentStageArtifact(
     channelId: string,
     episodeId: string,
@@ -974,6 +1491,7 @@ export class WorkbenchService {
     stage: EpisodeStage,
     version: number
   ): Promise<StageVersionArtifact> {
+    const episode = await this.store.getEpisode(channelId, episodeId);
     switch (stage) {
       case 'topic': {
         const raw = await this.store.readStageArtifactJson<unknown>(
@@ -993,6 +1511,13 @@ export class WorkbenchService {
           version,
           'generated-script.json'
         );
+        if (getRecordKind(episode) === 'script_pool') {
+          const poolArtifact = scriptPoolArtifactSchema.safeParse(raw);
+          if (poolArtifact.success) {
+            return poolArtifact.data;
+          }
+        }
+
         return scriptSchema.parse(raw);
       }
       case 'image': {
@@ -1034,6 +1559,16 @@ export class WorkbenchService {
           'manifest.json'
         );
         return shortsStageManifestSchema.parse(raw);
+      }
+      case 'package': {
+        const raw = await this.store.readStageArtifactJson<unknown>(
+          channelId,
+          episodeId,
+          stage,
+          version,
+          'manifest.json'
+        );
+        return packageManifestSchema.parse(raw);
       }
     }
   }
@@ -1078,6 +1613,32 @@ export class WorkbenchService {
         return this.getApprovedRenderManifest(channelId, episodeId);
       case 'shorts':
         return this.getApprovedShortsManifest(channelId, episodeId);
+      case 'package':
+        return this.getApprovedPackageManifest(channelId, episodeId);
+    }
+  }
+
+  private async tryGetCurrentStageArtifact(
+    channelId: string,
+    episodeId: string,
+    stage: EpisodeStage
+  ): Promise<StageVersionArtifact | null> {
+    try {
+      return await this.getCurrentStageArtifact(channelId, episodeId, stage);
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryGetApprovedStageArtifact(
+    channelId: string,
+    episodeId: string,
+    stage: EpisodeStage
+  ): Promise<ApprovedStageArtifact | null> {
+    try {
+      return await this.getApprovedStageArtifact(channelId, episodeId, stage);
+    } catch {
+      return null;
     }
   }
 
@@ -1114,14 +1675,9 @@ export class WorkbenchService {
     episodeId: string,
     version: number
   ): Promise<Script> {
-    const rawScript = await this.store.readStageArtifactJson<unknown>(
-      channelId,
-      episodeId,
-      'script',
-      version,
-      'generated-script.json'
+    const approvedScript = getEditableScriptFromStageArtifact(
+      await this.getStageVersionArtifact(channelId, episodeId, 'script', version)
     );
-    const approvedScript = scriptSchema.parse(rawScript);
 
     await this.store.saveStageArtifactJson(
       channelId,
@@ -1237,6 +1793,9 @@ export class WorkbenchService {
       const downstreamState = episode.stageStates[downstreamStage];
       if (downstreamState.currentVersion > 0 || downstreamState.approvedVersion !== null) {
         downstreamState.reviewStatus = 'stale';
+        downstreamState.staleReasons = [
+          buildStaleReason(stage, downstreamStage, getRecordKind(episode)),
+        ];
       }
     }
   }
@@ -1252,7 +1811,7 @@ function getNextAvailableStage(episode: EpisodeRecord): EpisodeStage {
     }
   }
 
-  return visibleStages[visibleStages.length - 1] ?? 'shorts';
+  return visibleStages[visibleStages.length - 1] ?? 'package';
 }
 
 function getPreferredEpisodeTitle(script: Script): string {
@@ -1264,13 +1823,36 @@ function getPreferredEpisodeTitle(script: Script): string {
 }
 
 function getRecordKind(record: EpisodeRecord): WorkbenchRecordKind {
-  return record.kind ?? 'episode';
+  if (record.kind === 'episode' || record.kind === 'topic_pool' || record.kind === 'script_pool') {
+    return record.kind;
+  }
+
+  if (record.kind === 'candidate') {
+    return isLegacyScriptPoolRecord(record) ? 'script_pool' : 'topic_pool';
+  }
+
+  return 'episode';
+}
+
+function isCandidateReviewStage(stage: EpisodeStage): stage is 'topic' | 'script' {
+  return stage === 'topic' || stage === 'script';
 }
 
 function getVisibleStagesForRecord(record: EpisodeRecord): EpisodeStage[] {
-  return getRecordKind(record) === 'candidate'
-    ? ['topic', 'script']
-    : [...episodeStageOrder];
+  if (record.kind === 'candidate') {
+    return ['topic', 'script'];
+  }
+
+  switch (getRecordKind(record)) {
+    case 'topic_pool':
+      return ['topic'];
+    case 'script_pool':
+      return ['topic', 'script'];
+    case 'episode':
+      return [...episodeStageOrder];
+    default:
+      return ['topic'];
+  }
 }
 
 function getDownstreamStagesForRecord(record: EpisodeRecord, stage: EpisodeStage): EpisodeStage[] {
@@ -1291,20 +1873,129 @@ function getWorkflowStatusAfterApproval(
   episode: EpisodeRecord,
   nextStage: EpisodeStage
 ): EpisodeRecord['workflowStatus'] {
-  if (getRecordKind(episode) === 'candidate' && nextStage === 'script') {
-    const scriptState = episode.stageStates.script;
-    if (scriptState.approvedVersion !== null && scriptState.reviewStatus === 'approved') {
-      return 'completed';
-    }
+  const visibleStages = getVisibleStagesForRecord(episode);
+  const allApproved = visibleStages.every((stage) => {
+    const state = episode.stageStates[stage];
+    return state.approvedVersion !== null && state.reviewStatus === 'approved';
+  });
+
+  if (allApproved) {
+    return 'completed';
   }
 
   return nextStage === 'render' ? 'ready_for_render' : 'in_progress';
 }
 
-function assertCandidateRecord(record: EpisodeRecord, recordId: string): void {
-  if (getRecordKind(record) !== 'candidate') {
-    throw new Error(`Record ${recordId} is not a candidate`);
+function getNextActionLabel(record: EpisodeRecord): string {
+  const state = record.stageStates[record.currentStage];
+  switch (state.reviewStatus) {
+    case 'pending_review':
+      return 'Review and decide';
+    case 'changes_requested':
+      return 'Regenerate or edit';
+    case 'approved':
+      return getRecordKind(record) === 'topic_pool' && record.currentStage === 'topic'
+        ? 'Create script pool'
+        : getRecordKind(record) === 'script_pool' && record.currentStage === 'script'
+          ? 'Promote to episode'
+          : 'Continue to next stage';
+    case 'stale':
+      return 'Refresh stale stage';
+    default:
+      return state.currentVersion > 0 ? 'Inspect draft' : 'Generate first draft';
   }
+}
+
+function getLineageLabel(record: Pick<
+  EpisodeRecord,
+  'kind' | 'parentRecordId' | 'originCandidateId' | 'threadId' | 'id'
+>): string {
+  const derivedKind = getRecordKind(record as EpisodeRecord);
+  if (derivedKind === 'topic_pool') {
+    return 'Topic pool';
+  }
+
+  if (derivedKind === 'script_pool') {
+    return `Script pool from ${record.parentRecordId ?? record.threadId ?? record.id}`;
+  }
+
+  if (record.parentRecordId) {
+    return `Production episode from ${record.parentRecordId}`;
+  }
+
+  return `Standalone thread ${record.threadId ?? record.id}`;
+}
+
+function getWorkspaceForSummary(record: WorkbenchRecordSummary): ReviewWorkspace {
+  if (record.kind === 'topic_pool') {
+    return record.currentStage === 'script' ? 'script_lab' : 'topic_inbox';
+  }
+
+  if (record.kind === 'script_pool') {
+    return 'script_lab';
+  }
+
+  return record.currentStage === 'package' ? 'delivery_pack' : 'production_desk';
+}
+
+function compareReviewQueueItems(left: ReviewQueueItem, right: ReviewQueueItem): number {
+  const leftRank = getReviewQueueRank(left.reviewStatus);
+  const rightRank = getReviewQueueRank(right.reviewStatus);
+  return leftRank - rightRank || right.updatedAt.localeCompare(left.updatedAt);
+}
+
+function getReviewQueueRank(reviewStatus: ReviewStatus): number {
+  switch (reviewStatus) {
+    case 'pending_review':
+      return 0;
+    case 'changes_requested':
+      return 1;
+    case 'stale':
+      return 2;
+    case 'draft':
+      return 3;
+    case 'approved':
+      return 4;
+  }
+}
+
+function buildStaleReason(
+  sourceStage: EpisodeStage,
+  staleStage: EpisodeStage,
+  recordKind: WorkbenchRecordKind
+): string {
+  const scope = recordKind === 'episode' ? 'production flow' : 'review funnel';
+  return `${capitalizeStageLabel(staleStage)} is stale because ${capitalizeStageLabel(sourceStage)} changed in the ${scope}.`;
+}
+
+function capitalizeStageLabel(stage: EpisodeStage): string {
+  return stage.charAt(0).toUpperCase() + stage.slice(1);
+}
+
+function assertTopicPoolRecord(record: EpisodeRecord, recordId: string): void {
+  if (getRecordKind(record) !== 'topic_pool') {
+    throw new Error(`Record ${recordId} is not a topic pool`);
+  }
+}
+
+function assertScriptPoolRecord(record: EpisodeRecord, recordId: string): void {
+  if (getRecordKind(record) !== 'script_pool') {
+    throw new Error(`Record ${recordId} is not a script pool`);
+  }
+}
+
+function isLegacyScriptPoolRecord(record: Pick<
+  EpisodeRecord,
+  'kind' | 'parentRecordId' | 'currentStage' | 'stageStates'
+>): boolean {
+  return (
+    record.kind === 'candidate' &&
+    Boolean(
+      record.parentRecordId ||
+        record.stageStates.script.currentVersion > 0 ||
+        record.stageStates.script.approvedVersion !== null
+    )
+  );
 }
 
 function shouldPreserveManualTitle(episode: EpisodeRecord): boolean {
@@ -1324,8 +2015,40 @@ function getStageArtifactFilename(stage: EpisodeStage): string {
     case 'tts':
     case 'render':
     case 'shorts':
+    case 'package':
       return 'manifest.json';
   }
+}
+
+function getEditableScriptFromStageArtifact(artifact: StageVersionArtifact): Script {
+  return 'currentDraft' in artifact ? artifact.currentDraft : scriptSchema.parse(artifact);
+}
+
+function buildScriptPoolArtifact(
+  previousArtifact: StageVersionArtifact | null,
+  nextScript: Script
+): ScriptPoolArtifact {
+  if (previousArtifact && 'currentDraft' in previousArtifact) {
+    const selectedCandidateIndex = previousArtifact.candidates.findIndex(
+      (candidate) => JSON.stringify(candidate) === JSON.stringify(nextScript)
+    );
+
+    return {
+      ...previousArtifact,
+      currentDraft: nextScript,
+      selectedCandidateIndex: selectedCandidateIndex >= 0 ? selectedCandidateIndex : null,
+    };
+  }
+
+  return {
+    generatedAt: nowIso(),
+    category: nextScript.category,
+    topic: nextScript.metadata.topic,
+    recommendedCandidateIndex: 0,
+    selectedCandidateIndex: 0,
+    candidates: [nextScript],
+    currentDraft: nextScript,
+  };
 }
 
 function calculateScriptImpact(previousScript: Script | null, nextScript: Script): ScriptImpactSummary {

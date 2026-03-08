@@ -1,6 +1,24 @@
 import { formatDate, stageLabels } from '../helpers';
 import type { EpisodeStage, EpisodeWorkflow } from '../types';
 
+function formatJobProgress(
+  job: EpisodeWorkflow['jobs'][number] | EpisodeWorkflow['stages'][number]['latestJob']
+): string | null {
+  if (!job?.progress) {
+    return null;
+  }
+
+  if (job.progress.label) {
+    return job.progress.label;
+  }
+
+  if (typeof job.progress.current === 'number' && typeof job.progress.total === 'number') {
+    return `${job.progress.current}/${job.progress.total}`;
+  }
+
+  return job.progress.phase ?? null;
+}
+
 export function WorkflowPanel(props: {
   workflow: EpisodeWorkflow | null;
   selectedStage: EpisodeStage | null;
@@ -74,7 +92,13 @@ export function WorkflowPanel(props: {
                 </div>
                 <div className="stage-stat">
                   <span className="stage-stat-label">Latest</span>
-                  <span className="stage-stat-value">{stage.latestJob?.status ?? 'none'}</span>
+                  <span className="stage-stat-value">
+                    {stage.latestJob
+                      ? [stage.latestJob.status, formatJobProgress(stage.latestJob)]
+                          .filter(Boolean)
+                          .join(' · ')
+                      : 'none'}
+                  </span>
                 </div>
               </div>
 
@@ -103,6 +127,9 @@ export function WorkflowPanel(props: {
                   <span className="job-item-code">
                     {job.id} · v{String(job.version).padStart(3, '0')}
                   </span>
+                  {formatJobProgress(job) ? (
+                    <span className="panel-note">{formatJobProgress(job)}</span>
+                  ) : null}
                   {job.error ? <span className="panel-note">{job.error}</span> : null}
                 </div>
                 <span className="job-item-code">{formatDate(job.updatedAt)}</span>

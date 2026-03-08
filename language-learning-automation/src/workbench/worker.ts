@@ -3,13 +3,16 @@ import path from 'node:path';
 import type { ChannelConfig } from '../config/types';
 import type { Script, Sentence } from '../script/types';
 import type { AudioFile } from '../tts/types';
+import { generatePackageManifest } from './package-generator';
 import { getCategoryForDay } from '../script/prompts';
 import { WorkbenchService } from './service';
 import { WorkbenchStore } from './store';
 import {
+  packageManifestSchema,
   stageGenerationPayloadSchema,
   type ApprovedTopicArtifact,
   type ImageStageManifest,
+  type PackageManifest,
   type RenderStageManifest,
   type ShortsStageManifest,
   type TtsStageManifest,
@@ -23,11 +26,28 @@ export interface TopicStageResult {
   recommendedTopic: string;
 }
 
+export interface TopicJobProgress {
+  requestedCount: number;
+  generatedCount: number;
+  batchNumber: number;
+  totalBatches: number;
+  lastBatchCandidates: string[];
+  phase: 'generating' | 'ranking';
+}
+
+export interface ScriptPoolStageResult {
+  category: string;
+  topic: string;
+  candidates: Script[];
+  recommendedCandidateIndex: number;
+}
+
 export interface WorkbenchWorkerAdapters {
   generateTopicBundle(input: {
     channelId: string;
     category: ReturnType<typeof getCategoryForDay>;
     candidateCount: number;
+    onProgress?: (progress: TopicJobProgress) => void | Promise<void>;
   }): Promise<TopicStageResult>;
   generateScript(input: {
     channelId: string;
@@ -35,6 +55,13 @@ export interface WorkbenchWorkerAdapters {
     topic: string;
     usePipeline: boolean;
   }): Promise<unknown>;
+  generateScriptPool(input: {
+    channelId: string;
+    category: ReturnType<typeof getCategoryForDay>;
+    topic: string;
+    usePipeline: boolean;
+    candidateCount: number;
+  }): Promise<ScriptPoolStageResult>;
   generateImages(input: {
     channelId: string;
     script: unknown;
@@ -65,6 +92,15 @@ export interface WorkbenchWorkerAdapters {
     renderManifest: RenderStageManifest;
     outputDir: string;
   }): Promise<ShortsStageManifest>;
+  generatePackage(input: {
+    channelId: string;
+    script: unknown;
+    imageManifest: ImageStageManifest;
+    ttsManifest: TtsStageManifest;
+    renderManifest: RenderStageManifest;
+    shortsManifest?: ShortsStageManifest | null;
+    outputDir: string;
+  }): Promise<PackageManifest>;
 }
 
 function createDefaultAdapters(): WorkbenchWorkerAdapters {
@@ -77,7 +113,8 @@ function createDefaultAdapters(): WorkbenchWorkerAdapters {
         input.category,
         config.meta.targetLanguage,
         config.meta.nativeLanguage,
-        input.candidateCount
+        input.candidateCount,
+        { onProgress: input.onProgress }
       );
     },
     async generateScript(input) {
@@ -86,8 +123,26 @@ function createDefaultAdapters(): WorkbenchWorkerAdapters {
       const config = await loadConfig(input.channelId);
       return generateScript(config, input.category, input.topic, {
         usePipeline: input.usePipeline,
+        candidateCount: 1,
         pipelineConfig: { candidateCount: 1 },
       });
+    },
+    async generateScriptPool(input) {
+      const { loadConfig } = await import('../config/loader');
+      const { generateScriptPool } = await import('../script/generator');
+      const config = await loadConfig(input.channelId);
+      const result = await generateScriptPool(config, input.category, input.topic, {
+        count: input.candidateCount,
+        usePipeline: input.usePipeline,
+        pipelineConfig: { candidateCount: 1 },
+      });
+
+      return {
+        category: input.category,
+        topic: input.topic,
+        candidates: result.candidates,
+        recommendedCandidateIndex: result.recommendedIndex,
+      };
     },
     async generateImages(input) {
       const { loadConfig } = await import('../config/loader');
@@ -365,6 +420,22 @@ function createDefaultAdapters(): WorkbenchWorkerAdapters {
         outputs,
       };
     },
+    async generatePackage(input) {
+      const { loadConfig } = await import('../config/loader');
+      const { scriptSchema } = await import('../script/types');
+      const script = scriptSchema.parse(input.script);
+      const config = await loadConfig(input.channelId);
+      return generatePackageManifest({
+        channelId: input.channelId,
+        outputDir: input.outputDir,
+        config,
+        script,
+        imageManifest: input.imageManifest,
+        ttsManifest: input.ttsManifest,
+        renderManifest: input.renderManifest,
+        shortsManifest: input.shortsManifest,
+      });
+    },
   };
 }
 
@@ -523,6 +594,9 @@ export class WorkbenchWorker {
         case 'shorts':
           await this.processShortsJob(nextJob);
           break;
+        case 'package':
+          await this.processPackageJob(nextJob);
+          break;
         default:
           throw new Error(`Unsupported generation stage: ${nextJob.stage}`);
       }
@@ -552,6 +626,19 @@ export class WorkbenchWorker {
       channelId: job.channelId,
       category,
       candidateCount,
+      onProgress: async (progress) => {
+        job.progress = {
+          current: progress.generatedCount,
+          total: progress.requestedCount,
+          phase: progress.phase,
+          label:
+            progress.phase === 'ranking'
+              ? `Ranking ${progress.generatedCount} topic candidates`
+              : `Generated ${progress.generatedCount}/${progress.requestedCount} topic candidates`,
+        };
+        job.updatedAt = nowIso();
+        await this.service.updateJob(job);
+      },
     });
 
     await this.store.saveStageArtifactJson(job.channelId, job.episodeId, 'topic', job.version, 'candidates.json', {
@@ -572,6 +659,7 @@ export class WorkbenchWorker {
 
   private async processScriptJob(job: WorkbenchJob): Promise<void> {
     const payload = stageGenerationPayloadSchema.parse(job.payload ?? {});
+    const record = await this.service.getEpisode(job.channelId, job.episodeId);
     const approvedTopic = payload.topic
       ? null
       : await this.tryGetApprovedTopic(job.channelId, job.episodeId);
@@ -580,6 +668,47 @@ export class WorkbenchWorker {
 
     if (!topic) {
       throw new Error(`Script generation requires payload.topic or an approved topic for episode ${job.episodeId}`);
+    }
+
+    if (isScriptPoolRecord(record)) {
+      const candidateCount = Math.max(1, Math.min(50, payload.candidateCount ?? 5));
+      const scriptPool = await this.adapters.generateScriptPool({
+        channelId: job.channelId,
+        category,
+        topic,
+        usePipeline: payload.usePipeline ?? true,
+        candidateCount,
+      });
+      const currentDraft =
+        scriptPool.candidates[scriptPool.recommendedCandidateIndex] ?? scriptPool.candidates[0];
+
+      await this.store.saveStageArtifactJson(
+        job.channelId,
+        job.episodeId,
+        'script',
+        job.version,
+        'generated-script.json',
+        {
+          generatedAt: nowIso(),
+          category,
+          topic,
+          recommendedCandidateIndex: scriptPool.recommendedCandidateIndex,
+          selectedCandidateIndex: scriptPool.recommendedCandidateIndex,
+          candidates: scriptPool.candidates,
+          currentDraft,
+        }
+      );
+
+      await this.service.syncEpisodeTitleFromScript(job.channelId, job.episodeId, currentDraft);
+
+      await this.service.updateStageReviewStatus({
+        channelId: job.channelId,
+        episodeId: job.episodeId,
+        stage: 'script',
+        version: job.version,
+        reviewStatus: 'pending_review',
+      });
+      return;
     }
 
     const script = await this.adapters.generateScript({
@@ -761,6 +890,53 @@ export class WorkbenchWorker {
     });
   }
 
+  private async processPackageJob(job: WorkbenchJob): Promise<void> {
+    const approvedScript = await this.service.getApprovedScript(job.channelId, job.episodeId);
+    const approvedImageManifest = await this.service.getApprovedImageManifest(
+      job.channelId,
+      job.episodeId
+    );
+    const approvedTtsManifest = await this.service.getApprovedTtsManifest(
+      job.channelId,
+      job.episodeId
+    );
+    const approvedRenderManifest = await this.service.getApprovedRenderManifest(
+      job.channelId,
+      job.episodeId
+    );
+    const approvedShortsManifest = await this.tryReadApprovedShorts(job.channelId, job.episodeId);
+    const outputDir = this.store.getStageVersionRoot(job.channelId, job.episodeId, 'package', job.version);
+
+    const manifest = packageManifestSchema.parse(
+      await this.adapters.generatePackage({
+        channelId: job.channelId,
+        script: approvedScript,
+        imageManifest: approvedImageManifest,
+        ttsManifest: approvedTtsManifest,
+        renderManifest: approvedRenderManifest,
+        shortsManifest: approvedShortsManifest,
+        outputDir,
+      })
+    );
+
+    await this.store.saveStageArtifactJson(
+      job.channelId,
+      job.episodeId,
+      'package',
+      job.version,
+      'manifest.json',
+      manifest
+    );
+
+    await this.service.updateStageReviewStatus({
+      channelId: job.channelId,
+      episodeId: job.episodeId,
+      stage: 'package',
+      version: job.version,
+      reviewStatus: 'pending_review',
+    });
+  }
+
   private async tryGetApprovedTopic(
     channelId: string,
     episodeId: string
@@ -781,6 +957,17 @@ export class WorkbenchWorker {
   ): Promise<T | null> {
     try {
       return await this.store.readStageArtifactJson<T>(channelId, episodeId, stage, version, filename);
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryReadApprovedShorts(
+    channelId: string,
+    episodeId: string
+  ): Promise<ShortsStageManifest | null> {
+    try {
+      return await this.service.getApprovedShortsManifest(channelId, episodeId);
     } catch {
       return null;
     }
@@ -922,6 +1109,29 @@ function getShortsBackgroundImage(input: {
   }
 
   return input.fallbackBackgroundImage ?? input.sceneImages?.[0];
+}
+
+function isScriptPoolRecord(record: {
+  kind?: string;
+  parentRecordId?: string;
+  currentStage: string;
+  stageStates: {
+    script: {
+      currentVersion: number;
+      approvedVersion: number | null;
+    };
+  };
+}): boolean {
+  return (
+    record.kind === 'script_pool' ||
+    (record.kind === 'candidate' &&
+      Boolean(
+        record.parentRecordId ||
+          record.currentStage === 'script' ||
+          record.stageStates.script.currentVersion > 0 ||
+          record.stageStates.script.approvedVersion !== null
+      ))
+  );
 }
 
 async function copyDir(src: string, dest: string): Promise<void> {

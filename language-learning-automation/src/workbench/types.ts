@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { categorySchema } from '../script/types';
+import { categorySchema, scriptSchema } from '../script/types';
 import { audioFileSchema } from '../tts/types';
 
 export const episodeStageOrder = [
@@ -9,6 +9,7 @@ export const episodeStageOrder = [
   'tts',
   'render',
   'shorts',
+  'package',
 ] as const;
 
 export const episodeStageSchema = z.enum(episodeStageOrder);
@@ -32,7 +33,7 @@ export type WorkbenchJobKind = z.infer<typeof workbenchJobKindSchema>;
 export const stageGenerationPayloadSchema = z.object({
   category: categorySchema.optional(),
   topic: z.string().min(1).optional(),
-  candidateCount: z.number().int().positive().max(10).optional(),
+  candidateCount: z.number().int().positive().max(200).optional(),
   usePipeline: z.boolean().optional(),
   styleId: z.string().min(1).optional(),
   targetVersion: z.number().int().positive().optional(),
@@ -57,6 +58,17 @@ export const approvedTopicArtifactSchema = z.object({
   source: z.enum(['manual', 'recommended']),
 });
 export type ApprovedTopicArtifact = z.infer<typeof approvedTopicArtifactSchema>;
+
+export const scriptPoolArtifactSchema = z.object({
+  generatedAt: z.string().datetime(),
+  category: categorySchema,
+  topic: z.string().min(1),
+  recommendedCandidateIndex: z.number().int().nonnegative(),
+  selectedCandidateIndex: z.number().int().nonnegative().nullable().default(null),
+  candidates: z.array(scriptSchema).min(1),
+  currentDraft: scriptSchema,
+});
+export type ScriptPoolArtifact = z.infer<typeof scriptPoolArtifactSchema>;
 
 export const imageStageManifestSchema = z.object({
   generatedAt: z.string().datetime(),
@@ -110,6 +122,43 @@ export const shortsStageManifestSchema = z.object({
 });
 export type ShortsStageManifest = z.infer<typeof shortsStageManifestSchema>;
 
+export const packageTitleCandidateSchema = z.object({
+  id: z.string().min(1),
+  value: z.string().min(1),
+  source: z.enum(['native', 'target', 'competitor_style', 'manual']),
+});
+export type PackageTitleCandidate = z.infer<typeof packageTitleCandidateSchema>;
+
+export const packageThumbnailCandidateSchema = z.object({
+  id: z.string().min(1),
+  path: z.string().min(1),
+  label: z.string().min(1),
+  source: z.enum(['scene', 'background', 'render_frame', 'manual']),
+});
+export type PackageThumbnailCandidate = z.infer<typeof packageThumbnailCandidateSchema>;
+
+export const packageManifestSchema = z.object({
+  generatedAt: z.string().datetime(),
+  titleCandidates: z.array(packageTitleCandidateSchema).min(1),
+  selectedTitle: z.string().min(1),
+  description: z.string().min(1),
+  pinnedComment: z.string().min(1),
+  thumbnailCandidates: z.array(packageThumbnailCandidateSchema).min(1),
+  selectedThumbnailPath: z.string().min(1),
+  uploadInfoPath: z.string().min(1),
+  uploadInfoText: z.string().min(1),
+  exportItems: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        label: z.string().min(1),
+        path: z.string().min(1),
+      })
+    )
+    .default([]),
+});
+export type PackageManifest = z.infer<typeof packageManifestSchema>;
+
 export const assetKindSchema = z.enum([
   'topic_candidates',
   'approved_topic',
@@ -123,6 +172,7 @@ export const assetKindSchema = z.enum([
   'shorts_output',
   'thumbnail',
   'metadata',
+  'package_manifest',
 ]);
 export type AssetKind = z.infer<typeof assetKindSchema>;
 
@@ -139,8 +189,46 @@ export type WorkflowStatus = z.infer<typeof workflowStatusSchema>;
 export const episodeTitleSourceSchema = z.enum(['manual', 'topic_auto', 'script_auto']);
 export type EpisodeTitleSource = z.infer<typeof episodeTitleSourceSchema>;
 
-export const workbenchRecordKindSchema = z.enum(['candidate', 'episode']);
+export const workbenchRecordKindSchema = z.enum([
+  'candidate',
+  'topic_pool',
+  'script_pool',
+  'episode',
+]);
 export type WorkbenchRecordKind = z.infer<typeof workbenchRecordKindSchema>;
+
+export const reviewWorkspaceSchema = z.enum([
+  'topic_inbox',
+  'script_lab',
+  'production_desk',
+  'delivery_pack',
+]);
+export type ReviewWorkspace = z.infer<typeof reviewWorkspaceSchema>;
+
+export const reviewAnchorSchema = z.object({
+  kind: z.enum(['sentence', 'scene', 'timestamp', 'thumbnail', 'title', 'stage']),
+  label: z.string().optional(),
+  sentenceId: z.number().int().positive().optional(),
+  sceneIndex: z.number().int().positive().optional(),
+  timestampMs: z.number().int().nonnegative().optional(),
+  target: z.string().optional(),
+});
+export type ReviewAnchor = z.infer<typeof reviewAnchorSchema>;
+
+export const reviewCommentSchema = z.object({
+  id: z.string().min(1),
+  channelId: z.string().min(1),
+  recordId: z.string().min(1),
+  stage: episodeStageSchema,
+  version: z.number().int().positive().optional(),
+  kind: z.enum(['issue', 'note', 'decision']).default('issue'),
+  status: z.enum(['open', 'resolved']).default('open'),
+  text: z.string().min(1),
+  anchor: reviewAnchorSchema.optional(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+});
+export type ReviewComment = z.infer<typeof reviewCommentSchema>;
 
 export const stageVersionSchema = z.object({
   id: z.string().min(1),
@@ -173,16 +261,60 @@ export const stageStateSchema = z.object({
   approvedVersion: z.number().int().nonnegative().nullable().default(null),
   reviewStatus: reviewStatusSchema,
   blockedBy: z.array(episodeStageSchema).default([]),
+  staleReasons: z.array(z.string()).default([]),
 });
 export type StageState = z.infer<typeof stageStateSchema>;
 
 export const episodeStageStatesSchema = z.object({
-  topic: stageStateSchema,
-  script: stageStateSchema,
-  image: stageStateSchema,
-  tts: stageStateSchema,
-  render: stageStateSchema,
-  shorts: stageStateSchema,
+  topic: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: [],
+    staleReasons: [],
+  }),
+  script: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: ['topic'],
+    staleReasons: [],
+  }),
+  image: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: ['script'],
+    staleReasons: [],
+  }),
+  tts: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: ['script'],
+    staleReasons: [],
+  }),
+  render: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: ['image', 'tts'],
+    staleReasons: [],
+  }),
+  shorts: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: ['render'],
+    staleReasons: [],
+  }),
+  package: stageStateSchema.default({
+    currentVersion: 0,
+    approvedVersion: null,
+    reviewStatus: 'draft',
+    blockedBy: ['shorts'],
+    staleReasons: [],
+  }),
 });
 export type EpisodeStageStates = z.infer<typeof episodeStageStatesSchema>;
 
@@ -190,12 +322,16 @@ export const episodeRecordSchema = z.object({
   id: z.string().min(1),
   channelId: z.string().min(1),
   kind: workbenchRecordKindSchema.default('episode'),
+  threadId: z.string().min(1).optional(),
+  parentRecordId: z.string().min(1).optional(),
+  originCandidateId: z.string().min(1).optional(),
   title: z.string().optional(),
   titleSource: episodeTitleSourceSchema.optional(),
   workflowStatus: workflowStatusSchema,
   currentStage: episodeStageSchema,
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
+  lastHumanActionAt: z.string().datetime().optional(),
   stageStates: episodeStageStatesSchema,
 });
 export type EpisodeRecord = z.infer<typeof episodeRecordSchema>;
@@ -213,6 +349,14 @@ export const workbenchJobSchema = z.object({
   updatedAt: z.string().datetime(),
   startedAt: z.string().datetime().optional(),
   completedAt: z.string().datetime().optional(),
+  progress: z
+    .object({
+      current: z.number().int().nonnegative().optional(),
+      total: z.number().int().positive().optional(),
+      phase: z.string().min(1).optional(),
+      label: z.string().min(1).optional(),
+    })
+    .optional(),
   error: z.string().optional(),
 });
 export type WorkbenchJob = z.infer<typeof workbenchJobSchema>;
@@ -237,21 +381,54 @@ export function getDownstreamStages(stage: EpisodeStage): EpisodeStage[] {
 
 export function createInitialStageStates(): EpisodeStageStates {
   return {
-    topic: { currentVersion: 0, approvedVersion: null, reviewStatus: 'draft', blockedBy: [] },
-    script: { currentVersion: 0, approvedVersion: null, reviewStatus: 'draft', blockedBy: ['topic'] },
-    image: { currentVersion: 0, approvedVersion: null, reviewStatus: 'draft', blockedBy: ['script'] },
-    tts: { currentVersion: 0, approvedVersion: null, reviewStatus: 'draft', blockedBy: ['script'] },
+    topic: {
+      currentVersion: 0,
+      approvedVersion: null,
+      reviewStatus: 'draft',
+      blockedBy: [],
+      staleReasons: [],
+    },
+    script: {
+      currentVersion: 0,
+      approvedVersion: null,
+      reviewStatus: 'draft',
+      blockedBy: ['topic'],
+      staleReasons: [],
+    },
+    image: {
+      currentVersion: 0,
+      approvedVersion: null,
+      reviewStatus: 'draft',
+      blockedBy: ['script'],
+      staleReasons: [],
+    },
+    tts: {
+      currentVersion: 0,
+      approvedVersion: null,
+      reviewStatus: 'draft',
+      blockedBy: ['script'],
+      staleReasons: [],
+    },
     render: {
       currentVersion: 0,
       approvedVersion: null,
       reviewStatus: 'draft',
       blockedBy: ['image', 'tts'],
+      staleReasons: [],
     },
     shorts: {
       currentVersion: 0,
       approvedVersion: null,
       reviewStatus: 'draft',
       blockedBy: ['render'],
+      staleReasons: [],
+    },
+    package: {
+      currentVersion: 0,
+      approvedVersion: null,
+      reviewStatus: 'draft',
+      blockedBy: ['shorts'],
+      staleReasons: [],
     },
   };
 }

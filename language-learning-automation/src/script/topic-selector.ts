@@ -21,8 +21,19 @@ interface TopicHistory {
   patternId?: string; // 사용된 패턴 ID
 }
 
+interface TopicSelectionContext {
+  recentTopics: string[];
+  recentPatternIds: string[];
+}
+
+type GeminiModel = ReturnType<GoogleGenerativeAI['getGenerativeModel']>;
+type GeminiGenerateContentResult = Awaited<ReturnType<GeminiModel['generateContent']>>;
+
 const HISTORY_FILE = path.join(process.cwd(), 'output', 'topic-history.json');
 const PATTERN_HISTORY_FILE = path.join(process.cwd(), 'output', 'pattern-history.json');
+const GEMINI_REQUEST_TIMEOUT_MS = 60_000;
+const GEMINI_REQUEST_MAX_RETRIES = 2;
+const WORKBENCH_TOPIC_POOL_BATCH_SIZE = 20;
 
 /**
  * Load topic history to avoid duplicates
@@ -84,6 +95,145 @@ async function savePatternToHistory(patternId: string, topic: string): Promise<v
   await fs.writeFile(PATTERN_HISTORY_FILE, JSON.stringify(recentHistory, null, 2), 'utf-8');
 }
 
+async function loadTopicSelectionContext(): Promise<TopicSelectionContext> {
+  const history = await loadTopicHistory();
+  const patternHistory = await loadPatternHistory();
+
+  return {
+    recentTopics: history.slice(-30).map((entry) => entry.topic),
+    recentPatternIds: patternHistory.slice(-14).map((entry) => entry.patternId),
+  };
+}
+
+function rememberTopicSelection(
+  context: TopicSelectionContext,
+  topic: string,
+  patternId: string
+): void {
+  context.recentTopics = [...context.recentTopics, topic].slice(-30);
+  context.recentPatternIds = [...context.recentPatternIds, patternId].slice(-14);
+}
+
+async function recordTopicSelection(
+  topic: string,
+  category: Category,
+  patternId: string
+): Promise<void> {
+  await saveTopicToHistory(topic, category, patternId);
+  await savePatternToHistory(patternId, topic);
+}
+
+function appendRecentTopics(context: TopicSelectionContext, topics: string[]): void {
+  if (topics.length === 0) {
+    return;
+  }
+
+  context.recentTopics = [...context.recentTopics, ...topics].slice(-30);
+}
+
+function formatErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  let timeoutId: NodeJS.Timeout | undefined;
+
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<T>((_, reject) => {
+        timeoutId = setTimeout(() => {
+          reject(new Error(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`));
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+    }
+  }
+}
+
+async function generateTextWithRetry(
+  model: GeminiModel,
+  prompt: string,
+  label: string
+): Promise<string> {
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= GEMINI_REQUEST_MAX_RETRIES; attempt++) {
+    try {
+      const result = await withTimeout<GeminiGenerateContentResult>(
+        model.generateContent(prompt),
+        GEMINI_REQUEST_TIMEOUT_MS,
+        label
+      );
+      return result.response.text().trim();
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < GEMINI_REQUEST_MAX_RETRIES) {
+        console.warn(
+          `   ⚠️ ${label} retry ${attempt}/${GEMINI_REQUEST_MAX_RETRIES - 1}: ${formatErrorMessage(error)}`
+        );
+      }
+    }
+  }
+
+  throw new Error(
+    `${label} failed after ${GEMINI_REQUEST_MAX_RETRIES} attempts: ${formatErrorMessage(lastError)}`
+  );
+}
+
+async function selectTimelyTopicCandidate(
+  model: GeminiModel,
+  category: Category,
+  targetLanguage: string,
+  nativeLanguage: string,
+  candidateCount: number,
+  context: TopicSelectionContext,
+  persistSelection: boolean
+): Promise<{ topic: string; patternId: string }> {
+  const patternSelection = selectPatternByWeight(category, context.recentPatternIds);
+  console.log(
+    `   🎯 선택된 패턴: ${patternSelection.pattern.id} (평균 ${patternSelection.pattern.avgViews.toLocaleString()} 조회수)`
+  );
+  console.log(`   📊 변형 방향: ${patternSelection.variationGuide}`);
+
+  const combination =
+    category === 'fairytale' ? generateTopicCombination(category, context.recentTopics) : null;
+  if (combination) {
+    console.log(
+      `   🎲 추가 조합: ${combination.theme.nameKo} × ${combination.situation.nameKo} × ${combination.emotion.nameKo}`
+    );
+  }
+
+  console.log(`   📝 주제 후보 ${candidateCount}개 생성 중...`);
+  const candidates = await generateTopicCandidatesWithPattern(
+    model,
+    category,
+    targetLanguage,
+    nativeLanguage,
+    context.recentTopics,
+    candidateCount,
+    patternSelection,
+    combination
+  );
+  console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
+
+  console.log(`   🤖 최적 주제 선정 중...`);
+  const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
+  const patternId = inferPatternFromTopic(bestTopic) || patternSelection.pattern.id;
+
+  rememberTopicSelection(context, bestTopic, patternId);
+
+  if (persistSelection) {
+    await recordTopicSelection(bestTopic, category, patternId);
+  }
+
+  return { topic: bestTopic, patternId };
+}
+
 /**
  * Generate multiple topic candidates and select the best one
  * Enhanced with PERFORMANCE-BASED pattern selection for better results
@@ -97,61 +247,37 @@ export async function selectTimlyTopic(
   const apiKey = getGeminiApiKey();
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
-
-  // Get recent topic history
-  const history = await loadTopicHistory();
-  const recentTopics = history.slice(-30).map((h) => h.topic);
-
-  // Get pattern history for weighted selection
-  const patternHistory = await loadPatternHistory();
-  const recentPatternIds = patternHistory.slice(-14).map((h) => h.patternId);
-
-  // 🎯 성과 기반 패턴 선택 (핵심 변경!)
-  const patternSelection = selectPatternByWeight(category, recentPatternIds);
-  console.log(
-    `   🎯 선택된 패턴: ${patternSelection.pattern.id} (평균 ${patternSelection.pattern.avgViews.toLocaleString()} 조회수)`
-  );
-  console.log(`   📊 변형 방향: ${patternSelection.variationGuide}`);
-
-  // Generate topic combination for additional guidance (fairytale only)
-  const combination =
-    category === 'fairytale' ? generateTopicCombination(category, recentTopics) : null;
-  if (combination) {
-    console.log(
-      `   🎲 추가 조합: ${combination.theme.nameKo} × ${combination.situation.nameKo} × ${combination.emotion.nameKo}`
-    );
-  }
-
-  // Step 1: Generate multiple candidates with pattern-based guidance
-  console.log(`   📝 주제 후보 ${candidateCount}개 생성 중...`);
-  const candidates = await generateTopicCandidatesWithPattern(
+  const context = await loadTopicSelectionContext();
+  const selection = await selectTimelyTopicCandidate(
     model,
     category,
     targetLanguage,
     nativeLanguage,
-    recentTopics,
     candidateCount,
-    patternSelection,
-    combination
+    context,
+    true
   );
-  console.log(`   ✓ 후보: ${candidates.map((c, i) => `${i + 1}. ${c}`).join(' | ')}`);
 
-  // Step 2: LLM selects the best one
-  console.log(`   🤖 최적 주제 선정 중...`);
-  const bestTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
-
-  // Save to history with pattern info
-  const inferredPatternId = inferPatternFromTopic(bestTopic) || patternSelection.pattern.id;
-  await saveTopicToHistory(bestTopic, category, inferredPatternId);
-  await savePatternToHistory(inferredPatternId, bestTopic);
-
-  return bestTopic;
+  return selection.topic;
 }
 
 export interface TopicWorkbenchBundle {
   category: Category;
   candidates: string[];
   recommendedTopic: string;
+}
+
+export interface TopicWorkbenchProgress {
+  requestedCount: number;
+  generatedCount: number;
+  batchNumber: number;
+  totalBatches: number;
+  lastBatchCandidates: string[];
+  phase: 'generating' | 'ranking';
+}
+
+interface GenerateTopicWorkbenchBundleOptions {
+  onProgress?: (progress: TopicWorkbenchProgress) => void | Promise<void>;
 }
 
 /**
@@ -161,39 +287,93 @@ export async function generateTopicWorkbenchBundle(
   category: Category,
   targetLanguage: string = 'English',
   nativeLanguage: string = 'Korean',
-  candidateCount: number = 3
+  candidateCount: number = 3,
+  options: GenerateTopicWorkbenchBundleOptions = {}
 ): Promise<TopicWorkbenchBundle> {
   const apiKey = getGeminiApiKey();
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({ model: GEMINI_MODELS.text });
+  const context = await loadTopicSelectionContext();
+  const poolSize = Math.max(1, candidateCount);
+  const batchSize = Math.min(poolSize, WORKBENCH_TOPIC_POOL_BATCH_SIZE);
+  const totalBatches = Math.ceil(poolSize / batchSize);
+  const maxAttempts = Math.max(totalBatches * 3, 3);
+  const candidates: string[] = [];
+  let attemptCount = 0;
+  let batchNumber = 0;
 
-  const history = await loadTopicHistory();
-  const recentTopics = history.slice(-30).map((h) => h.topic);
+  while (candidates.length < poolSize && attemptCount < maxAttempts) {
+    attemptCount += 1;
+    batchNumber += 1;
+    const remaining = poolSize - candidates.length;
+    const requestCount = Math.min(batchSize, remaining);
+    const patternSelection = selectPatternByWeight(category, context.recentPatternIds);
+    const combination =
+      category === 'fairytale' ? generateTopicCombination(category, context.recentTopics) : null;
+    const acceptedCandidates = (
+      await generateTopicCandidatesWithPattern(
+        model,
+        category,
+        targetLanguage,
+        nativeLanguage,
+        context.recentTopics,
+        requestCount,
+        patternSelection,
+        combination
+      )
+    ).slice(0, requestCount);
 
-  const patternHistory = await loadPatternHistory();
-  const recentPatternIds = patternHistory.slice(-14).map((h) => h.patternId);
-  const patternSelection = selectPatternByWeight(category, recentPatternIds);
-  const combination =
-    category === 'fairytale' ? generateTopicCombination(category, recentTopics) : null;
+    if (acceptedCandidates.length === 0) {
+      continue;
+    }
 
-  const candidates = await generateTopicCandidatesWithPattern(
-    model,
-    category,
-    targetLanguage,
-    nativeLanguage,
-    recentTopics,
-    candidateCount,
-    patternSelection,
-    combination
-  );
+    candidates.push(...acceptedCandidates);
+    appendRecentTopics(context, acceptedCandidates);
 
-  const recommendedTopic = await selectBestTopic(model, candidates, category, nativeLanguage);
+    await options.onProgress?.({
+      requestedCount: poolSize,
+      generatedCount: candidates.length,
+      batchNumber: Math.min(batchNumber, totalBatches),
+      totalBatches,
+      lastBatchCandidates: acceptedCandidates,
+      phase: 'generating',
+    });
+  }
+
+  if (candidates.length < poolSize) {
+    throw new Error(`Only generated ${candidates.length}/${poolSize} topic candidates`);
+  }
+
+  await options.onProgress?.({
+    requestedCount: poolSize,
+    generatedCount: candidates.length,
+    batchNumber: totalBatches,
+    totalBatches,
+    lastBatchCandidates: [],
+    phase: 'ranking',
+  });
+
+  const recommendedTopic =
+    candidates.length === 1
+      ? candidates[0]
+      : await selectBestTopic(model, candidates, category, nativeLanguage);
 
   return {
     category,
     candidates,
     recommendedTopic,
   };
+}
+
+export async function recordApprovedTopic(
+  topic: string,
+  category: Category
+): Promise<void> {
+  const patternId = inferPatternFromTopic(topic);
+  await saveTopicToHistory(topic, category, patternId);
+  if (patternId) {
+    await savePatternToHistory(patternId, topic);
+  }
 }
 
 /**
@@ -235,7 +415,7 @@ export async function selectTimlyTopicLegacy(
  * Generate multiple topic candidates
  */
 async function generateTopicCandidates(
-  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  model: GeminiModel,
   category: Category,
   targetLanguage: string,
   nativeLanguage: string,
@@ -299,9 +479,7 @@ async function generateTopicCandidates(
     recentTopics
   );
 
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-  const text = response.text().trim();
+  const text = await generateTextWithRetry(model, prompt, `Generate ${count} topic candidates`);
 
   // Parse multiple topics (one per line)
   const topics = text
@@ -317,7 +495,7 @@ async function generateTopicCandidates(
  * LLM selects the best topic from candidates
  */
 async function selectBestTopic(
-  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  model: GeminiModel,
   candidates: string[],
   category: Category,
   nativeLanguage: string
@@ -377,9 +555,11 @@ ${candidates.map((c, i) => `${i + 1}. ${c}`).join('\n')}
 Output only the selected topic (no number or explanation)`;
   }
 
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-  const selected = response.text().trim();
+  const selected = await generateTextWithRetry(
+    model,
+    prompt,
+    `Select best topic from ${candidates.length} candidates`
+  );
 
   // Find the closest match from candidates (in case LLM slightly modifies it)
   const exactMatch = candidates.find((c) => c === selected);
@@ -533,7 +713,7 @@ function getSimpleCategoryGuideJapanese(category: Category): string {
  * 핵심: 경쟁 채널 고성과 제목을 직접 참고하여 비슷한 느낌의 새 제목 생성
  */
 async function generateTopicCandidatesWithPattern(
-  model: ReturnType<GoogleGenerativeAI['getGenerativeModel']>,
+  model: GeminiModel,
   category: Category,
   _targetLanguage: string,
   nativeLanguage: string,
@@ -558,8 +738,11 @@ async function generateTopicCandidatesWithPattern(
       ? buildJapanesePatternPrompt(count, topExamples, seasonKeywords, category, recentTopics)
       : buildKoreanPatternPrompt(count, topExamples, seasonKeywords, category, recentTopics);
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text().trim();
+  const text = await generateTextWithRetry(
+    model,
+    prompt,
+    `Generate ${count} patterned topic candidates`
+  );
 
   const topics = text
     .split('\n')

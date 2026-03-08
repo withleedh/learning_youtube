@@ -62,7 +62,7 @@ export function GenerationPayloadForm(props: {
               aria-label="Topic candidate count"
               type="number"
               min={1}
-              max={10}
+              max={200}
               value={String(candidateCount)}
               onChange={(event) => {
                 const rawValue = event.target.value.trim();
@@ -70,7 +70,7 @@ export function GenerationPayloadForm(props: {
                 updatePayload((current) => ({
                   ...current,
                   candidateCount:
-                    nextValue && Number.isFinite(nextValue) ? clamp(nextValue, 1, 10) : undefined,
+                    nextValue && Number.isFinite(nextValue) ? clamp(nextValue, 1, 200) : undefined,
                 }));
               }}
             />
@@ -86,6 +86,10 @@ export function GenerationPayloadForm(props: {
     const topic = typeof payload.topic === 'string' ? payload.topic : '';
     const usePipeline =
       typeof payload.usePipeline === 'boolean' ? payload.usePipeline : true;
+    const candidateCount =
+      typeof payload.candidateCount === 'number' && Number.isFinite(payload.candidateCount)
+        ? payload.candidateCount
+        : 5;
 
     return (
       <>
@@ -123,6 +127,26 @@ export function GenerationPayloadForm(props: {
                 updatePayload((current) => ({
                   ...current,
                   topic: value.trim() || undefined,
+                }));
+              }}
+            />
+          </label>
+
+          <label className="inspector-form-field">
+            <span>Script Candidate Count</span>
+            <input
+              aria-label="Script candidate count"
+              type="number"
+              min={1}
+              max={50}
+              value={String(candidateCount)}
+              onChange={(event) => {
+                const rawValue = event.target.value.trim();
+                const nextValue = rawValue ? Number.parseInt(rawValue, 10) : undefined;
+                updatePayload((current) => ({
+                  ...current,
+                  candidateCount:
+                    nextValue && Number.isFinite(nextValue) ? clamp(nextValue, 1, 50) : undefined,
                 }));
               }}
             />

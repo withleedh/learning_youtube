@@ -1,11 +1,16 @@
 import type { DragEvent } from 'react';
 import { ArtifactBlock } from './ArtifactBlock';
 import { GenerationPayloadForm } from './GenerationPayloadForm';
+import { ScriptReviewPanel } from './ScriptReviewPanel';
 import { ScriptDraftEditor } from './ScriptDraftEditor';
+import { TopicCandidateReview } from './TopicCandidateReview';
 import {
   canRegenerateCurrentVersion,
   formatDate,
   isImageManifest,
+  isScriptArtifact,
+  isScriptPoolArtifact,
+  isTopicCandidatesArtifact,
   isTtsManifest,
   stageLabels,
 } from '../helpers';
@@ -38,6 +43,8 @@ export function InspectorPanel(props: {
   selectedVersionNumber: number | null;
   selectedVersionArtifact: unknown;
   selectedVersionArtifactError: string;
+  hasScriptDraftRemoteUpdate: boolean;
+  isScriptDraftDirty: boolean;
   payloadText: string;
   topicApprovalText: string;
   scriptDraftText: string;
@@ -58,6 +65,7 @@ export function InspectorPanel(props: {
   onApproveStage(): void;
   onRequestChanges(): void;
   onRefreshArtifacts(): void;
+  onReloadScriptDraft(): void;
   onSelectStageVersion(version: number): void;
   onScriptEditorModeChange(mode: 'cards' | 'json'): void;
   onRawScriptDraftChange(value: string): void;
@@ -96,6 +104,8 @@ export function InspectorPanel(props: {
     selectedVersionNumber,
     selectedVersionArtifact,
     selectedVersionArtifactError,
+    hasScriptDraftRemoteUpdate,
+    isScriptDraftDirty,
     payloadText,
     topicApprovalText,
     scriptDraftText,
@@ -116,6 +126,7 @@ export function InspectorPanel(props: {
     onApproveStage,
     onRequestChanges,
     onRefreshArtifacts,
+    onReloadScriptDraft,
     onSelectStageVersion,
     onScriptEditorModeChange,
     onRawScriptDraftChange,
@@ -138,14 +149,16 @@ export function InspectorPanel(props: {
     onRegenerateScene,
     onRegenerateSentence,
   } = props;
-  const isCandidate = workflow?.episode.kind === 'candidate';
+  const isTopicPool = workflow?.episode.kind === 'topic_pool';
+  const isScriptPool = workflow?.episode.kind === 'script_pool';
+  const isPool = isTopicPool || isScriptPool;
   const topicStageSummary = workflow?.stages.find((stage) => stage.stage === 'topic') ?? null;
   const scriptStageSummary = workflow?.stages.find((stage) => stage.stage === 'script') ?? null;
   const canSpawnScriptCandidates = Boolean(
-    isCandidate && topicStageSummary?.approvedVersion && !isBusy
+    isTopicPool && topicStageSummary?.approvedVersion && !isBusy
   );
   const canPromoteCandidate = Boolean(
-    isCandidate && scriptStageSummary?.approvedVersion && !isBusy
+    isScriptPool && scriptStageSummary?.approvedVersion && !isBusy
   );
 
   return (
@@ -238,109 +251,177 @@ export function InspectorPanel(props: {
               </div>
             </section>
 
-            {isCandidate ? (
+            {selectedStage === 'topic' && isTopicCandidatesArtifact(currentArtifact) ? (
+              <TopicCandidateReview
+                artifact={currentArtifact}
+                approvalText={topicApprovalText}
+                isBusy={isBusy}
+                onTopicApprovalTextChange={onTopicApprovalTextChange}
+              />
+            ) : null}
+
+            {selectedStage === 'script' && isScriptArtifact(currentArtifact) ? (
+              <ScriptReviewPanel artifact={currentArtifact} />
+            ) : null}
+
+            {selectedStage === 'script' && isScriptPoolArtifact(currentArtifact) ? (
+              <ScriptReviewPanel artifact={currentArtifact.currentDraft} />
+            ) : null}
+
+            {isPool ? (
               <section className="inspector-section">
                 <div className="section-header">
-                  <h3>Candidate Actions</h3>
+                  <h3>Pool Actions</h3>
                 </div>
                 <p className="panel-note">
-                  topic pool에서 좋은 topic을 고른 뒤 script 후보를 여러 개 뽑고, 승인된 script만
-                  production episode로 승격합니다.
+                  {isTopicPool
+                    ? '승인된 topic으로 script pool을 만들고, 그 안에서 가장 좋은 draft를 고른 뒤 다듬습니다.'
+                    : '승인된 script pool draft만 production episode로 승격합니다.'}
                 </p>
-                <div className="candidate-action-grid">
-                  <label className="inspector-form-field">
-                    <span>Script candidate count</span>
-                    <input
-                      type="number"
-                      min={1}
-                      max={50}
-                      value={scriptBatchCount}
-                      onChange={(event) => {
-                        onScriptBatchCountChange(Number(event.target.value || 1));
-                      }}
-                    />
-                  </label>
-                  <label className="inspector-form-field">
-                    <span>Script category override</span>
-                    <select
-                      value={scriptBatchCategory}
-                      onChange={(event) => {
-                        onScriptBatchCategoryChange(event.target.value);
-                      }}
-                    >
-                      {categoryOptions.map((option) => (
-                        <option key={option.value || 'auto'} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="checkbox-field">
-                    <input
-                      type="checkbox"
-                      checked={scriptBatchUsePipeline}
-                      onChange={(event) => {
-                        onScriptBatchUsePipelineChange(event.target.checked);
-                      }}
-                    />
-                    <span>Use multi-step script pipeline</span>
-                  </label>
-                </div>
+                {isTopicPool ? (
+                  <div className="candidate-action-grid">
+                    <label className="inspector-form-field">
+                      <span>Scripts per pool</span>
+                      <input
+                        type="number"
+                        min={1}
+                        max={50}
+                        value={scriptBatchCount}
+                        onChange={(event) => {
+                          onScriptBatchCountChange(Number(event.target.value || 1));
+                        }}
+                      />
+                    </label>
+                    <label className="inspector-form-field">
+                      <span>Script category override</span>
+                      <select
+                        value={scriptBatchCategory}
+                        onChange={(event) => {
+                          onScriptBatchCategoryChange(event.target.value);
+                        }}
+                      >
+                        {categoryOptions.map((option) => (
+                          <option key={option.value || 'auto'} value={option.value}>
+                            {option.label}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label className="checkbox-field">
+                      <input
+                        type="checkbox"
+                        checked={scriptBatchUsePipeline}
+                        onChange={(event) => {
+                          onScriptBatchUsePipelineChange(event.target.checked);
+                        }}
+                      />
+                      <span>Use multi-step script pipeline</span>
+                    </label>
+                  </div>
+                ) : null}
                 <div className="inspector-actions">
-                  <button
-                    className="secondary-button"
-                    type="button"
-                    disabled={!canSpawnScriptCandidates}
-                    onClick={onSpawnScriptCandidates}
-                  >
-                    Spawn Script Candidates
-                  </button>
-                  <button
-                    className="primary-button"
-                    type="button"
-                    disabled={!canPromoteCandidate}
-                    onClick={onPromoteCandidate}
-                  >
-                    Promote To Episode
-                  </button>
+                  {isTopicPool ? (
+                    <button
+                      className="secondary-button"
+                      type="button"
+                      disabled={!canSpawnScriptCandidates}
+                      onClick={onSpawnScriptCandidates}
+                    >
+                      Create Script Pool
+                    </button>
+                  ) : null}
+                  {isScriptPool ? (
+                    <button
+                      className="primary-button"
+                      type="button"
+                      disabled={!canPromoteCandidate}
+                      onClick={onPromoteCandidate}
+                    >
+                      Promote To Episode
+                    </button>
+                  ) : null}
                 </div>
               </section>
             ) : null}
 
             {selectedStage === 'script' ? (
-              <ScriptDraftEditor
-                parsedScriptDraft={parsedScriptDraft}
-                scriptDraftText={scriptDraftText}
-                scriptEditorMode={scriptEditorMode}
-                scriptImpact={scriptImpact}
-                highlightState={highlightState}
-                draggingSentenceIndex={draggingSentenceIndex}
-                dragOverIndex={dragOverIndex}
-                dragOverPosition={dragOverPosition}
-                isBusy={isBusy}
-                isCurrentVersionApproved={
-                  selectedStageInfo.approvedVersion === selectedStageInfo.currentVersion
-                }
-                canRegenerateTts={canRegenerateCurrentVersion(
-                  workflow.stages.find((stage) => stage.stage === 'tts') ?? null
-                )}
-                canRegenerateImage={canRegenerateCurrentVersion(
-                  workflow.stages.find((stage) => stage.stage === 'image') ?? null
-                )}
-                onScriptEditorModeChange={onScriptEditorModeChange}
-                onRawScriptDraftChange={onRawScriptDraftChange}
-                onScriptFieldChange={onScriptFieldChange}
-                onSentenceAction={onSentenceAction}
-                onSentenceDragStart={onSentenceDragStart}
-                onSentenceDragEnd={onSentenceDragEnd}
-                onSentenceDragOver={onSentenceDragOver}
-                onSentenceDragLeave={onSentenceDragLeave}
-                onSentenceDrop={onSentenceDrop}
-                onHighlightChange={onHighlightChange}
-                onSaveScriptDraft={onSaveScriptDraft}
-                onRegenerateImpactedTts={onRegenerateImpactedTts}
-                onRegenerateImpactedScenes={onRegenerateImpactedScenes}
-              />
+              <>
+                <section className="inspector-section">
+                  <div className="section-header">
+                    <h3>Draft Sync</h3>
+                  </div>
+                  <div className="draft-sync-grid">
+                    <div className={`draft-sync-card ${isScriptDraftDirty ? 'draft-sync-dirty' : ''}`}>
+                      <strong>{isScriptDraftDirty ? 'Unsaved local edits' : 'Draft saved'}</strong>
+                      <span>
+                        {isScriptDraftDirty
+                          ? '카드 편집기 변경사항이 아직 서버에 저장되지 않았습니다.'
+                          : '현재 보이는 script draft가 서버 current version과 같습니다.'}
+                      </span>
+                    </div>
+                    <div
+                      className={`draft-sync-card ${hasScriptDraftRemoteUpdate ? 'draft-sync-warning' : ''}`}
+                    >
+                      <strong>
+                        {hasScriptDraftRemoteUpdate
+                          ? 'Server updated while you were editing'
+                          : 'No remote updates waiting'}
+                      </strong>
+                      <span>
+                        {hasScriptDraftRemoteUpdate
+                          ? '자동 새로고침은 로컬 draft를 덮어쓰지 않았습니다. 저장하거나 서버 draft를 다시 불러오세요.'
+                          : 'live sync가 켜져 있어도 편집 중 draft는 보호됩니다.'}
+                      </span>
+                    </div>
+                  </div>
+                  {hasScriptDraftRemoteUpdate ? (
+                    <div className="inspector-actions">
+                      <button
+                        className="ghost-button"
+                        type="button"
+                        disabled={isBusy}
+                        onClick={onReloadScriptDraft}
+                      >
+                        Reload Server Draft
+                      </button>
+                    </div>
+                  ) : null}
+                </section>
+
+                <ScriptDraftEditor
+                  parsedScriptDraft={parsedScriptDraft}
+                  scriptDraftText={scriptDraftText}
+                  scriptEditorMode={scriptEditorMode}
+                  scriptImpact={scriptImpact}
+                  highlightState={highlightState}
+                  draggingSentenceIndex={draggingSentenceIndex}
+                  dragOverIndex={dragOverIndex}
+                  dragOverPosition={dragOverPosition}
+                  isBusy={isBusy}
+                  isCurrentVersionApproved={
+                    selectedStageInfo.approvedVersion === selectedStageInfo.currentVersion
+                  }
+                  canRegenerateTts={canRegenerateCurrentVersion(
+                    workflow.stages.find((stage) => stage.stage === 'tts') ?? null
+                  )}
+                  canRegenerateImage={canRegenerateCurrentVersion(
+                    workflow.stages.find((stage) => stage.stage === 'image') ?? null
+                  )}
+                  onScriptEditorModeChange={onScriptEditorModeChange}
+                  onRawScriptDraftChange={onRawScriptDraftChange}
+                  onScriptFieldChange={onScriptFieldChange}
+                  onSentenceAction={onSentenceAction}
+                  onSentenceDragStart={onSentenceDragStart}
+                  onSentenceDragEnd={onSentenceDragEnd}
+                  onSentenceDragOver={onSentenceDragOver}
+                  onSentenceDragLeave={onSentenceDragLeave}
+                  onSentenceDrop={onSentenceDrop}
+                  onHighlightChange={onHighlightChange}
+                  onSaveScriptDraft={onSaveScriptDraft}
+                  onRegenerateImpactedTts={onRegenerateImpactedTts}
+                  onRegenerateImpactedScenes={onRegenerateImpactedScenes}
+                />
+              </>
             ) : null}
 
             {selectedStage === 'image' &&

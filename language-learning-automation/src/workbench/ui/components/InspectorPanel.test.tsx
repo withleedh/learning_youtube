@@ -130,6 +130,8 @@ function createBaseProps() {
       recommendedTopic: 'Coffee date',
     },
     selectedVersionArtifactError: '',
+    hasScriptDraftRemoteUpdate: false,
+    isScriptDraftDirty: false,
     payloadText: '{\n  "candidateCount": 3\n}',
     topicApprovalText: '',
     scriptDraftText: JSON.stringify(scriptArtifact, null, 2),
@@ -153,6 +155,7 @@ function createBaseProps() {
     onApproveStage: vi.fn(),
     onRequestChanges: vi.fn(),
     onRefreshArtifacts: vi.fn(),
+    onReloadScriptDraft: vi.fn(),
     onSelectStageVersion: vi.fn(),
     onScriptEditorModeChange: vi.fn(),
     onRawScriptDraftChange: vi.fn(),
@@ -180,6 +183,12 @@ function createBaseProps() {
 describe('InspectorPanel', () => {
   it('wires topic action callbacks and manual topic override input', () => {
     const props = createBaseProps();
+    props.currentArtifact = {
+      generatedAt: '2026-03-07T00:00:00.000Z',
+      category: 'conversation',
+      candidates: ['Coffee date', 'Airport pickup'],
+      recommendedTopic: 'Coffee date',
+    };
     render(<InspectorPanel {...props} />);
 
     fireEvent.change(screen.getByLabelText('Topic candidate count'), {
@@ -205,11 +214,29 @@ describe('InspectorPanel', () => {
     expect(props.onRefreshArtifacts).toHaveBeenCalled();
   });
 
+  it('lets the reviewer choose a generated topic candidate directly from the review cards', () => {
+    const props = createBaseProps();
+    props.currentArtifact = {
+      generatedAt: '2026-03-07T00:00:00.000Z',
+      category: 'conversation',
+      candidates: ['Coffee date', 'Airport pickup'],
+      recommendedTopic: 'Coffee date',
+    };
+    render(<InspectorPanel {...props} />);
+
+    fireEvent.click(screen.getAllByRole('button', { name: 'Use This Topic' })[1]);
+
+    expect(screen.getByText('Topic Review')).toBeInTheDocument();
+    expect(screen.getAllByText('Airport pickup').length).toBeGreaterThan(0);
+    expect(props.onTopicApprovalTextChange).toHaveBeenCalled();
+  });
+
   it('renders script payload fields instead of raw json', () => {
     const props = {
       ...createBaseProps(),
       selectedStage: 'script' as const,
       selectedStageInfo: createStage('script'),
+      currentArtifact: scriptArtifact,
       payloadText: '{"usePipeline":true}',
     };
     render(<InspectorPanel {...props} />);
@@ -220,6 +247,8 @@ describe('InspectorPanel', () => {
     fireEvent.click(screen.getByLabelText('Use script pipeline'));
 
     expect(screen.getByLabelText('Script category')).toBeInTheDocument();
+    expect(screen.getByText('Script Review')).toBeInTheDocument();
+    expect(screen.getAllByText('Do you want coffee?').length).toBeGreaterThan(0);
     expect(props.onPayloadChange).toHaveBeenCalledWith(
       '{"usePipeline":true,"topic":"Airport pickup"}'
     );
@@ -237,7 +266,7 @@ describe('InspectorPanel', () => {
     expect(props.onSelectStageVersion).toHaveBeenCalledWith(1);
   });
 
-  it('shows candidate funnel actions when a candidate record is selected', () => {
+  it('shows pool funnel actions for topic and script pools', () => {
     const props = {
       ...createBaseProps(),
       workflow: createWorkflow([
@@ -245,25 +274,39 @@ describe('InspectorPanel', () => {
         createStage('script', { approvedVersion: 1, reviewStatus: 'approved' }),
       ]),
     };
-    props.workflow.episode.kind = 'candidate';
+    props.workflow.episode.kind = 'topic_pool';
 
     render(<InspectorPanel {...props} />);
 
-    fireEvent.change(screen.getByLabelText('Script candidate count'), {
+    fireEvent.change(screen.getByLabelText('Scripts per pool'), {
       target: { value: '7' },
     });
     fireEvent.change(screen.getByLabelText('Script category override'), {
       target: { value: 'news' },
     });
     fireEvent.click(screen.getByLabelText('Use multi-step script pipeline'));
-    fireEvent.click(screen.getByRole('button', { name: 'Spawn Script Candidates' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Promote To Episode' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Create Script Pool' }));
 
     expect(props.onScriptBatchCountChange).toHaveBeenCalledWith(7);
     expect(props.onScriptBatchCategoryChange).toHaveBeenCalledWith('news');
     expect(props.onScriptBatchUsePipelineChange).toHaveBeenCalledWith(false);
     expect(props.onSpawnScriptCandidates).toHaveBeenCalled();
-    expect(props.onPromoteCandidate).toHaveBeenCalled();
+
+    const promoteProps = {
+      ...createBaseProps(),
+      workflow: createWorkflow([
+        createStage('topic', { approvedVersion: 1, reviewStatus: 'approved' }),
+        createStage('script', { approvedVersion: 1, reviewStatus: 'approved' }),
+      ]),
+      selectedStage: 'script' as const,
+      selectedStageInfo: createStage('script', { approvedVersion: 1, reviewStatus: 'approved' }),
+      currentArtifact: scriptArtifact,
+    };
+    promoteProps.workflow.episode.kind = 'script_pool';
+
+    render(<InspectorPanel {...promoteProps} />);
+    fireEvent.click(screen.getByRole('button', { name: 'Promote To Episode' }));
+    expect(promoteProps.onPromoteCandidate).toHaveBeenCalled();
   });
 
   it('renders targeted regeneration controls for image and tts stages', () => {

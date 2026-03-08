@@ -4,9 +4,11 @@ import type {
   EpisodeStage,
   HighlightState,
   ImageManifest,
+  PackageManifest,
   RenderManifest,
   ScenePromptRecord,
   ScriptArtifact,
+  ScriptPoolArtifact,
   ScriptImpactSummary,
   SentenceRecord,
   ShortsManifest,
@@ -25,6 +27,7 @@ export const stageLabels: Record<EpisodeStage, string> = {
   tts: 'TTS',
   render: 'Render',
   shorts: 'Shorts',
+  package: 'Package',
 };
 
 export const defaultPayloads: Record<EpisodeStage, string> = {
@@ -34,6 +37,7 @@ export const defaultPayloads: Record<EpisodeStage, string> = {
   tts: '{}',
   render: '{}',
   shorts: '{}',
+  package: '{}',
 };
 
 export const emptyImpact: ScriptImpactSummary = {
@@ -436,6 +440,27 @@ export function isScriptArtifact(value: unknown): value is ScriptArtifact {
   );
 }
 
+export function isScriptPoolArtifact(value: unknown): value is ScriptPoolArtifact {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      Array.isArray((value as ScriptPoolArtifact).candidates) &&
+      isScriptArtifact((value as ScriptPoolArtifact).currentDraft)
+  );
+}
+
+export function getEditableScriptFromArtifact(value: unknown): ScriptArtifact | null {
+  if (isScriptArtifact(value)) {
+    return value;
+  }
+
+  if (isScriptPoolArtifact(value)) {
+    return value.currentDraft;
+  }
+
+  return null;
+}
+
 export function isTopicCandidatesArtifact(value: unknown): value is TopicCandidatesArtifact {
   return Boolean(
     value &&
@@ -458,6 +483,16 @@ export function isImageManifest(value: unknown): value is ImageManifest {
       typeof value === 'object' &&
       Array.isArray((value as ImageManifest).sceneImagePaths) &&
       typeof (value as ImageManifest).mode === 'string'
+  );
+}
+
+export function isPackageManifest(value: unknown): value is PackageManifest {
+  return Boolean(
+    value &&
+      typeof value === 'object' &&
+      Array.isArray((value as PackageManifest).titleCandidates) &&
+      Array.isArray((value as PackageManifest).thumbnailCandidates) &&
+      typeof (value as PackageManifest).selectedTitle === 'string'
   );
 }
 

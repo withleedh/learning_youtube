@@ -1,5 +1,10 @@
-export type EpisodeStage = 'topic' | 'script' | 'image' | 'tts' | 'render' | 'shorts';
-export type WorkbenchRecordKind = 'candidate' | 'episode';
+export type EpisodeStage = 'topic' | 'script' | 'image' | 'tts' | 'render' | 'shorts' | 'package';
+export type WorkbenchRecordKind = 'candidate' | 'topic_pool' | 'script_pool' | 'episode';
+export type ReviewWorkspace =
+  | 'topic_inbox'
+  | 'script_lab'
+  | 'production_desk'
+  | 'delivery_pack';
 
 export interface ChannelOption {
   id: string;
@@ -12,11 +17,40 @@ export interface EpisodeSummary {
   id: string;
   channelId: string;
   kind: WorkbenchRecordKind;
+  threadId?: string;
+  parentRecordId?: string;
+  originCandidateId?: string;
   title?: string;
+  previewText?: string;
+  previewMeta?: string;
+  nextAction?: string;
+  lineageLabel?: string;
+  issueCounts?: {
+    open: number;
+    stale: number;
+    comments: number;
+  };
+  reviewTaskCounts?: {
+    reviewable: number;
+    blocked: number;
+    stale: number;
+  };
   workflowStatus: string;
   currentStage: EpisodeStage;
   createdAt: string;
   updatedAt: string;
+  lastHumanActionAt?: string;
+  stageStates?: Partial<
+    Record<
+      EpisodeStage,
+      {
+        currentVersion: number;
+        approvedVersion: number | null;
+        reviewStatus: string;
+        staleReasons?: string[];
+      }
+    >
+  >;
 }
 
 export interface WorkbenchJob {
@@ -25,6 +59,12 @@ export interface WorkbenchJob {
   status: string;
   version: number;
   updatedAt: string;
+  progress?: {
+    current?: number;
+    total?: number;
+    phase?: string;
+    label?: string;
+  };
   error?: string;
 }
 
@@ -34,6 +74,7 @@ export interface StageWorkflowSummary {
   approvedVersion: number | null;
   reviewStatus: string;
   blockedBy: EpisodeStage[];
+  staleReasons: string[];
   isBlocked: boolean;
   latestJob: WorkbenchJob | null;
   queuedJobCount: number;
@@ -61,6 +102,26 @@ export interface EpisodeWorkflow {
   episode: EpisodeSummary;
   stages: StageWorkflowSummary[];
   jobs: WorkbenchJob[];
+}
+
+export interface WorkbenchLiveStatus {
+  queuedJobs: number;
+  runningJobs: number;
+  failedJobs: number;
+  completedJobs: number;
+  activeJobCount: number;
+  activeRecordCount: number;
+  lastUpdatedAt: string | null;
+}
+
+export interface ApiRequestLogEntry {
+  timestamp: string;
+  method: string;
+  pathname: string;
+  query: Record<string, string>;
+  statusCode: number;
+  durationMs: number;
+  requestBody?: unknown;
 }
 
 export interface WordRecord {
@@ -130,6 +191,16 @@ export interface ApprovedTopicArtifact {
   source: string;
 }
 
+export interface ScriptPoolArtifact {
+  generatedAt: string;
+  category: string;
+  topic: string;
+  recommendedCandidateIndex: number;
+  selectedCandidateIndex: number | null;
+  candidates: ScriptArtifact[];
+  currentDraft: ScriptArtifact;
+}
+
 export interface ImageManifest {
   generatedAt: string;
   mode: 'background' | 'scene';
@@ -174,6 +245,110 @@ export interface ShortsManifest {
   outputDir: string;
   sourceRenderVideoPath: string;
   outputs: ShortsOutput[];
+}
+
+export interface PackageTitleCandidate {
+  id: string;
+  value: string;
+  source: 'native' | 'target' | 'competitor_style' | 'manual';
+}
+
+export interface PackageThumbnailCandidate {
+  id: string;
+  path: string;
+  label: string;
+  source: 'scene' | 'background' | 'render_frame' | 'manual';
+}
+
+export interface PackageManifest {
+  generatedAt: string;
+  titleCandidates: PackageTitleCandidate[];
+  selectedTitle: string;
+  description: string;
+  pinnedComment: string;
+  thumbnailCandidates: PackageThumbnailCandidate[];
+  selectedThumbnailPath: string;
+  uploadInfoPath: string;
+  uploadInfoText: string;
+  exportItems: Array<{
+    id: string;
+    label: string;
+    path: string;
+  }>;
+}
+
+export interface ReviewAnchor {
+  kind: 'sentence' | 'scene' | 'timestamp' | 'thumbnail' | 'title' | 'stage';
+  label?: string;
+  sentenceId?: number;
+  sceneIndex?: number;
+  timestampMs?: number;
+  target?: string;
+}
+
+export interface ReviewComment {
+  id: string;
+  channelId: string;
+  recordId: string;
+  stage: EpisodeStage;
+  version?: number;
+  kind: 'issue' | 'note' | 'decision';
+  status: 'open' | 'resolved';
+  text: string;
+  anchor?: ReviewAnchor;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ReviewQueueItem {
+  id: string;
+  workspace: ReviewWorkspace;
+  channelId: string;
+  recordId: string;
+  threadId: string;
+  kind: WorkbenchRecordKind;
+  title: string;
+  previewText?: string;
+  previewMeta?: string;
+  stage: EpisodeStage;
+  workflowStatus: string;
+  reviewStatus: string;
+  updatedAt: string;
+  nextAction: string;
+  issueCounts: {
+    open: number;
+    stale: number;
+    comments: number;
+  };
+  reviewTaskCounts: {
+    reviewable: number;
+    blocked: number;
+    stale: number;
+  };
+  lineageLabel: string;
+}
+
+export interface ThreadSummary {
+  threadId: string;
+  records: EpisodeSummary[];
+}
+
+export interface StageReviewContext {
+  episode: EpisodeSummary;
+  thread: ThreadSummary;
+  stage: EpisodeStage;
+  stageSummary: StageWorkflowSummary;
+  currentArtifact: unknown | null;
+  approvedArtifact: unknown | null;
+  versions: StageVersionRecord[];
+  comments: ReviewComment[];
+  downstream: Array<{
+    stage: EpisodeStage;
+    reviewStatus: string;
+    staleReasons: string[];
+    currentVersion: number;
+    approvedVersion: number | null;
+  }>;
 }
 
 export interface ScriptImpactSummary {
