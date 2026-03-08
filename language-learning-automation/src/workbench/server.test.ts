@@ -679,23 +679,24 @@ describe('WorkbenchServer', () => {
     const queueBody = (await queueResponse.json()) as {
       items: Array<{ workspace: string; threadId: string; lineageLabel: string; createdAt: string; updatedAt: string }>;
     };
+    const scriptItems = queueBody.items.filter((item) => item.workspace === 'script_lab');
 
     const threadResponse = await fetch(
-      `${baseUrl}/api/workbench/threads/${sourceCandidate.threadId}`
+      `${baseUrl}/api/workbench/threads/${sourceCandidate.id}`
     );
     const threadBody = (await threadResponse.json()) as {
       thread: { threadId: string; records: Array<{ id: string; kind: string }> };
     };
 
     expect(queueResponse.status).toBe(200);
-    expect(queueBody.items.some((item) => item.workspace === 'script_lab')).toBe(true);
-    expect(queueBody.items.every((item) => item.threadId === sourceCandidate.threadId)).toBe(true);
-    expect(queueBody.items.some((item) => item.lineageLabel.includes(sourceCandidate.id))).toBe(true);
-    expect(queueBody.items.every((item) => typeof item.createdAt === 'string')).toBe(true);
-    expect(queueBody.items.every((item) => typeof item.updatedAt === 'string')).toBe(true);
+    expect(scriptItems.length).toBeGreaterThan(0);
+    expect(scriptItems.every((item) => item.threadId === sourceCandidate.id)).toBe(true);
+    expect(scriptItems.some((item) => item.lineageLabel.includes(sourceCandidate.id))).toBe(true);
+    expect(scriptItems.every((item) => typeof item.createdAt === 'string')).toBe(true);
+    expect(scriptItems.every((item) => typeof item.updatedAt === 'string')).toBe(true);
     expect(threadResponse.status).toBe(200);
-    expect(threadBody.thread.threadId).toBe(sourceCandidate.threadId);
-    expect(threadBody.thread.records).toHaveLength(2);
+    expect(threadBody.thread.threadId).toBe(sourceCandidate.id);
+    expect(threadBody.thread.records).toHaveLength(1);
   });
 
   it('stores review comments and returns them in the stage review context', async () => {

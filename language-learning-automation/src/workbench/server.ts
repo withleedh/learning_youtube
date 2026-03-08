@@ -28,6 +28,7 @@ const createScriptCandidateBatchBodySchema = z.object({
   count: z.number().int().positive().max(50),
   category: z.string().min(1).optional(),
   usePipeline: z.boolean().optional(),
+  approvedTopic: z.string().min(1).optional(),
 });
 
 const bulkCandidateReviewBodySchema = z.object({
@@ -283,6 +284,7 @@ export async function createWorkbenchServer(
           count: body.count,
           category: body.category as Parameters<WorkbenchService['createScriptCandidateBatch']>[0]['category'],
           usePipeline: body.usePipeline,
+          approvedTopic: body.approvedTopic,
         });
         sendJson(res, 201, result as unknown as JsonValue);
         return;

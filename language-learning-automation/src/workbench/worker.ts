@@ -624,6 +624,7 @@ export class WorkbenchWorker {
 
   private async processTopicJob(job: WorkbenchJob): Promise<void> {
     const payload = stageGenerationPayloadSchema.parse(job.payload ?? {});
+    const record = await this.service.getEpisode(job.channelId, job.episodeId);
     const category = payload.category ?? getCategoryForDay(new Date());
     const candidateCount = payload.candidateCount ?? 3;
 
@@ -646,12 +647,31 @@ export class WorkbenchWorker {
       },
     });
 
-    await this.store.saveStageArtifactJson(job.channelId, job.episodeId, 'topic', job.version, 'candidates.json', {
+    const topicArtifact = {
       generatedAt: nowIso(),
       category,
       candidates: topicBundle.candidates,
       recommendedTopic: topicBundle.recommendedTopic,
-    });
+    };
+
+    await this.store.saveStageArtifactJson(
+      job.channelId,
+      job.episodeId,
+      'topic',
+      job.version,
+      'candidates.json',
+      topicArtifact
+    );
+
+    if (isTopicPoolRecord(record)) {
+      await this.service.materializeTopicBatchCandidates(
+        job.channelId,
+        job.episodeId,
+        job.version,
+        topicArtifact
+      );
+      return;
+    }
 
     await this.service.updateStageReviewStatus({
       channelId: job.channelId,
@@ -705,13 +725,14 @@ export class WorkbenchWorker {
       );
 
       await this.service.syncEpisodeTitleFromScript(job.channelId, job.episodeId, currentDraft);
-
-      await this.service.updateStageReviewStatus({
-        channelId: job.channelId,
-        episodeId: job.episodeId,
-        stage: 'script',
-        version: job.version,
-        reviewStatus: 'pending_review',
+      await this.service.materializeScriptBatchCandidates(job.channelId, job.episodeId, job.version, {
+        generatedAt: nowIso(),
+        category,
+        topic,
+        recommendedCandidateIndex: scriptPool.recommendedCandidateIndex,
+        selectedCandidateIndex: scriptPool.recommendedCandidateIndex,
+        candidates: scriptPool.candidates,
+        currentDraft,
       });
       return;
     }
@@ -1114,6 +1135,25 @@ function getShortsBackgroundImage(input: {
   }
 
   return input.fallbackBackgroundImage ?? input.sceneImages?.[0];
+}
+
+function isTopicPoolRecord(record: {
+  kind?: string;
+  currentStage: string;
+  stageStates: {
+    topic: {
+      currentVersion: number;
+      approvedVersion: number | null;
+    };
+  };
+}): boolean {
+  return (
+    record.kind === 'topic_pool' ||
+    (record.kind === 'candidate' &&
+      record.currentStage === 'topic' &&
+      record.stageStates.topic.currentVersion > 0 &&
+      record.stageStates.topic.approvedVersion === null)
+  );
 }
 
 function isScriptPoolRecord(record: {

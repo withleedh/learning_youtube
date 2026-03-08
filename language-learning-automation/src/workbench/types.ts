@@ -193,6 +193,8 @@ export const workbenchRecordKindSchema = z.enum([
   'candidate',
   'topic_pool',
   'script_pool',
+  'topic_candidate',
+  'script_candidate',
   'episode',
 ]);
 export type WorkbenchRecordKind = z.infer<typeof workbenchRecordKindSchema>;

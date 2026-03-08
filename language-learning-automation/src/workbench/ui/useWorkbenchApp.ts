@@ -15,6 +15,7 @@ import {
   getScriptImpactSummary,
   isScriptArtifact,
   isScriptPoolArtifact,
+  isTopicCandidatesArtifact,
   normalizeScriptDraftStructure,
   parseHash,
   setHash,
@@ -355,6 +356,22 @@ export function useWorkbenchApp() {
     preferredStage: EpisodeStage | null = null,
     options: LoadCollectionsOptions = {}
   ): Promise<void> {
+    const nextRecordKey = `${channelId}/${episodeId}`;
+    const isChangingRecord = selectedRecordKeyRef.current !== nextRecordKey;
+    if (isChangingRecord) {
+      setCurrentArtifact(null);
+      setApprovedArtifact(null);
+      setArtifactError('');
+      setTopicApprovalText('');
+      setScriptDraftText('');
+      setScriptDraftServerText('');
+      setHasScriptDraftRemoteUpdate(false);
+      setStageVersions([]);
+      setSelectedVersionNumber(null);
+      setSelectedVersionArtifact(null);
+      setSelectedVersionArtifactError('');
+    }
+
     const nextWorkflow = await fetchJson<EpisodeWorkflow>(
       `/api/workbench/episodes/${channelId}/${episodeId}/workflow`
     );
@@ -362,7 +379,6 @@ export function useWorkbenchApp() {
       preferredStage && nextWorkflow.stages.some((stage) => stage.stage === preferredStage)
         ? preferredStage
         : nextWorkflow.episode.currentStage;
-    const nextRecordKey = `${channelId}/${episodeId}`;
     const isSameSelection =
       selectedRecordKeyRef.current === nextRecordKey && selectedStageRef.current === nextSelectedStage;
 
@@ -775,14 +791,29 @@ export function useWorkbenchApp() {
       const latestWorkflow = await fetchJson<EpisodeWorkflow>(
         `/api/workbench/episodes/${channelId}/${candidateId}/workflow`
       );
-      if (latestWorkflow.episode.kind !== 'topic_pool') {
-        showNotice('Topic pool에서만 script candidates를 만들 수 있습니다.');
+      if (
+        latestWorkflow.episode.kind !== 'topic_pool' &&
+        latestWorkflow.episode.kind !== 'topic_candidate'
+      ) {
+        showNotice('Topic candidate에서만 script candidates를 만들 수 있습니다.');
         return;
       }
 
       const topicStage = latestWorkflow.stages.find((stage) => stage.stage === 'topic') ?? null;
-      if (!topicStage?.approvedVersion) {
-        showNotice('먼저 topic을 승인해야 script candidates를 만들 수 있습니다.');
+      const hasUsableTopicVersion =
+        latestWorkflow.episode.kind === 'topic_candidate'
+          ? Boolean(topicStage?.approvedVersion)
+          : Boolean(topicStage?.currentVersion);
+      if (!hasUsableTopicVersion) {
+        showNotice('먼저 topic candidates를 생성해야 script candidates를 만들 수 있습니다.');
+        return;
+      }
+
+      const selectedTopic =
+        topicApprovalText.trim() ||
+        (isTopicCandidatesArtifact(currentArtifact) ? currentArtifact.recommendedTopic : '');
+      if (!selectedTopic) {
+        showNotice('먼저 topic 후보를 선택하세요.');
         return;
       }
 
@@ -794,6 +825,7 @@ export function useWorkbenchApp() {
             count: Math.max(1, Math.min(50, scriptBatchCount)),
             category: scriptBatchCategory || undefined,
             usePipeline: scriptBatchUsePipeline,
+            approvedTopic: selectedTopic,
           }),
         }
       );
@@ -801,8 +833,8 @@ export function useWorkbenchApp() {
       const firstCandidate = response.candidates[0] ?? null;
       showNotice(
         firstCandidate
-          ? `Script pool queued with ${Math.max(1, Math.min(50, scriptBatchCount))} candidates.`
-          : 'Script pool queued.'
+          ? `Script batch queued from "${selectedTopic}" with ${Math.max(1, Math.min(50, scriptBatchCount))} candidates.`
+          : `Script batch queued from "${selectedTopic}".`
       );
       await loadCollections(false);
       await loadLiveStatus(false);
@@ -822,8 +854,11 @@ export function useWorkbenchApp() {
       const latestWorkflow = await fetchJson<EpisodeWorkflow>(
         `/api/workbench/episodes/${channelId}/${candidateId}/workflow`
       );
-      if (latestWorkflow.episode.kind !== 'script_pool') {
-        showNotice('Script pool만 episode로 승격할 수 있습니다.');
+      if (
+        latestWorkflow.episode.kind !== 'script_pool' &&
+        latestWorkflow.episode.kind !== 'script_candidate'
+      ) {
+        showNotice('Script candidate만 episode로 승격할 수 있습니다.');
         return;
       }
 

@@ -36,6 +36,7 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
   const [renderTimestampMs, setRenderTimestampMs] = useState('42000');
   const [packageDraft, setPackageDraft] = useState<PackageManifest | null>(null);
   const lastSyncedSelectionKeyRef = useRef<string | null>(null);
+  const reviewContextRequestIdRef = useRef(0);
   const selectedQueueItem = useMemo(() => {
     if (!app.selectedRecordKey) {
       return null;
@@ -110,12 +111,20 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
     stage: NonNullable<WorkbenchAppState['selectedStage']>
   ) => {
     const [channelId, recordId] = recordKey.split('/');
+    const requestId = ++reviewContextRequestIdRef.current;
+    setReviewContext(null);
     try {
       const response = await fetchJson<{ context: StageReviewContext }>(
         `/api/workbench/episodes/${channelId}/${recordId}/stages/${stage}/review-context`
       );
+      if (reviewContextRequestIdRef.current !== requestId) {
+        return;
+      }
       setReviewContext(response.context);
     } catch {
+      if (reviewContextRequestIdRef.current !== requestId) {
+        return;
+      }
       setReviewContext(null);
     }
   }, []);
@@ -126,6 +135,7 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
 
   useEffect(() => {
     if (!app.selectedRecordKey || !app.selectedStage) {
+      reviewContextRequestIdRef.current += 1;
       setReviewContext(null);
       setPackageDraft(null);
       return;
@@ -167,6 +177,9 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
 
   const selectQueueItem = useCallback(
     async (item: ReviewQueueItem): Promise<void> => {
+      reviewContextRequestIdRef.current += 1;
+      setReviewContext(null);
+      setPackageDraft(null);
       setWorkspace(item.workspace);
       await app.handleSelectRecord(item.channelId, item.recordId);
       app.handleSelectStage(item.stage);
@@ -308,7 +321,9 @@ export function useWorkbenchStudio(app: WorkbenchAppState) {
     setIsStudioBusy(true);
     try {
       if (selectedQueueItem.workspace === 'topic_inbox') {
-        await app.handleApproveStage();
+        if (reviewContext?.stageSummary.reviewStatus === 'pending_review') {
+          await app.handleApproveStage();
+        }
         await app.handleSpawnScriptCandidates();
         setWorkspace('script_lab');
       } else if (selectedQueueItem.workspace === 'script_lab') {

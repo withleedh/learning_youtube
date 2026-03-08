@@ -64,6 +64,37 @@ describe('WorkbenchWorker', () => {
     expect(candidates.candidates).toHaveLength(3);
   });
 
+  it('materializes topic batch outputs into independent topic candidate records', async () => {
+    const batch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 3,
+      category: 'conversation',
+    });
+
+    const worker = new WorkbenchWorker(
+      service,
+      store,
+      createFakeAdapters({
+        topicBundle: {
+          category: 'conversation',
+          candidates: ['Coffee date?', 'Missed the train', 'New coworker'],
+          recommendedTopic: 'Missed the train',
+        },
+      })
+    );
+
+    await worker.runUntilEmpty();
+
+    const reviewCandidates = await service.listCandidates('english');
+    const materializedTopics = reviewCandidates.filter((record) => record.kind === 'topic_candidate');
+
+    expect(materializedTopics).toHaveLength(3);
+    expect(materializedTopics.every((record) => record.parentRecordId === batch.candidates[0]?.id)).toBe(true);
+    expect(materializedTopics.every((record) => record.stageStates.topic.reviewStatus === 'pending_review')).toBe(
+      true
+    );
+  });
+
   it('processes a queued script generation job with an explicit topic', async () => {
     const episode = await service.createEpisode({ channelId: 'english' });
     await service.enqueueStageGeneration({
@@ -223,6 +254,127 @@ describe('WorkbenchWorker', () => {
 
     expect(processed).toBe(1);
     expect(script.metadata.topic).toBe('Missed the train');
+  });
+
+  it('materializes script batch outputs into independent script candidate records', async () => {
+    const topicBatch = await service.createTopicCandidateBatch({
+      channelId: 'english',
+      count: 1,
+      category: 'conversation',
+    });
+    const sourceCandidate = topicBatch.candidates[0]!;
+
+    await store.saveStageArtifactJson('english', sourceCandidate.id, 'topic', 1, 'candidates.json', {
+      generatedAt: '2026-03-07T00:00:00.000Z',
+      category: 'conversation',
+      candidates: ['Coffee date'],
+      recommendedTopic: 'Coffee date',
+    });
+    await service.updateStageReviewStatus({
+      channelId: 'english',
+      episodeId: sourceCandidate.id,
+      stage: 'topic',
+      version: 1,
+      reviewStatus: 'approved',
+    });
+
+    const scriptBatch = await service.createScriptCandidateBatch({
+      channelId: 'english',
+      sourceCandidateId: sourceCandidate.id,
+      count: 2,
+      category: 'conversation',
+      usePipeline: true,
+    });
+
+    const worker = new WorkbenchWorker(
+      service,
+      store,
+      createFakeAdapters({
+        scriptPool: {
+          recommendedCandidateIndex: 1,
+          candidates: [
+            {
+              channelId: 'english',
+              date: '2026-03-07',
+              category: 'conversation',
+              metadata: {
+                topic: 'Coffee date',
+                style: 'casual',
+                title: {
+                  target: 'Coffee Date Chat',
+                  native: '커피 데이트 대화',
+                },
+                characters: [
+                  {
+                    id: 'M',
+                    name: 'James',
+                    gender: 'male',
+                    ethnicity: 'American',
+                    role: 'friend',
+                  },
+                ],
+              },
+              sentences: [
+                {
+                  id: 1,
+                  speaker: 'M',
+                  target: 'Do you want coffee?',
+                  targetBlank: 'Do you want ______?',
+                  blankAnswer: 'coffee',
+                  native: '커피 마실래?',
+                  words: [{ word: 'coffee', meaning: '커피' }],
+                },
+              ],
+            },
+            {
+              channelId: 'english',
+              date: '2026-03-07',
+              category: 'conversation',
+              metadata: {
+                topic: 'Coffee date',
+                style: 'casual',
+                title: {
+                  target: 'Train Delay',
+                  native: '지하철을 놓쳤어요',
+                },
+                characters: [
+                  {
+                    id: 'F',
+                    name: 'Soo-jin',
+                    gender: 'female',
+                    ethnicity: 'Korean',
+                    role: 'friend',
+                  },
+                ],
+              },
+              sentences: [
+                {
+                  id: 1,
+                  speaker: 'F',
+                  target: 'I missed the train today.',
+                  targetBlank: 'I missed the ______ today.',
+                  blankAnswer: 'train',
+                  native: '오늘 지하철을 놓쳤어.',
+                  words: [{ word: 'train', meaning: '기차, 지하철' }],
+                },
+              ],
+            },
+          ],
+        },
+      })
+    );
+
+    await worker.runUntilEmpty();
+
+    const reviewCandidates = await service.listCandidates('english');
+    const materializedScripts = reviewCandidates.filter((record) => record.kind === 'script_candidate');
+
+    expect(materializedScripts).toHaveLength(2);
+    expect(materializedScripts.every((record) => record.parentRecordId === scriptBatch.candidates[0]?.id)).toBe(true);
+    expect(materializedScripts.every((record) => record.stageStates.script.reviewStatus === 'pending_review')).toBe(
+      true
+    );
+    expect(materializedScripts.every((record) => record.stageStates.topic.approvedVersion === 1)).toBe(true);
   });
 
   it('processes a queued image generation job using the approved script artifact', async () => {
@@ -986,6 +1138,10 @@ function createFakeAdapters(overrides: {
     recommendedTopic: string;
   };
   script?: unknown;
+  scriptPool?: {
+    recommendedCandidateIndex: number;
+    candidates: unknown[];
+  };
   imageManifest?: {
     generatedAt: string;
     mode: 'background' | 'scene';
@@ -1083,6 +1239,53 @@ function createFakeAdapters(overrides: {
           ],
         }
       );
+    },
+    async generateScriptPool(input) {
+      if (overrides.scriptPool) {
+        return {
+          recommendedCandidateIndex: overrides.scriptPool.recommendedCandidateIndex,
+          candidates: overrides.scriptPool.candidates,
+        };
+      }
+
+      return {
+        recommendedCandidateIndex: 0,
+        candidates: [
+          overrides.script ?? {
+            channelId: input.channelId,
+            date: '2026-03-07',
+            category: input.category,
+            metadata: {
+              topic: input.topic,
+              style: 'casual',
+              title: {
+                target: 'Generated Script',
+                native: '생성된 스크립트',
+              },
+              characters: [
+                {
+                  id: 'M',
+                  name: 'Alex',
+                  gender: 'male',
+                  ethnicity: 'American',
+                  role: 'friend',
+                },
+              ],
+            },
+            sentences: [
+              {
+                id: 1,
+                speaker: 'M',
+                target: 'Hello there.',
+                targetBlank: 'Hello ______.',
+                blankAnswer: 'there',
+                native: '안녕.',
+                words: [{ word: 'hello', meaning: '안녕' }],
+              },
+            ],
+          },
+        ],
+      };
     },
     async generateImages(input) {
       return (

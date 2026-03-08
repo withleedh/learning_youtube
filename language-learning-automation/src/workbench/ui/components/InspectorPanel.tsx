@@ -145,13 +145,20 @@ export function InspectorPanel(props: {
     onRegenerateScene,
     onRegenerateSentence,
   } = props;
-  const isTopicPool = workflow?.episode.kind === 'topic_pool';
-  const isScriptPool = workflow?.episode.kind === 'script_pool';
+  const isTopicPool =
+    workflow?.episode.kind === 'topic_pool' || workflow?.episode.kind === 'topic_candidate';
+  const isScriptPool =
+    workflow?.episode.kind === 'script_pool' || workflow?.episode.kind === 'script_candidate';
   const isPool = isTopicPool || isScriptPool;
   const topicStageSummary = workflow?.stages.find((stage) => stage.stage === 'topic') ?? null;
   const scriptStageSummary = workflow?.stages.find((stage) => stage.stage === 'script') ?? null;
   const canSpawnScriptCandidates = Boolean(
-    isTopicPool && topicStageSummary?.approvedVersion && !isBusy
+    isTopicPool &&
+      ((workflow?.episode.kind === 'topic_candidate'
+        ? topicStageSummary?.approvedVersion
+        : topicStageSummary?.currentVersion) ??
+        0) > 0 &&
+      !isBusy
   );
   const canPromoteCandidate = Boolean(
     isScriptPool && scriptStageSummary?.approvedVersion && !isBusy

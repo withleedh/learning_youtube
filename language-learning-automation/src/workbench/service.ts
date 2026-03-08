@@ -55,6 +55,7 @@ export interface CreateScriptCandidateBatchInput {
   count: number;
   category?: StageGenerationPayload['category'];
   usePipeline?: boolean;
+  approvedTopic?: string;
 }
 
 export interface PromoteCandidateToEpisodeInput {
@@ -321,7 +322,8 @@ export class WorkbenchService {
         record.workflowStatus !== 'archived' &&
         (!channelId || record.channelId === channelId)
     );
-    return Promise.all(records.map((record) => this.toRecordSummary(record)));
+    const summaries = await Promise.all(records.map((record) => this.toRecordSummary(record)));
+    return filterContainerSummaries(summaries);
   }
 
   public async listReviewQueue(channelId?: string): Promise<ReviewQueueItem[]> {
@@ -329,9 +331,12 @@ export class WorkbenchService {
     const records = (await this.store.listEpisodes()).filter(
       (record) => record.workflowStatus !== 'archived' && (!channelId || record.channelId === channelId)
     );
-    const summaries = await Promise.all(records.map((record) => this.toRecordSummary(record)));
+    const summaries = filterContainerSummaries(
+      await Promise.all(records.map((record) => this.toRecordSummary(record)))
+    );
 
     return summaries
+      .filter((summary) => isReviewQueueRecordKind(summary.kind))
       .map((summary) => ({
         id: `${summary.channelId}/${summary.id}`,
         workspace: getWorkspaceForSummary(summary),
@@ -516,12 +521,12 @@ export class WorkbenchService {
     input: CreateScriptCandidateBatchInput
   ): Promise<{ candidates: EpisodeRecord[]; jobs: WorkbenchJob[] }> {
     const sourceCandidate = await this.getEpisode(input.channelId, input.sourceCandidateId);
-    assertTopicPoolRecord(sourceCandidate, input.sourceCandidateId);
+    assertTopicReviewSourceRecord(sourceCandidate, input.sourceCandidateId);
 
-    const approvedTopic = await this.getApprovedTopic(input.channelId, input.sourceCandidateId);
-    const sourceTopicVersionNumber = sourceCandidate.stageStates.topic.approvedVersion;
+    const sourceTopicVersionNumber =
+      sourceCandidate.stageStates.topic.approvedVersion ?? sourceCandidate.stageStates.topic.currentVersion;
     if (!sourceTopicVersionNumber) {
-      throw new Error(`No approved topic version found for candidate ${input.sourceCandidateId}`);
+      throw new Error(`No generated topic version found for candidate ${input.sourceCandidateId}`);
     }
 
     const sourceTopicVersion = await this.store.getStageVersion(
@@ -537,10 +542,24 @@ export class WorkbenchService {
       sourceTopicVersionNumber,
       'candidates.json'
     );
+    const approvedTopic =
+      sourceCandidate.stageStates.topic.approvedVersion !== null
+        ? await this.getApprovedTopic(input.channelId, input.sourceCandidateId)
+        : await this.persistApprovedTopicArtifact(
+            input.channelId,
+            input.sourceCandidateId,
+            sourceTopicVersionNumber,
+            input.approvedTopic
+          );
+
+    if (sourceCandidate.stageStates.topic.approvedVersion === null) {
+      const { recordApprovedTopic } = await import('../script/topic-selector');
+      await recordApprovedTopic(approvedTopic.approvedTopic, approvedTopic.category);
+    }
 
     const candidate = await this.createRecord('script_pool', {
       channelId: input.channelId,
-      threadId: sourceCandidate.threadId ?? sourceCandidate.id,
+      threadId: sourceCandidate.id,
       parentRecordId: sourceCandidate.id,
       originCandidateId: sourceCandidate.originCandidateId ?? sourceCandidate.id,
     });
@@ -587,6 +606,10 @@ export class WorkbenchService {
     );
     await this.store.saveEpisode(candidate);
 
+    sourceCandidate.updatedAt = timestamp;
+    sourceCandidate.lastHumanActionAt = timestamp;
+    await this.store.saveEpisode(sourceCandidate);
+
     const { job } = await this.enqueueStageGeneration({
       channelId: candidate.channelId,
       episodeId: candidate.id,
@@ -596,7 +619,7 @@ export class WorkbenchService {
         usePipeline: input.usePipeline ?? true,
         candidateCount: input.count,
       },
-      notes: `Script pool generation (${input.count} candidates) from topic pool ${sourceCandidate.id}`,
+      notes: `Script pool generation (${input.count} candidates) from topic batch ${sourceCandidate.id}`,
     });
 
     return {
@@ -605,11 +628,175 @@ export class WorkbenchService {
     };
   }
 
+  public async materializeTopicBatchCandidates(
+    channelId: string,
+    batchId: string,
+    version: number,
+    artifact: TopicCandidatesArtifact
+  ): Promise<EpisodeRecord[]> {
+    const batch = await this.getEpisode(channelId, batchId);
+    assertTopicPoolRecord(batch, batchId);
+    const sourceVersion = await this.store.getStageVersion(channelId, batchId, 'topic', version);
+
+    await this.archiveChildCandidates(batch.channelId, batch.id, ['topic_candidate']);
+
+    const created: EpisodeRecord[] = [];
+    for (const [index, topic] of artifact.candidates.entries()) {
+      const candidate = await this.createRecord('topic_candidate', {
+        channelId: batch.channelId,
+        threadId: batch.id,
+        parentRecordId: batch.id,
+        title: topic,
+      });
+      candidate.originCandidateId = candidate.id;
+      await this.store.saveEpisode(candidate);
+
+      const topicVersion = await this.createStageVersion({
+        channelId: candidate.channelId,
+        episodeId: candidate.id,
+        stage: 'topic',
+        reviewStatus: 'pending_review',
+        sourceVersionIds: [sourceVersion.id],
+        notes: `Derived from topic batch ${batch.id} candidate #${index + 1}`,
+      });
+
+      await this.store.saveStageArtifactJson(
+        candidate.channelId,
+        candidate.id,
+        'topic',
+        topicVersion.version,
+        'candidates.json',
+        {
+          generatedAt: artifact.generatedAt,
+          category: artifact.category,
+          candidates: [topic],
+          recommendedTopic: topic,
+        } satisfies TopicCandidatesArtifact
+      );
+
+      created.push(await this.getEpisode(candidate.channelId, candidate.id));
+    }
+
+    batch.updatedAt = nowIso();
+    await this.store.saveEpisode(batch);
+    return created;
+  }
+
+  public async materializeScriptBatchCandidates(
+    channelId: string,
+    batchId: string,
+    version: number,
+    artifact: ScriptPoolArtifact
+  ): Promise<EpisodeRecord[]> {
+    const batch = await this.getEpisode(channelId, batchId);
+    assertScriptPoolRecord(batch, batchId);
+
+    const sourceScriptVersion = await this.store.getStageVersion(channelId, batchId, 'script', version);
+    const sourceTopicVersionNumber = batch.stageStates.topic.approvedVersion ?? batch.stageStates.topic.currentVersion;
+    if (!sourceTopicVersionNumber) {
+      throw new Error(`Script batch ${batchId} has no source topic version`);
+    }
+
+    const sourceTopicVersion = await this.store.getStageVersion(
+      channelId,
+      batchId,
+      'topic',
+      sourceTopicVersionNumber
+    );
+    const topicCandidatesArtifact = await this.store.readStageArtifactJson<unknown>(
+      channelId,
+      batchId,
+      'topic',
+      sourceTopicVersionNumber,
+      'candidates.json'
+    );
+    const approvedTopicArtifact = await this.getApprovedTopic(channelId, batchId);
+
+    await this.archiveChildCandidates(batch.channelId, batch.id, ['script_candidate']);
+
+    const created: EpisodeRecord[] = [];
+    for (const [index, script] of artifact.candidates.entries()) {
+      const candidate = await this.createRecord('script_candidate', {
+        channelId: batch.channelId,
+        threadId: batch.threadId ?? batch.id,
+        parentRecordId: batch.id,
+        originCandidateId: batch.originCandidateId ?? batch.parentRecordId ?? batch.id,
+        title: getPreferredEpisodeTitle(script),
+      });
+      await this.store.saveEpisode(candidate);
+
+      const topicVersion = await this.createStageVersion({
+        channelId: candidate.channelId,
+        episodeId: candidate.id,
+        stage: 'topic',
+        reviewStatus: 'approved',
+        sourceVersionIds: [sourceTopicVersion.id],
+        notes: `Cloned from script batch ${batch.id}`,
+      });
+      await this.store.saveStageArtifactJson(
+        candidate.channelId,
+        candidate.id,
+        'topic',
+        topicVersion.version,
+        'candidates.json',
+        topicCandidatesArtifact
+      );
+      await this.store.saveStageArtifactJson(
+        candidate.channelId,
+        candidate.id,
+        'topic',
+        topicVersion.version,
+        'approved.json',
+        approvedTopicArtifact
+      );
+      await this.updateStageReviewStatus({
+        channelId: candidate.channelId,
+        episodeId: candidate.id,
+        stage: 'topic',
+        version: topicVersion.version,
+        reviewStatus: 'approved',
+        approvedTopic: approvedTopicArtifact.approvedTopic,
+      });
+
+      const scriptVersion = await this.createStageVersion({
+        channelId: candidate.channelId,
+        episodeId: candidate.id,
+        stage: 'script',
+        reviewStatus: 'pending_review',
+        sourceVersionIds: [sourceScriptVersion.id],
+        notes: `Derived from script batch ${batch.id} candidate #${index + 1}`,
+      });
+      await this.store.saveStageArtifactJson(
+        candidate.channelId,
+        candidate.id,
+        'script',
+        scriptVersion.version,
+        'generated-script.json',
+        {
+          generatedAt: artifact.generatedAt,
+          category: artifact.category,
+          topic: artifact.topic,
+          recommendedCandidateIndex: 0,
+          selectedCandidateIndex: 0,
+          candidates: [script],
+          currentDraft: script,
+        } satisfies ScriptPoolArtifact
+      );
+      await this.syncEpisodeTitleFromScript(candidate.channelId, candidate.id, script);
+
+      created.push(await this.getEpisode(candidate.channelId, candidate.id));
+    }
+
+    batch.updatedAt = nowIso();
+    await this.store.saveEpisode(batch);
+    return created;
+  }
+
   public async promoteCandidateToEpisode(
     input: PromoteCandidateToEpisodeInput
   ): Promise<{ episode: EpisodeRecord }> {
     const candidate = await this.getEpisode(input.channelId, input.candidateId);
-    assertScriptPoolRecord(candidate, input.candidateId);
+    assertScriptReviewSourceRecord(candidate, input.candidateId);
 
     const approvedTopic = await this.getApprovedTopic(input.channelId, input.candidateId);
     const approvedScript = await this.getApprovedScript(input.channelId, input.candidateId);
@@ -803,6 +990,31 @@ export class WorkbenchService {
       processed,
       skipped,
     };
+  }
+
+  private async archiveChildCandidates(
+    channelId: string,
+    parentRecordId: string,
+    kinds: WorkbenchRecordKind[]
+  ): Promise<void> {
+    const records = (await this.store.listEpisodes()).filter(
+      (record) =>
+        record.channelId === channelId &&
+        record.parentRecordId === parentRecordId &&
+        kinds.includes(getRecordKind(record)) &&
+        record.workflowStatus !== 'archived'
+    );
+
+    if (records.length === 0) {
+      return;
+    }
+
+    const timestamp = nowIso();
+    for (const record of records) {
+      record.workflowStatus = 'archived';
+      record.updatedAt = timestamp;
+      await this.store.saveEpisode(record);
+    }
   }
 
   private async createRecord(
@@ -1866,7 +2078,13 @@ function getPreferredEpisodeTitle(script: Script): string {
 }
 
 function getRecordKind(record: EpisodeRecord): WorkbenchRecordKind {
-  if (record.kind === 'episode' || record.kind === 'topic_pool' || record.kind === 'script_pool') {
+  if (
+    record.kind === 'episode' ||
+    record.kind === 'topic_pool' ||
+    record.kind === 'script_pool' ||
+    record.kind === 'topic_candidate' ||
+    record.kind === 'script_candidate'
+  ) {
     return record.kind;
   }
 
@@ -1888,8 +2106,10 @@ function getVisibleStagesForRecord(record: EpisodeRecord): EpisodeStage[] {
 
   switch (getRecordKind(record)) {
     case 'topic_pool':
+    case 'topic_candidate':
       return ['topic'];
     case 'script_pool':
+    case 'script_candidate':
       return ['topic', 'script'];
     case 'episode':
       return [...episodeStageOrder];
@@ -1955,9 +2175,9 @@ function getNextActionLabel(record: EpisodeRecord): string {
     case 'pending_review':
       return 'Review and decide';
     case 'approved':
-      return getRecordKind(record) === 'topic_pool' && record.currentStage === 'topic'
+      return isTopicReviewSourceKind(getRecordKind(record)) && record.currentStage === 'topic'
         ? 'Create script pool'
-        : getRecordKind(record) === 'script_pool' && record.currentStage === 'script'
+        : isScriptReviewSourceKind(getRecordKind(record)) && record.currentStage === 'script'
           ? 'Promote to episode'
           : 'Continue to next stage';
     case 'stale':
@@ -1979,8 +2199,16 @@ function getLineageLabel(record: Pick<
     return 'Topic pool';
   }
 
+  if (derivedKind === 'topic_candidate') {
+    return `Topic candidate from ${record.parentRecordId ?? record.threadId ?? record.id}`;
+  }
+
   if (derivedKind === 'script_pool') {
     return `Script pool from ${record.parentRecordId ?? record.threadId ?? record.id}`;
+  }
+
+  if (derivedKind === 'script_candidate') {
+    return `Script candidate from ${record.parentRecordId ?? record.threadId ?? record.id}`;
   }
 
   if (record.parentRecordId) {
@@ -1991,11 +2219,11 @@ function getLineageLabel(record: Pick<
 }
 
 function getWorkspaceForSummary(record: WorkbenchRecordSummary): ReviewWorkspace {
-  if (record.kind === 'topic_pool') {
+  if (record.kind === 'topic_pool' || record.kind === 'topic_candidate') {
     return record.currentStage === 'script' ? 'script_lab' : 'topic_inbox';
   }
 
-  if (record.kind === 'script_pool') {
+  if (record.kind === 'script_pool' || record.kind === 'script_candidate') {
     return 'script_lab';
   }
 
@@ -2030,6 +2258,41 @@ function buildStaleReason(
   return `${capitalizeStageLabel(staleStage)} is stale because ${capitalizeStageLabel(sourceStage)} changed in the ${scope}.`;
 }
 
+function isTopicReviewSourceKind(kind: WorkbenchRecordKind): boolean {
+  return kind === 'topic_pool' || kind === 'topic_candidate';
+}
+
+function isScriptReviewSourceKind(kind: WorkbenchRecordKind): boolean {
+  return kind === 'script_pool' || kind === 'script_candidate';
+}
+
+function isReviewQueueRecordKind(kind: WorkbenchRecordKind): boolean {
+  return (
+    kind === 'episode' ||
+    kind === 'topic_pool' ||
+    kind === 'script_pool' ||
+    kind === 'topic_candidate' ||
+    kind === 'script_candidate'
+  );
+}
+
+function filterContainerSummaries(records: WorkbenchRecordSummary[]): WorkbenchRecordSummary[] {
+  const parentIdsWithChildren = new Set(
+    records
+      .filter((record) => record.kind === 'topic_candidate' || record.kind === 'script_candidate')
+      .map((record) => record.parentRecordId)
+      .filter((parentRecordId): parentRecordId is string => Boolean(parentRecordId))
+  );
+
+  return records.filter((record) => {
+    if (record.kind === 'topic_pool' || record.kind === 'script_pool') {
+      return !parentIdsWithChildren.has(record.id);
+    }
+
+    return true;
+  });
+}
+
 function capitalizeStageLabel(stage: EpisodeStage): string {
   return stage.charAt(0).toUpperCase() + stage.slice(1);
 }
@@ -2043,6 +2306,18 @@ function assertTopicPoolRecord(record: EpisodeRecord, recordId: string): void {
 function assertScriptPoolRecord(record: EpisodeRecord, recordId: string): void {
   if (getRecordKind(record) !== 'script_pool') {
     throw new Error(`Record ${recordId} is not a script pool`);
+  }
+}
+
+function assertTopicReviewSourceRecord(record: EpisodeRecord, recordId: string): void {
+  if (!isTopicReviewSourceKind(getRecordKind(record))) {
+    throw new Error(`Record ${recordId} is not a topic candidate`);
+  }
+}
+
+function assertScriptReviewSourceRecord(record: EpisodeRecord, recordId: string): void {
+  if (!isScriptReviewSourceKind(getRecordKind(record))) {
+    throw new Error(`Record ${recordId} is not a script candidate`);
   }
 }
 

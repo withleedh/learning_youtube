@@ -694,7 +694,6 @@ describe('Workbench App', () => {
   it('approves a topic and moves into script lab', async () => {
     window.history.replaceState({}, '', '#english/ep-006/topic');
     let scriptPoolQueued = false;
-    let topicApproved = false;
     const selectedTopicQueueItem: ReviewQueueItem = {
       ...reviewReadyTopicQueueItem,
       id: 'english/ep-006',
@@ -727,28 +726,10 @@ describe('Workbench App', () => {
         case '/api/workbench/episodes/english/ep-006/workflow':
           return jsonResponse({
             ...topicWorkflow,
-            stages: [
-              {
-                ...topicWorkflow.stages[0],
-                approvedVersion: topicApproved ? 1 : topicWorkflow.stages[0]?.approvedVersion ?? null,
-                reviewStatus: topicApproved ? 'approved' : topicWorkflow.stages[0]?.reviewStatus,
-              },
-            ],
+            stages: [topicWorkflow.stages[0]],
           });
         case '/api/workbench/episodes/english/ep-006/stages/topic/current-artifact':
           return jsonResponse({ artifact: topicArtifact });
-        case '/api/workbench/episodes/english/ep-006/stages/topic/approved-artifact':
-          return topicApproved
-            ? jsonResponse({
-                artifact: {
-                  approvedAt: '2026-03-08T00:10:00.000Z',
-                  category: 'conversation',
-                  approvedTopic: 'Missed the train',
-                  sourceVersion: 1,
-                  source: 'recommended',
-                },
-              })
-            : notFoundResponse();
         case '/api/workbench/episodes/english/ep-006/stages/topic/versions':
           return jsonResponse({ versions: [] });
         case '/api/workbench/episodes/english/ep-006/stages/topic/review-context':
@@ -757,17 +738,9 @@ describe('Workbench App', () => {
               episode: topicRecord,
               thread: { threadId: 'thread-006', records: [topicRecord] },
               stage: 'topic',
-              stageSummary: createStage('topic', topicApproved ? 'approved' : 'pending_review'),
+              stageSummary: createStage('topic', 'pending_review'),
               currentArtifact: topicArtifact,
-              approvedArtifact: topicApproved
-                ? {
-                    approvedAt: '2026-03-08T00:10:00.000Z',
-                    category: 'conversation',
-                    approvedTopic: 'Missed the train',
-                    sourceVersion: 1,
-                    source: 'recommended',
-                  }
-                : null,
+              approvedArtifact: null,
               versions: [],
               comments: [],
               downstream: [],
@@ -801,22 +774,6 @@ describe('Workbench App', () => {
               downstream: [],
             },
           });
-        case '/api/workbench/episodes/english/ep-006/stages/topic/approve':
-          topicApproved = true;
-          return jsonResponse({
-            episode: {
-              ...topicRecord,
-              stageStates: {
-                ...topicRecord.stageStates,
-                topic: {
-                  ...topicRecord.stageStates.topic,
-                  approvedVersion: 1,
-                  reviewStatus: 'approved',
-                },
-              },
-            },
-            version: { version: 1, reviewStatus: 'approved' },
-          });
         case '/api/workbench/candidates/english/ep-006/script-batch':
           scriptPoolQueued = true;
           return jsonResponse({
@@ -836,14 +793,148 @@ describe('Workbench App', () => {
 
     await waitFor(() => {
       expect(fetchMock).toHaveBeenCalledWith(
-        '/api/workbench/episodes/english/ep-006/stages/topic/approve',
-        expect.objectContaining({ method: 'POST' })
+        '/api/workbench/candidates/english/ep-006/script-batch',
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({
+            count: 5,
+            usePipeline: true,
+            approvedTopic: 'Missed the train',
+          }),
+        })
       );
     });
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: 'Script Lab' })).toHaveClass('workspace-tab active');
     });
+  });
+
+  it('clears lineage immediately when switching topic inbox selection', async () => {
+    window.history.replaceState({}, '', '#english/ep-006/topic');
+    const selectedTopicQueueItem: ReviewQueueItem = {
+      ...reviewReadyTopicQueueItem,
+      id: 'english/ep-006',
+      recordId: 'ep-006',
+      title: 'Fresh Topic Pool',
+      previewText: 'Missed the train',
+    };
+    const secondTopicRecord: EpisodeSummary = {
+      ...topicRecord,
+      id: 'ep-008',
+      threadId: 'thread-008',
+      title: 'Station Topic Pool',
+      previewText: 'Late for class',
+      updatedAt: '2026-03-08T02:00:00.000Z',
+    };
+    const secondTopicQueueItem: ReviewQueueItem = {
+      ...selectedTopicQueueItem,
+      id: 'english/ep-008',
+      recordId: 'ep-008',
+      threadId: 'thread-008',
+      title: 'Station Topic Pool',
+      previewText: 'Late for class',
+      updatedAt: '2026-03-08T02:00:00.000Z',
+    };
+    const secondTopicWorkflow: EpisodeWorkflow = {
+      ...topicWorkflow,
+      episode: secondTopicRecord,
+    };
+    const secondTopicArtifact = {
+      ...topicArtifact,
+      candidates: ['Late for class', 'Forgot homework'],
+      recommendedTopic: 'Late for class',
+    };
+
+    let resolveSecondReviewContext: ((value: Response) => void) | null = null;
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input) => {
+        const url = typeof input === 'string' ? input : input.url;
+        const pathname = url.split('?')[0];
+
+        switch (pathname) {
+          case '/api/workbench/channels':
+            return Promise.resolve(jsonResponse({ channels }));
+          case '/api/workbench/live-status':
+            return Promise.resolve(jsonResponse({ status: liveStatus }));
+          case '/api/workbench/candidates':
+            return Promise.resolve({ ok: true, json: async () => ({ candidates: [topicRecord, secondTopicRecord] }) } as Response);
+          case '/api/workbench/episodes':
+            return Promise.resolve(jsonResponse({ episodes: [] }));
+          case '/api/workbench/review-queue':
+            return Promise.resolve(jsonResponse({ items: [selectedTopicQueueItem, secondTopicQueueItem] }));
+          case '/api/workbench/logs/api':
+            return Promise.resolve(jsonResponse({ entries: apiLogs }));
+          case '/api/workbench/episodes/english/ep-006/workflow':
+            return Promise.resolve(jsonResponse(topicWorkflow));
+          case '/api/workbench/episodes/english/ep-006/stages/topic/current-artifact':
+            return Promise.resolve(jsonResponse({ artifact: topicArtifact }));
+          case '/api/workbench/episodes/english/ep-006/stages/topic/versions':
+            return Promise.resolve(jsonResponse({ versions: [] }));
+          case '/api/workbench/episodes/english/ep-006/stages/topic/review-context':
+            return Promise.resolve(
+              jsonResponse({
+                context: {
+                  episode: topicRecord,
+                  thread: { threadId: 'thread-006', records: [topicRecord] },
+                  stage: 'topic',
+                  stageSummary: createStage('topic', 'pending_review'),
+                  currentArtifact: topicArtifact,
+                  approvedArtifact: null,
+                  versions: [],
+                  comments: [],
+                  downstream: [],
+                },
+              })
+            );
+          case '/api/workbench/episodes/english/ep-008/workflow':
+            return Promise.resolve(jsonResponse(secondTopicWorkflow));
+          case '/api/workbench/episodes/english/ep-008/stages/topic/current-artifact':
+            return Promise.resolve(jsonResponse({ artifact: secondTopicArtifact }));
+          case '/api/workbench/episodes/english/ep-008/stages/topic/versions':
+            return Promise.resolve(jsonResponse({ versions: [] }));
+          case '/api/workbench/episodes/english/ep-008/stages/topic/review-context':
+            return new Promise<Response>((resolve) => {
+              resolveSecondReviewContext = resolve;
+            });
+          default:
+            return Promise.resolve(notFoundResponse());
+        }
+      }) as unknown as typeof fetch
+    );
+
+    render(<App />);
+
+    expect(await screen.findByText('Fresh Topic Pool')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Station Topic Pool/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('No thread selected.')).toBeInTheDocument();
+    });
+
+    resolveSecondReviewContext?.(
+      jsonResponse({
+        context: {
+          episode: secondTopicRecord,
+          thread: { threadId: 'thread-008', records: [secondTopicRecord] },
+          stage: 'topic',
+          stageSummary: createStage('topic', 'pending_review'),
+          currentArtifact: secondTopicArtifact,
+          approvedArtifact: null,
+          versions: [],
+          comments: [],
+          downstream: [],
+        },
+      })
+    );
+
+    await waitFor(() => {
+      expect(screen.queryByText('No thread selected.')).not.toBeInTheDocument();
+    });
+    expect(screen.getAllByText('Station Topic Pool').length).toBeGreaterThan(0);
   });
 
   it('switches the studio channel context and clears records from other channels', async () => {

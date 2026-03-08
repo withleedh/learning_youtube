@@ -1,5 +1,11 @@
 export type EpisodeStage = 'topic' | 'script' | 'image' | 'tts' | 'render' | 'shorts' | 'package';
-export type WorkbenchRecordKind = 'candidate' | 'topic_pool' | 'script_pool' | 'episode';
+export type WorkbenchRecordKind =
+  | 'candidate'
+  | 'topic_pool'
+  | 'script_pool'
+  | 'topic_candidate'
+  | 'script_candidate'
+  | 'episode';
 export type ReviewWorkspace =
   | 'topic_inbox'
   | 'script_lab'

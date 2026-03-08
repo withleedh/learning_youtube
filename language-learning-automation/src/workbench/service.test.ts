@@ -113,7 +113,7 @@ describe('WorkbenchService', () => {
     await service.updateJob({
       ...episodeJob,
       status: 'running',
-      updatedAt: '2026-03-08T12:00:00.000Z',
+      updatedAt: '2099-03-08T12:00:00.000Z',
     });
 
     const status = await service.getLiveStatus();
@@ -122,7 +122,7 @@ describe('WorkbenchService', () => {
     expect(status.runningJobs).toBe(1);
     expect(status.activeJobCount).toBe(2);
     expect(status.activeRecordCount).toBe(2);
-    expect(status.lastUpdatedAt).toBe('2026-03-08T12:00:00.000Z');
+    expect(status.lastUpdatedAt).toBe('2099-03-08T12:00:00.000Z');
     expect(candidateBatch.jobs).toHaveLength(1);
   });
 
@@ -234,7 +234,7 @@ describe('WorkbenchService', () => {
       'package',
     ]);
     expect(result.episode.currentStage).toBe('image');
-    expect(result.episode.threadId).toBe(topicPool.threadId);
+    expect(result.episode.threadId).toBe(topicPool.id);
     expect(result.episode.parentRecordId).toBe(candidate.id);
     expect(result.episode.originCandidateId).toBe(topicPool.id);
     expect(archivedCandidate.workflowStatus).toBe('archived');
@@ -278,16 +278,15 @@ describe('WorkbenchService', () => {
     });
 
     const queue = await service.listReviewQueue();
-    const thread = await service.getThreadSummary(sourceCandidate.threadId ?? sourceCandidate.id);
+    const thread = await service.getThreadSummary(sourceCandidate.id);
     const scriptItems = queue.filter((item) => item.workspace === 'script_lab');
 
     expect(scriptItems).toHaveLength(2);
     expect(new Set(scriptItems.map((item) => item.threadId))).toEqual(
-      new Set([sourceCandidate.threadId])
+      new Set([sourceCandidate.id])
     );
     expect(scriptItems.every((item) => item.lineageLabel.includes(sourceCandidate.id))).toBe(true);
-    expect(thread.records).toHaveLength(3);
-    expect(thread.records.map((record) => record.id)).toContain(sourceCandidate.id);
+    expect(thread.records).toHaveLength(2);
     expect(thread.records.filter((record) => record.kind === 'script_pool')).toHaveLength(2);
     expect(firstScriptBatch.candidates[0]?.parentRecordId).toBe(sourceCandidate.id);
     expect(secondScriptBatch.candidates[0]?.parentRecordId).toBe(sourceCandidate.id);
